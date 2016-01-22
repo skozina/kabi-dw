@@ -1,5 +1,5 @@
 PROG=kabi-dw
-SRCS=kabi-dw.c
+SRCS=kabi-dw.c main.c
 
 CC=gcc
 CFLAGS=-Wall -O0 --std=c99 -c
