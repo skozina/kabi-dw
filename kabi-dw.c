@@ -52,17 +52,9 @@ static const char * dwarf_attr_string (unsigned int attrnum) {
 	}
 }
 
-static void print_die_offsets_attrs(Dwarf_Die *die) {
-	Dwarf_Off off;
-	Dwarf_Off cuoff;
+static void print_die_attrs(Dwarf_Die *die) {
 	size_t cnt;
 	int i;
-
-	off = dwarf_dieoffset (die);
-	cuoff = dwarf_cuoffset (die);
-
-	printf (" Offset    : %lld\n", (long long int) off);
-	printf (" CU offset : %lld\n", (long long int) cuoff);
 
 	printf (" Attrs     :");
 	for (cnt = 0; cnt < 0xffff; ++cnt)
@@ -124,7 +116,7 @@ static void print_die(Dwarf *dbg, Dwarf_Die *die) {
 	switch (tag) {
 	case DW_TAG_compile_unit:
 		printf("Compilation unit: %s\n", name);
-		print_die_offsets_attrs(die);
+		print_die_attrs(die);
 		break;
 	case DW_TAG_structure_type:
 		print_die_structure(dbg, die);
@@ -171,6 +163,13 @@ static void process_symbol_die(Dwarf *dbg, Dwarf_Die *die, const char *symbol_na
 
 		printf("Variable: %s\n", name);
 
+		if (!dwarf_hasattr(die, DW_AT_external))
+			fail("Variable is not external: %s\n", name);
+		(void) dwarf_attr(die, DW_AT_external, &attr);
+		if (!dwarf_hasform(&attr, DW_FORM_flag_present))
+			fail("Variable %s DW_AT_external unexpected form: "
+			    "%u\n", name, dwarf_whatform(&attr));
+
 		if (!dwarf_hasattr(die, DW_AT_type))
 			fail("Variable missing type attribute: %s\n", name);
 		(void) dwarf_attr(die, DW_AT_type, &attr);
@@ -196,7 +195,7 @@ static void process_symbol_die(Dwarf *dbg, Dwarf_Die *die, const char *symbol_na
 static void process_cu_die(Dwarf *dbg, Dwarf_Die *die,
     const char *symbol_name) {
 	/* Print CU DIE */
-	process_symbol_die(dbg, die, symbol_name);
+	print_die(dbg, die);
 
 	if (!dwarf_haschildren(die))
 		return;
@@ -238,6 +237,7 @@ void print_symbol(const char *filepath, const char *symbol_name) {
 			fail("Unsupported dwarf version: %d\n", version);
 		}
 
+		/* CU is followed by a single DIE */
 		Dwarf_Die die;
 		if (dwarf_offdie (dbg, old_off + hsize, &die) == NULL) {
 			fail("dwarf_offdie failed for cu!\n");
