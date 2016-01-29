@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <stdbool.h>
 
 #include <elfutils/libdw.h>
 #include <elfutils/known-dwarf.h>
@@ -56,21 +57,21 @@ static void print_die_attrs(Dwarf_Die *die) {
 	size_t cnt;
 	int i;
 
-	printf (" Attrs     :");
+	printf(" Attrs     :");
 	for (cnt = 0; cnt < 0xffff; ++cnt)
-		if (dwarf_hasattr (die, cnt))
-			printf (" %s", dwarf_attr_string (cnt));
+		if (dwarf_hasattr(die, cnt))
+			printf(" %s", dwarf_attr_string (cnt));
 	puts ("");
 
-	if (dwarf_hasattr (die, DW_AT_byte_size) &&
-	    (i = dwarf_bytesize (die)) != -1)
-		printf (" byte size : %d\n", i);
-	if (dwarf_hasattr (die, DW_AT_bit_size) &&
-	    (i = dwarf_bitsize (die)) != -1)
-		printf (" bit size  : %d\n", i);
-	if (dwarf_hasattr (die, DW_AT_bit_offset) &&
-	    (i = dwarf_bitoffset (die)) != -1)
-		printf (" bit offset: %d\n", i);
+	if (dwarf_hasattr(die, DW_AT_byte_size) &&
+	    (i = dwarf_bytesize(die)) != -1)
+		printf(" byte size : %d\n", i);
+	if (dwarf_hasattr(die, DW_AT_bit_size) &&
+	    (i = dwarf_bitsize(die)) != -1)
+		printf(" bit size  : %d\n", i);
+	if (dwarf_hasattr(die, DW_AT_bit_offset) &&
+	    (i = dwarf_bitoffset(die)) != -1)
+		printf(" bit offset: %d\n", i);
 }
 
 static void print_die_member(Dwarf_Die *die, const char *name) {
@@ -87,7 +88,7 @@ static void print_die_member(Dwarf_Die *die, const char *name) {
 static void print_die_structure(Dwarf *dbg, Dwarf_Die *die) {
 	const char *name;
 
-	name = dwarf_diename (die);
+	name = dwarf_diename(die);
 	printf("struct %s {\n", name);
 
 	if (!dwarf_haschildren(die))
@@ -107,49 +108,9 @@ static void print_die(Dwarf *dbg, Dwarf_Die *die) {
 	unsigned int tag;
 	const char *name;
 
-	name = dwarf_diename (die);
+	name = dwarf_diename(die);
 	tag = dwarf_tag(die);
 
-	if (tag == DW_TAG_invalid)
-		fail("DW_TAG_invalid: %s\n", name);
-
-	switch (tag) {
-	case DW_TAG_compile_unit:
-		printf("Compilation unit: %s\n", name);
-		print_die_attrs(die);
-		break;
-	case DW_TAG_structure_type:
-		print_die_structure(dbg, die);
-		break;
-	case DW_TAG_union_type:
-		printf("Union: %s\n", name);
-		break;
-	case DW_TAG_typedef:
-		printf("Typedef: %s\n", name);
-		break;
-	default: {
-		const char *tagname = dwarf_tag_string(tag);
-		if (tagname == NULL)
-			tagname = "<NO TAG>";
-
-		printf("Unexpected tag for symbol %s: %s\n", name, tagname);
-		exit(1);
-		break;
-	}
-	}
-
-}
-
-static void process_symbol_die(Dwarf *dbg, Dwarf_Die *die, const char *symbol_name) {
-	unsigned int tag;
-	const char *name;
-
-	name = dwarf_diename (die);
-	/* Did we find our symbol? */
-	if (name == 0 || strcmp(name, symbol_name) != 0)
-		return;
-
-	tag = dwarf_tag(die);
 	if (tag == DW_TAG_invalid)
 		fail("DW_TAG_invalid: %s\n", name);
 
@@ -179,6 +140,19 @@ static void process_symbol_die(Dwarf *dbg, Dwarf_Die *die, const char *symbol_na
 		print_die(dbg, &type_die);
 		break;
 	}
+	case DW_TAG_compile_unit:
+		printf("Compilation unit: %s\n", name);
+		print_die_attrs(die);
+		break;
+	case DW_TAG_structure_type:
+		print_die_structure(dbg, die);
+		break;
+	case DW_TAG_union_type:
+		printf("Union: %s\n", name);
+		break;
+	case DW_TAG_typedef:
+		printf("Typedef: %s\n", name);
+		break;
 	default: {
 		const char *tagname = dwarf_tag_string(tag);
 		if (tagname == NULL)
@@ -192,22 +166,37 @@ static void process_symbol_die(Dwarf *dbg, Dwarf_Die *die, const char *symbol_na
 
 }
 
-static void process_cu_die(Dwarf *dbg, Dwarf_Die *die,
+/*
+ * Walk all DIEs in a CU.
+ * Returns true if the given symbol_name was found, otherwise false.
+ */
+static bool process_cu_die(Dwarf *dbg, Dwarf_Die *die,
     const char *symbol_name) {
-	/* Print CU DIE */
-	print_die(dbg, die);
+	Dwarf_Die child_die;
 
 	if (!dwarf_haschildren(die))
-		return;
+		return false;
 
-	dwarf_child(die, die);
+	/* Walk all DIEs in the CU */
+	dwarf_child(die, &child_die);
 	do {
-		process_symbol_die(dbg, die, symbol_name);
-	} while (dwarf_siblingof(die, die) == 0);
+		const char *name = dwarf_diename(&child_die);
+
+		/* Did we find our symbol? */
+		if (name != NULL && strcmp(name, symbol_name) == 0) {
+			/* Print both the CU DIE and symbol DIE */
+			print_die(dbg, die);
+			print_die(dbg, &child_die);
+			return true;
+		}
+	} while (dwarf_siblingof(&child_die, &child_die) == 0);
+
+	return false;
 }
 
+/* Print symbol definition by walking all DIEs in a .debug_info section */
 void print_symbol(const char *filepath, const char *symbol_name) {
-	int fd = open (filepath, O_RDONLY);
+	int fd = open(filepath, O_RDONLY);
 	Dwarf *dbg;
 
 	if (fd < 0) {
@@ -239,14 +228,15 @@ void print_symbol(const char *filepath, const char *symbol_name) {
 
 		/* CU is followed by a single DIE */
 		Dwarf_Die die;
-		if (dwarf_offdie (dbg, old_off + hsize, &die) == NULL) {
+		if (dwarf_offdie(dbg, old_off + hsize, &die) == NULL) {
 			fail("dwarf_offdie failed for cu!\n");
 		}
 
-		process_cu_die(dbg, &die, symbol_name);
+		if (process_cu_die(dbg, &die, symbol_name) == true)
+			break;
 		old_off = off;
 	}
 
-	dwarf_end (dbg);
-	close (fd);
+	dwarf_end(dbg);
+	close(fd);
 }
