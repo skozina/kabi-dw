@@ -4,12 +4,27 @@
 #include "kabi-dw.h"
 
 int main(int argc, char **argv) {
+	int i = 0;
+
 	if(argc != 2) {
 		printf("Usage: %s file\n", argv[0]);
 		exit(1);
 	}
 
-	print_symbol(argv[1], "init_task");
-	print_symbol(argv[1], "x86_64_start_kernel");
+	char *names[] = {
+		"init_task",
+		"x86_64_start_kernel",
+		"acpi_disabled",
+		"acpi_evaluate_integer",
+		NULL
+	};
+
+	while (names[i] != NULL) {
+		if (!print_symbol(argv[1], names[i]))
+			printf("%s not found!\n", names[i]);
+		printf("============================\n");
+		i++;
+	}
+
 	return 0;
 }

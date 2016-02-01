@@ -67,6 +67,18 @@ static bool is_external(Dwarf_Die *die) {
 	return true;
 }
 
+/* Check if given DIE has DW_AT_external attribute */
+static bool is_declaration(Dwarf_Die *die) {
+	Dwarf_Attribute attr;
+
+	if (!dwarf_hasattr(die, DW_AT_declaration))
+		return false;
+	(void) dwarf_attr(die, DW_AT_declaration, &attr);
+	if (!dwarf_hasform(&attr, DW_FORM_flag_present))
+		return false;
+	return true;
+}
+
 static void print_die_attrs(Dwarf_Die *die) {
 	size_t cnt;
 	int i;
@@ -124,8 +136,12 @@ static void print_die_type(Dwarf *dbg, Dwarf_Die *die) {
 	const char *name;
 
 	name = dwarf_diename(die);
-	if (!dwarf_hasattr(die, DW_AT_type))
-		fail("Die missing type attribute: %s\n", name);
+
+	if (!dwarf_hasattr(die, DW_AT_type)) {
+		printf("void\n");
+		return;
+	}
+
 	(void) dwarf_attr(die, DW_AT_type, &attr);
 	if (dwarf_formref_die(&attr, &type_die) == NULL)
 		fail("dwarf_formref_die() failed for %s\n", name);
@@ -146,11 +162,7 @@ static void print_die_subprogram(Dwarf *dbg, Dwarf_Die *die) {
 
 	/* Print return value */
 	printf("Returned value: ");
-	if (dwarf_hasattr(die, DW_AT_type)) {
-		print_die_type(dbg, die);
-	} else {
-		printf("void\n");
-	}
+	print_die_type(dbg, die);
 
 	if (!dwarf_haschildren(die))
 		return;
@@ -209,6 +221,7 @@ static void print_die(Dwarf *dbg, Dwarf_Die *die) {
 		break;
 	case DW_TAG_typedef:
 		printf("Typedef: %s\n", name);
+		print_die_type(dbg, die);
 		break;
 	case DW_TAG_formal_parameter:
 		printf("%s\n", name);
@@ -246,8 +259,9 @@ static bool process_cu_die(Dwarf *dbg, Dwarf_Die *die,
 	do {
 		const char *name = dwarf_diename(&child_die);
 
-		/* Did we find our symbol? */
-		if (name != NULL && strcmp(name, symbol_name) == 0) {
+		/* Did we find full definition of our symbol? */
+		if (name != NULL && (strcmp(name, symbol_name) == 0) &&
+		    !is_declaration(&child_die)) {
 			/* Print both the CU DIE and symbol DIE */
 			print_die(dbg, die);
 			print_die(dbg, &child_die);
@@ -258,9 +272,13 @@ static bool process_cu_die(Dwarf *dbg, Dwarf_Die *die,
 	return false;
 }
 
-/* Print symbol definition by walking all DIEs in a .debug_info section */
-void print_symbol(const char *filepath, const char *symbol_name) {
+/*
+ * Print symbol definition by walking all DIEs in a .debug_info section.
+ * Returns true if the definition was printed, otherwise false.
+ */
+bool print_symbol(const char *filepath, const char *symbol_name) {
 	int fd = open(filepath, O_RDONLY);
+	bool found = false;
 	Dwarf *dbg;
 
 	if (fd < 0) {
@@ -296,11 +314,16 @@ void print_symbol(const char *filepath, const char *symbol_name) {
 			fail("dwarf_offdie failed for cu!\n");
 		}
 
-		if (process_cu_die(dbg, &die, symbol_name) == true)
+		if (process_cu_die(dbg, &die, symbol_name) == true) {
+			found = true;
 			break;
+		}
+
 		old_off = off;
 	}
 
 	dwarf_end(dbg);
 	close(fd);
+
+	return found;
 }
