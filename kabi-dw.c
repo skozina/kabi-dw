@@ -31,6 +31,8 @@
 
 #include "kabi-dw.h"
 
+static void print_die(Dwarf *, Dwarf_Die *);
+
 static const char * dwarf_tag_string (unsigned int tag) {
 	switch (tag)
 	{
@@ -51,6 +53,18 @@ static const char * dwarf_attr_string (unsigned int attrnum) {
 		default:
 			return NULL;
 	}
+}
+
+/* Check if given DIE has DW_AT_external attribute */
+static bool is_external(Dwarf_Die *die) {
+	Dwarf_Attribute attr;
+
+	if (!dwarf_hasattr(die, DW_AT_external))
+		return false;
+	(void) dwarf_attr(die, DW_AT_external, &attr);
+	if (!dwarf_hasform(&attr, DW_FORM_flag_present))
+		return false;
+	return true;
 }
 
 static void print_die_attrs(Dwarf_Die *die) {
@@ -104,6 +118,55 @@ done:
 	printf("}\n");
 }
 
+static void print_die_type(Dwarf *dbg, Dwarf_Die *die) {
+	Dwarf_Die type_die;
+	Dwarf_Attribute attr;
+	const char *name;
+
+	name = dwarf_diename(die);
+	if (!dwarf_hasattr(die, DW_AT_type))
+		fail("Die missing type attribute: %s\n", name);
+	(void) dwarf_attr(die, DW_AT_type, &attr);
+	if (dwarf_formref_die(&attr, &type_die) == NULL)
+		fail("dwarf_formref_die() failed for %s\n", name);
+
+	print_die(dbg, &type_die);
+}
+
+static void print_die_subprogram(Dwarf *dbg, Dwarf_Die *die) {
+	Dwarf_Die child_die;
+	const char *name;
+	int i = 0;
+
+	name = dwarf_diename(die);
+	printf("Function: %s\n", name);
+
+	if (!is_external(die))
+		fail("Function is not external: %s\n", name);
+
+	/* Print return value */
+	printf("Returned value: ");
+	if (dwarf_hasattr(die, DW_AT_type)) {
+		print_die_type(dbg, die);
+	} else {
+		printf("void\n");
+	}
+
+	if (!dwarf_haschildren(die))
+		return;
+
+	/* Grab the first argument */
+	dwarf_child(die, &child_die);
+	/* Walk all arguments until we run into the function body */
+	do {
+		printf("Argument %d: ", i);
+		print_die(dbg, &child_die);
+		i++;
+	} while ((dwarf_siblingof(&child_die, &child_die) == 0) &&
+	    ((dwarf_tag(&child_die) == DW_TAG_formal_parameter) ||
+	    (dwarf_tag(&child_die) == DW_TAG_unspecified_parameters)));
+}
+
 static void print_die(Dwarf *dbg, Dwarf_Die *die) {
 	unsigned int tag;
 	const char *name;
@@ -116,33 +179,27 @@ static void print_die(Dwarf *dbg, Dwarf_Die *die) {
 
 	switch (tag) {
 	case DW_TAG_subprogram:
-		printf("Function: %s\n", name);
+	case DW_TAG_inlined_subroutine:
+		print_die_subprogram(dbg, die);
 		break;
 	case DW_TAG_variable: {
-		Dwarf_Die type_die;
-		Dwarf_Attribute attr;
-
 		printf("Variable: %s\n", name);
 
-		if (!dwarf_hasattr(die, DW_AT_external))
+		if (!is_external(die))
 			fail("Variable is not external: %s\n", name);
-		(void) dwarf_attr(die, DW_AT_external, &attr);
-		if (!dwarf_hasform(&attr, DW_FORM_flag_present))
-			fail("Variable %s DW_AT_external unexpected form: "
-			    "%u\n", name, dwarf_whatform(&attr));
-
-		if (!dwarf_hasattr(die, DW_AT_type))
-			fail("Variable missing type attribute: %s\n", name);
-		(void) dwarf_attr(die, DW_AT_type, &attr);
-		if (dwarf_formref_die(&attr, &type_die) == NULL)
-			fail("dwarf_formref_die() failed for %s\n", name);
-
-		print_die(dbg, &type_die);
+		print_die_type(dbg, die);
 		break;
 	}
 	case DW_TAG_compile_unit:
 		printf("Compilation unit: %s\n", name);
 		print_die_attrs(die);
+		break;
+	case DW_TAG_base_type:
+		printf("%s\n", name);
+		break;
+	case DW_TAG_pointer_type:
+		printf("* ");
+		print_die_type(dbg, die);
 		break;
 	case DW_TAG_structure_type:
 		print_die_structure(dbg, die);
@@ -152,6 +209,13 @@ static void print_die(Dwarf *dbg, Dwarf_Die *die) {
 		break;
 	case DW_TAG_typedef:
 		printf("Typedef: %s\n", name);
+		break;
+	case DW_TAG_formal_parameter:
+		printf("%s\n", name);
+		print_die_type(dbg, die);
+		break;
+	case DW_TAG_unspecified_parameters:
+		printf("...\n");
 		break;
 	default: {
 		const char *tagname = dwarf_tag_string(tag);

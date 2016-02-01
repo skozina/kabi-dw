@@ -10,5 +10,6 @@ int main(int argc, char **argv) {
 	}
 
 	print_symbol(argv[1], "init_task");
+	print_symbol(argv[1], "x86_64_start_kernel");
 	return 0;
 }
