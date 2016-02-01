@@ -119,8 +119,8 @@ static void print_die_structure(Dwarf *dbg, Dwarf_Die *die) {
 
 	if (!dwarf_haschildren(die))
 		goto done;
-	dwarf_child(die, die);
 
+	dwarf_child(die, die);
 	do {
 		name = dwarf_diename(die);
 		print_die_member(die, name);
@@ -149,16 +149,9 @@ static void print_die_type(Dwarf *dbg, Dwarf_Die *die) {
 	print_die(dbg, &type_die);
 }
 
-static void print_die_subprogram(Dwarf *dbg, Dwarf_Die *die) {
+static void print_subprogram_arguments(Dwarf *dbg, Dwarf_Die *die) {
 	Dwarf_Die child_die;
-	const char *name;
 	int i = 0;
-
-	name = dwarf_diename(die);
-	printf("Function: %s\n", name);
-
-	if (!is_external(die))
-		fail("Function is not external: %s\n", name);
 
 	/* Print return value */
 	printf("Returned value: ");
@@ -177,6 +170,25 @@ static void print_die_subprogram(Dwarf *dbg, Dwarf_Die *die) {
 	} while ((dwarf_siblingof(&child_die, &child_die) == 0) &&
 	    ((dwarf_tag(&child_die) == DW_TAG_formal_parameter) ||
 	    (dwarf_tag(&child_die) == DW_TAG_unspecified_parameters)));
+}
+
+/* Function pointer */
+static void print_die_subroutine_type(Dwarf *dbg, Dwarf_Die *die) {
+	printf("func(");
+	print_subprogram_arguments(dbg, die);
+	printf(")");
+}
+
+static void print_die_subprogram(Dwarf *dbg, Dwarf_Die *die) {
+	const char *name;
+
+	name = dwarf_diename(die);
+	printf("Function: %s\n", name);
+
+	if (!is_external(die))
+		fail("Function is not external: %s\n", name);
+
+	print_subprogram_arguments(dbg, die);
 }
 
 static void print_die(Dwarf *dbg, Dwarf_Die *die) {
@@ -224,11 +236,15 @@ static void print_die(Dwarf *dbg, Dwarf_Die *die) {
 		print_die_type(dbg, die);
 		break;
 	case DW_TAG_formal_parameter:
-		printf("%s\n", name);
+		if (name != NULL)
+			printf("%s\n", name);
 		print_die_type(dbg, die);
 		break;
 	case DW_TAG_unspecified_parameters:
 		printf("...\n");
+		break;
+	case DW_TAG_subroutine_type:
+		print_die_subroutine_type(dbg, die);
 		break;
 	default: {
 		const char *tagname = dwarf_tag_string(tag);

@@ -2,7 +2,7 @@ PROG=kabi-dw
 SRCS=kabi-dw.c main.c
 
 CC=gcc
-CFLAGS=-Wall -O0 --std=c99 -c
+CFLAGS=-Wall -O0 -g --std=c99 -c
 LDFLAGS=-ldw
 
 OBJS=$(SRCS:.c=.o)

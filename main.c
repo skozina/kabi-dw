@@ -16,6 +16,7 @@ int main(int argc, char **argv) {
 		"x86_64_start_kernel",
 		"acpi_disabled",
 		"acpi_evaluate_integer",
+		"acpi_initialize_hp_context",
 		NULL
 	};
 
