@@ -5,11 +5,11 @@
 #include <stdbool.h>
 
 #define	fail(m...)	{			\
-	printf("%s():%d ", __func__, __LINE__);	\
-	printf(m);				\
+	fprintf(stderr, "%s():%d ", __func__, __LINE__);	\
+	fprintf(stderr, m);				\
 	exit(1);				\
 }
 
-extern bool print_symbol(const char *, const char *);
+extern void print_symbols(char *, char **, size_t);
 
 #endif /* KABI_DW_H_ */

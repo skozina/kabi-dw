@@ -1,20 +1,3 @@
-/* Copyright (C) 1998-2002, 2004, 2006, 2012, 2015 Red Hat, Inc.
-   This file is part of elfutils.
-   Written by Ulrich Drepper <drepper@redhat.com>, 1998.
-
-   This file is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 3 of the License, or
-   (at your option) any later version.
-
-   elfutils is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
-
 #include <dwarf.h>
 #include <inttypes.h>
 #include <libelf.h>
@@ -25,13 +8,16 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <assert.h>
+#include <libgen.h>
 
 #include <elfutils/libdw.h>
 #include <elfutils/known-dwarf.h>
 
+#include "main.h"
 #include "kabi-dw.h"
 
-static void print_die(Dwarf *, Dwarf_Die *);
+static void print_die(Dwarf *, FILE *, Dwarf_Die *, Dwarf_Die *);
 
 static const char * dwarf_tag_string (unsigned int tag) {
 	switch (tag)
@@ -44,15 +30,76 @@ static const char * dwarf_tag_string (unsigned int tag) {
 	}
 }
 
-static const char * dwarf_attr_string (unsigned int attrnum) {
-	switch (attrnum)
-	{
-#define DWARF_ONE_KNOWN_DW_AT(NAME, CODE) case CODE: return #NAME;
-		DWARF_ALL_KNOWN_DW_AT
-#undef DWARF_ONE_KNOWN_DW_AT
-		default:
+static char * get_symbol_file(FILE *fout, Dwarf_Die *die) {
+	const char *name = dwarf_diename(die);
+	unsigned int tag = dwarf_tag(die);
+	char *file_prefix = NULL;
+	char *file_name = NULL;
+	size_t output_len;
+
+	switch (tag) {
+	case DW_TAG_subprogram:
+		file_prefix = FUNC_FILE;
+		break;
+	case DW_TAG_typedef:
+		file_prefix = TYPEDEF_FILE;
+		break;
+	case DW_TAG_variable:
+		file_prefix = VAR_FILE;
+		break;
+	case DW_TAG_enumeration_type:
+		/* Anonymous enums can be a variable type */
+		if (name != NULL) {
+			file_prefix = ENUM_FILE;
+		} else {
 			return NULL;
+		}
+		break;
+	case DW_TAG_structure_type:
+		/* Anonymous structure can be a variable type */
+		if (name != NULL) {
+			file_prefix = STRUCT_FILE;
+		} else {
+			return NULL;
+		}
+		break;
+	case DW_TAG_union_type:
+		/*
+		 * Anonymous union can be a variable type.
+		 * But it can also be included in a structure!
+		 */
+		if (name != NULL) {
+			file_prefix = UNION_FILE;
+		} else {
+			return NULL;
+		}
+		break;
+	default:
+		/* No need to redirect output for other types */
+		return NULL;
 	}
+
+	/* We don't expect our name to be empty now */
+	assert(name != NULL);
+
+	output_len = strlen(output_dir) + strlen("/") + strlen(file_prefix) +
+	    strlen(name) + strlen(".txt") + 1;
+	file_name = malloc(output_len);
+	snprintf(file_name, output_len, "%s/%s%s.txt",
+	    output_dir, file_prefix, name);
+
+	return file_name;
+}
+
+static FILE * open_output_file(char *file_name) {
+	FILE *file;
+
+	file = fopen(file_name, "w");
+	if (file == NULL)
+		fail("Failed to open file %s: %s\n", file_name,
+		    strerror(errno));
+
+	return file;
 }
 
 /* Check if given DIE has DW_AT_external attribute */
@@ -79,28 +126,25 @@ static bool is_declaration(Dwarf_Die *die) {
 	return true;
 }
 
-static void print_die_attrs(Dwarf_Die *die) {
-	size_t cnt;
-	int i;
+static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
+	Dwarf_Die type_die;
+	Dwarf_Attribute attr;
 
-	printf(" Attrs     :");
-	for (cnt = 0; cnt < 0xffff; ++cnt)
-		if (dwarf_hasattr(die, cnt))
-			printf(" %s", dwarf_attr_string (cnt));
-	puts ("");
+	if (!dwarf_hasattr(die, DW_AT_type)) {
+		fprintf(fout, "void\n");
+		return;
+	}
 
-	if (dwarf_hasattr(die, DW_AT_byte_size) &&
-	    (i = dwarf_bytesize(die)) != -1)
-		printf(" byte size : %d\n", i);
-	if (dwarf_hasattr(die, DW_AT_bit_size) &&
-	    (i = dwarf_bitsize(die)) != -1)
-		printf(" bit size  : %d\n", i);
-	if (dwarf_hasattr(die, DW_AT_bit_offset) &&
-	    (i = dwarf_bitoffset(die)) != -1)
-		printf(" bit offset: %d\n", i);
+	(void) dwarf_attr(die, DW_AT_type, &attr);
+	if (dwarf_formref_die(&attr, &type_die) == NULL)
+		fail("dwarf_formref_die() failed for %s\n",
+		    dwarf_diename(die));
+
+	print_die(dbg, fout, NULL, &type_die);
 }
 
-static void print_die_member(Dwarf_Die *die, const char *name) {
+static void print_die_struct_member(Dwarf *dbg, FILE *fout, Dwarf_Die *die,
+    const char *name) {
 	Dwarf_Attribute attr;
 	Dwarf_Word value;
 
@@ -108,54 +152,97 @@ static void print_die_member(Dwarf_Die *die, const char *name) {
 		fail("Offset of member %s missing!\n", name);
 
 	(void) dwarf_formudata(&attr, &value);
-	printf("[0x%lx] %s\n", value, name);
+	fprintf(fout, "0x%lx %s ", value, name);
+	print_die_type(dbg, fout, die);
 }
 
-static void print_die_structure(Dwarf *dbg, Dwarf_Die *die) {
-	const char *name;
+static void print_die_structure(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
+	unsigned int tag = dwarf_tag(die);
+	const char *name = dwarf_diename(die);
 
-	name = dwarf_diename(die);
-	printf("struct %s {\n", name);
+	if (name != NULL)
+		fprintf(fout, "struct %s {\n", name);
+	else
+		fprintf(fout, "struct {\n");
 
 	if (!dwarf_haschildren(die))
-		goto done;
+		return;
 
 	dwarf_child(die, die);
 	do {
 		name = dwarf_diename(die);
-		print_die_member(die, name);
+		tag = dwarf_tag(die);
+		if (tag != DW_TAG_member)
+			fail("Unexpected tag for structure type children: "
+			    "%s\n", dwarf_tag_string(tag));
+		print_die_struct_member(dbg, fout, die, name);
 	} while (dwarf_siblingof(die, die) == 0);
 
-done:
-	printf("}\n");
+	fprintf(fout, "}\n");
 }
 
-static void print_die_type(Dwarf *dbg, Dwarf_Die *die) {
-	Dwarf_Die type_die;
+static void print_die_enumerator(Dwarf *dbg, FILE *fout, Dwarf_Die *die,
+    const char *name) {
 	Dwarf_Attribute attr;
-	const char *name;
+	Dwarf_Word value;
 
-	name = dwarf_diename(die);
+	if (dwarf_attr(die, DW_AT_const_value, &attr) == NULL)
+		fail("Value of enumerator %s missing!\n", name);
 
-	if (!dwarf_hasattr(die, DW_AT_type)) {
-		printf("void\n");
-		return;
-	}
-
-	(void) dwarf_attr(die, DW_AT_type, &attr);
-	if (dwarf_formref_die(&attr, &type_die) == NULL)
-		fail("dwarf_formref_die() failed for %s\n", name);
-
-	print_die(dbg, &type_die);
+	(void) dwarf_formudata(&attr, &value);
+	fprintf(fout, "%s = 0x%lx\n", name, value);
 }
 
-static void print_subprogram_arguments(Dwarf *dbg, Dwarf_Die *die) {
+static void print_die_enumeration(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
+	const char *name = dwarf_diename(die);
+
+	if (name != NULL)
+		fprintf(fout, "enum %s {\n", name);
+	else
+		fprintf(fout, "enum {\n");
+
+	if (!dwarf_haschildren(die))
+		return;
+
+	dwarf_child(die, die);
+	do {
+		name = dwarf_diename(die);
+		print_die_enumerator(dbg, fout, die, name);
+	} while (dwarf_siblingof(die, die) == 0);
+
+	fprintf(fout, "}\n");
+}
+
+static void print_die_union(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
+	const char *name = dwarf_diename(die);
+	unsigned int tag = dwarf_tag(die);
+
+	if (name != NULL)
+		fprintf(fout, "union %s {\n", name);
+	else
+		fprintf(fout, "union {\n");
+
+	if (!dwarf_haschildren(die))
+		return;
+
+	dwarf_child(die, die);
+	do {
+		name = dwarf_diename(die);
+		tag = dwarf_tag(die);
+		if (tag != DW_TAG_member)
+			fail("Unexpected tag for union type children: %s\n",
+			    dwarf_tag_string(tag));
+		fprintf(fout, "%s ", name);
+		print_die_type(dbg, fout, die);
+	} while (dwarf_siblingof(die, die) == 0);
+
+	fprintf(fout, "}\n");
+}
+
+static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
+    Dwarf_Die *die) {
 	Dwarf_Die child_die;
 	int i = 0;
-
-	/* Print return value */
-	printf("Returned value: ");
-	print_die_type(dbg, die);
 
 	if (!dwarf_haschildren(die))
 		return;
@@ -164,8 +251,9 @@ static void print_subprogram_arguments(Dwarf *dbg, Dwarf_Die *die) {
 	dwarf_child(die, &child_die);
 	/* Walk all arguments until we run into the function body */
 	do {
-		printf("Argument %d: ", i);
-		print_die(dbg, &child_die);
+		const char *name = dwarf_diename(&child_die);
+		fprintf(fout, "%s ", name);
+		print_die_type(dbg, fout, &child_die);
 		i++;
 	} while ((dwarf_siblingof(&child_die, &child_die) == 0) &&
 	    ((dwarf_tag(&child_die) == DW_TAG_formal_parameter) ||
@@ -173,128 +261,218 @@ static void print_subprogram_arguments(Dwarf *dbg, Dwarf_Die *die) {
 }
 
 /* Function pointer */
-static void print_die_subroutine_type(Dwarf *dbg, Dwarf_Die *die) {
-	printf("func(");
-	print_subprogram_arguments(dbg, die);
-	printf(")");
+/* TODO should function pointers go into their own files? */
+static void print_die_subroutine_type(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
+	fprintf(fout, "func %s (\n", dwarf_diename(die));
+	print_subprogram_arguments(dbg, fout, die);
+	fprintf(fout, ")\n");
+	/* Print return value */
+	print_die_type(dbg, fout, die);
 }
 
-static void print_die_subprogram(Dwarf *dbg, Dwarf_Die *die) {
-	const char *name;
-
-	name = dwarf_diename(die);
-	printf("Function: %s\n", name);
+static void print_die_subprogram(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
+	const char *name = dwarf_diename(die);
 
 	if (!is_external(die))
 		fail("Function is not external: %s\n", name);
 
-	print_subprogram_arguments(dbg, die);
+	fprintf(fout, "func %s (\n", name);
+	print_subprogram_arguments(dbg, fout, die);
+	fprintf(fout, ")\n");
+	/* Print return value */
+	print_die_type(dbg, fout, die);
 }
 
-static void print_die(Dwarf *dbg, Dwarf_Die *die) {
-	unsigned int tag;
-	const char *name;
+static void print_die_array_type(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
+	Dwarf_Attribute attr;
+	Dwarf_Word value;
 
-	name = dwarf_diename(die);
-	tag = dwarf_tag(die);
+	/* There should be one child of DW_TAG_subrange_type */
+	if (!dwarf_haschildren(die))
+		fail("Array type missing children!\n");
+
+	/* Grab the child */
+	dwarf_child(die, die);
+
+	do {
+		unsigned int tag = dwarf_tag(die);
+		if (tag != DW_TAG_subrange_type)
+			fail("Unexpected tag for array type children: %s\n",
+			    dwarf_tag_string(tag));
+
+		if (dwarf_hasattr(die, DW_AT_upper_bound)) {
+			(void) dwarf_attr(die, DW_AT_upper_bound, &attr);
+			(void) dwarf_formudata(&attr, &value);
+			/* Get the UPPER bound, so add 1 */
+			fprintf(fout, "[%lu]", value + 1);
+		} else if (dwarf_hasattr(die, DW_AT_count)) {
+			(void) dwarf_attr(die, DW_AT_count, &attr);
+			(void) dwarf_formudata(&attr, &value);
+			fprintf(fout, "[%lu]", value);
+		} else {
+			fprintf(fout, "[0]");
+		}
+	} while (dwarf_siblingof(die, die) == 0);
+}
+
+static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
+    Dwarf_Die *die) {
+	unsigned int tag = dwarf_tag(die);
+	const char *name = dwarf_diename(die);
+	char *file_name = get_symbol_file(parent_file, die);
+	FILE *fout;
+
+	/* Check if we need to redirect output */
+	if (file_name != NULL) {
+		/* Else set our output to the file */
+		if (parent_file != NULL)
+			fprintf(parent_file, "@%s\n", basename(file_name));
+
+		/* If the file already exist, we're done */
+		if (access(file_name, F_OK) == 0) {
+			free(file_name);
+			return;
+		}
+		printf("Generating %s\n", basename(file_name));
+		fout = open_output_file(file_name);
+		free(file_name);
+	} else {
+		fout = parent_file;
+	}
+
+	assert(fout != NULL);
+
+	/* If we are printing the CU die do it now */
+	if (cu_die != NULL)
+		print_die(dbg, fout, NULL, cu_die);
 
 	if (tag == DW_TAG_invalid)
 		fail("DW_TAG_invalid: %s\n", name);
 
 	switch (tag) {
 	case DW_TAG_subprogram:
-	case DW_TAG_inlined_subroutine:
-		print_die_subprogram(dbg, die);
+		print_die_subprogram(dbg, fout, die);
 		break;
 	case DW_TAG_variable: {
-		printf("Variable: %s\n", name);
+		fprintf(fout, "var %s ", name);
 
 		if (!is_external(die))
 			fail("Variable is not external: %s\n", name);
-		print_die_type(dbg, die);
+		print_die_type(dbg, fout, die);
 		break;
 	}
 	case DW_TAG_compile_unit:
-		printf("Compilation unit: %s\n", name);
-		print_die_attrs(die);
+		fprintf(fout, "Compilation unit: %s\n", name);
 		break;
 	case DW_TAG_base_type:
-		printf("%s\n", name);
+		fprintf(fout, "%s\n", name);
 		break;
 	case DW_TAG_pointer_type:
-		printf("* ");
-		print_die_type(dbg, die);
+		fprintf(fout, "* ");
+		print_die_type(dbg, fout, die);
 		break;
 	case DW_TAG_structure_type:
-		print_die_structure(dbg, die);
+		print_die_structure(dbg, fout, die);
+		break;
+	case DW_TAG_enumeration_type:
+		print_die_enumeration(dbg, fout, die);
 		break;
 	case DW_TAG_union_type:
-		printf("Union: %s\n", name);
+		print_die_union(dbg, fout, die);
 		break;
 	case DW_TAG_typedef:
-		printf("Typedef: %s\n", name);
-		print_die_type(dbg, die);
+		fprintf(fout, "typedef %s\n", name);
+		print_die_type(dbg, fout, die);
 		break;
 	case DW_TAG_formal_parameter:
 		if (name != NULL)
-			printf("%s\n", name);
-		print_die_type(dbg, die);
+			fprintf(fout, "%s\n", name);
+		print_die_type(dbg, fout, die);
 		break;
 	case DW_TAG_unspecified_parameters:
-		printf("...\n");
+		fprintf(fout, "...\n");
 		break;
 	case DW_TAG_subroutine_type:
-		print_die_subroutine_type(dbg, die);
+		print_die_subroutine_type(dbg, fout, die);
+		break;
+	case DW_TAG_volatile_type:
+		fprintf(fout, "volatile ");
+		print_die_type(dbg, fout, die);
+		break;
+	case DW_TAG_const_type:
+		fprintf(fout, "const ");
+		print_die_type(dbg, fout, die);
+		break;
+	case DW_TAG_array_type:
+		print_die_array_type(dbg, fout, die);
+		print_die_type(dbg, fout, die);
 		break;
 	default: {
 		const char *tagname = dwarf_tag_string(tag);
 		if (tagname == NULL)
 			tagname = "<NO TAG>";
 
-		printf("Unexpected tag for symbol %s: %s\n", name, tagname);
-		exit(1);
+		fail("Unexpected tag for symbol %s: %s\n", name, tagname);
 		break;
 	}
 	}
 
+	if (file_name != NULL)
+		fclose(fout);
+}
+
+/*
+ * Return the index of symbol in the array of -1 if the symbol was not found.
+ */
+static int find_symbol(char **symbol_names, size_t symbol_cnt,
+    const char *name) {
+	int i = 0;
+
+	if (name == NULL)
+		return -1;
+
+	for (i = 0; i < symbol_cnt; i++) {
+		if (strcmp(symbol_names[i], name) == 0)
+			return i;
+	}
+
+	return -1;
 }
 
 /*
  * Walk all DIEs in a CU.
  * Returns true if the given symbol_name was found, otherwise false.
  */
-static bool process_cu_die(Dwarf *dbg, Dwarf_Die *die,
-    const char *symbol_name) {
+static void process_cu_die(Dwarf *dbg, Dwarf_Die *die,
+    char **symbol_names, size_t symbol_cnt, bool *symbols_found) {
 	Dwarf_Die child_die;
 
 	if (!dwarf_haschildren(die))
-		return false;
+		return;
 
 	/* Walk all DIEs in the CU */
 	dwarf_child(die, &child_die);
 	do {
 		const char *name = dwarf_diename(&child_die);
+		int found;
 
 		/* Did we find full definition of our symbol? */
-		if (name != NULL && (strcmp(name, symbol_name) == 0) &&
-		    !is_declaration(&child_die)) {
+		found = find_symbol(symbol_names, symbol_cnt, name);
+		if (found != -1 && !is_declaration(&child_die)) {
 			/* Print both the CU DIE and symbol DIE */
-			print_die(dbg, die);
-			print_die(dbg, &child_die);
-			return true;
+			print_die(dbg, NULL, die, &child_die);
+			symbols_found[found] = true;
 		}
 	} while (dwarf_siblingof(&child_die, &child_die) == 0);
-
-	return false;
 }
 
 /*
  * Print symbol definition by walking all DIEs in a .debug_info section.
  * Returns true if the definition was printed, otherwise false.
  */
-bool print_symbol(const char *filepath, const char *symbol_name) {
+void print_symbols(char *filepath, char **symbol_names,
+    size_t symbol_cnt) {
 	int fd = open(filepath, O_RDONLY);
-	bool found = false;
 	Dwarf *dbg;
 
 	if (fd < 0) {
@@ -317,6 +495,12 @@ bool print_symbol(const char *filepath, const char *symbol_name) {
 	Dwarf_Off abbrev;
 	uint8_t addresssize;
 	uint8_t offsetsize;
+	bool *symbols_found = malloc(symbol_cnt * sizeof (bool *));
+	size_t i;
+
+	for (i = 0; i < symbol_cnt; i++)
+		symbols_found[i] = false;
+
 	while (dwarf_next_unit(dbg, off, &off, &hsize, &version, &abbrev,
 	    &addresssize, &offsetsize, NULL, &type_offset) == 0)
 	{
@@ -330,16 +514,19 @@ bool print_symbol(const char *filepath, const char *symbol_name) {
 			fail("dwarf_offdie failed for cu!\n");
 		}
 
-		if (process_cu_die(dbg, &die, symbol_name) == true) {
-			found = true;
-			break;
-		}
+		process_cu_die(dbg, &die, symbol_names, symbol_cnt,
+		    symbols_found);
 
 		old_off = off;
 	}
 
+	for (i = 0; i < symbol_cnt; i++) {
+		if (symbols_found[i] == false) {
+			printf("%s not found!\n", symbol_names[i]);
+		}
+	}
+
+	free(symbols_found);
 	dwarf_end(dbg);
 	close(fd);
-
-	return found;
 }

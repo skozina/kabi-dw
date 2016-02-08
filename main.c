@@ -1,14 +1,44 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <errno.h>
 
+#include "main.h"
 #include "kabi-dw.h"
 
-int main(int argc, char **argv) {
-	int i = 0;
+char *output_dir = DEFAULT_OUTPUT_DIR;
 
-	if(argc != 2) {
-		printf("Usage: %s file\n", argv[0]);
-		exit(1);
+void usage(char *progname) {
+	printf("Usage:\n\t %s generate [-o output_dir] modules_path\n",
+		progname);
+	exit(1);
+}
+
+static void generate(char *progname, int argc, char **argv) {
+	char *module_dir;
+	struct stat dirstat;
+
+	if (argc == 2) {
+		output_dir = argv[0];
+		argc--; argv++;
+	}
+
+	if (argc != 1)
+		usage(progname);
+
+	module_dir = argv[0];
+
+	if (stat(output_dir, &dirstat) != 0) {
+		if (errno == ENOENT) {
+			fail("Target directory %s does not exist\n",
+			    output_dir);
+		} else {
+			fail("Failed to stat() directory %s: %s\n",
+			    output_dir, strerror(errno));
+		}
 	}
 
 	char *names[] = {
@@ -17,15 +47,25 @@ int main(int argc, char **argv) {
 		"acpi_disabled",
 		"acpi_evaluate_integer",
 		"acpi_initialize_hp_context",
-		NULL
 	};
 
-	while (names[i] != NULL) {
-		if (!print_symbol(argv[1], names[i]))
-			printf("%s not found!\n", names[i]);
-		printf("============================\n");
-		i++;
+	print_symbols(module_dir, names, sizeof (names) / sizeof (*names));
+}
+
+int main(int argc, char **argv) {
+	char *progname = argv[0];
+
+	if (argc < 2)
+		usage(progname);
+
+	argv++; argc--;
+
+	if (strcmp(argv[0], "generate") == 0) {
+		argv++; argc--;
+		generate(progname, argc, argv);
+	} else {
+		usage(progname);
 	}
 
-	return 0;
+	return (0);
 }
