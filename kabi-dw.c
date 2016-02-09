@@ -126,7 +126,8 @@ static bool is_declaration(Dwarf_Die *die) {
 	return true;
 }
 
-static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
+static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
+    Dwarf_Die *die) {
 	Dwarf_Die type_die;
 	Dwarf_Attribute attr;
 
@@ -140,11 +141,11 @@ static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
 		fail("dwarf_formref_die() failed for %s\n",
 		    dwarf_diename(die));
 
-	print_die(dbg, fout, NULL, &type_die);
+	print_die(dbg, fout, cu_die, &type_die);
 }
 
-static void print_die_struct_member(Dwarf *dbg, FILE *fout, Dwarf_Die *die,
-    const char *name) {
+static void print_die_struct_member(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
+    Dwarf_Die *die, const char *name) {
 	Dwarf_Attribute attr;
 	Dwarf_Word value;
 
@@ -153,10 +154,11 @@ static void print_die_struct_member(Dwarf *dbg, FILE *fout, Dwarf_Die *die,
 
 	(void) dwarf_formudata(&attr, &value);
 	fprintf(fout, "0x%lx %s ", value, name);
-	print_die_type(dbg, fout, die);
+	print_die_type(dbg, fout, cu_die, die);
 }
 
-static void print_die_structure(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
+static void print_die_structure(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
+    Dwarf_Die *die) {
 	unsigned int tag = dwarf_tag(die);
 	const char *name = dwarf_diename(die);
 
@@ -175,7 +177,7 @@ static void print_die_structure(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
 		if (tag != DW_TAG_member)
 			fail("Unexpected tag for structure type children: "
 			    "%s\n", dwarf_tag_string(tag));
-		print_die_struct_member(dbg, fout, die, name);
+		print_die_struct_member(dbg, fout, cu_die, die, name);
 	} while (dwarf_siblingof(die, die) == 0);
 
 	fprintf(fout, "}\n");
@@ -213,7 +215,8 @@ static void print_die_enumeration(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
 	fprintf(fout, "}\n");
 }
 
-static void print_die_union(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
+static void print_die_union(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
+    Dwarf_Die *die) {
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
 
@@ -233,14 +236,14 @@ static void print_die_union(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
 			fail("Unexpected tag for union type children: %s\n",
 			    dwarf_tag_string(tag));
 		fprintf(fout, "%s ", name);
-		print_die_type(dbg, fout, die);
+		print_die_type(dbg, fout, cu_die, die);
 	} while (dwarf_siblingof(die, die) == 0);
 
 	fprintf(fout, "}\n");
 }
 
 static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
-    Dwarf_Die *die) {
+    Dwarf_Die *cu_die, Dwarf_Die *die) {
 	Dwarf_Die child_die;
 	int i = 0;
 
@@ -253,7 +256,7 @@ static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
 	do {
 		const char *name = dwarf_diename(&child_die);
 		fprintf(fout, "%s ", name);
-		print_die_type(dbg, fout, &child_die);
+		print_die_type(dbg, fout, cu_die, &child_die);
 		i++;
 	} while ((dwarf_siblingof(&child_die, &child_die) == 0) &&
 	    ((dwarf_tag(&child_die) == DW_TAG_formal_parameter) ||
@@ -262,25 +265,27 @@ static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
 
 /* Function pointer */
 /* TODO should function pointers go into their own files? */
-static void print_die_subroutine_type(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
+static void print_die_subroutine_type(Dwarf *dbg, FILE *fout,
+    Dwarf_Die *cu_die, Dwarf_Die *die) {
 	fprintf(fout, "func %s (\n", dwarf_diename(die));
-	print_subprogram_arguments(dbg, fout, die);
+	print_subprogram_arguments(dbg, fout, cu_die, die);
 	fprintf(fout, ")\n");
 	/* Print return value */
-	print_die_type(dbg, fout, die);
+	print_die_type(dbg, fout, cu_die, die);
 }
 
-static void print_die_subprogram(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
+static void print_die_subprogram(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
+    Dwarf_Die *die) {
 	const char *name = dwarf_diename(die);
 
 	if (!is_external(die))
 		fail("Function is not external: %s\n", name);
 
 	fprintf(fout, "func %s (\n", name);
-	print_subprogram_arguments(dbg, fout, die);
+	print_subprogram_arguments(dbg, fout, cu_die, die);
 	fprintf(fout, ")\n");
 	/* Print return value */
-	print_die_type(dbg, fout, die);
+	print_die_type(dbg, fout, cu_die, die);
 }
 
 static void print_die_array_type(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
@@ -351,61 +356,61 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 
 	switch (tag) {
 	case DW_TAG_subprogram:
-		print_die_subprogram(dbg, fout, die);
+		print_die_subprogram(dbg, fout, cu_die, die);
 		break;
 	case DW_TAG_variable: {
 		fprintf(fout, "var %s ", name);
 
 		if (!is_external(die))
 			fail("Variable is not external: %s\n", name);
-		print_die_type(dbg, fout, die);
+		print_die_type(dbg, fout, cu_die, die);
 		break;
 	}
 	case DW_TAG_compile_unit:
-		fprintf(fout, "Compilation unit: %s\n", name);
+		fprintf(fout, "CU %s\n", name);
 		break;
 	case DW_TAG_base_type:
 		fprintf(fout, "%s\n", name);
 		break;
 	case DW_TAG_pointer_type:
 		fprintf(fout, "* ");
-		print_die_type(dbg, fout, die);
+		print_die_type(dbg, fout, cu_die, die);
 		break;
 	case DW_TAG_structure_type:
-		print_die_structure(dbg, fout, die);
+		print_die_structure(dbg, fout, cu_die, die);
 		break;
 	case DW_TAG_enumeration_type:
 		print_die_enumeration(dbg, fout, die);
 		break;
 	case DW_TAG_union_type:
-		print_die_union(dbg, fout, die);
+		print_die_union(dbg, fout, cu_die, die);
 		break;
 	case DW_TAG_typedef:
 		fprintf(fout, "typedef %s\n", name);
-		print_die_type(dbg, fout, die);
+		print_die_type(dbg, fout, cu_die, die);
 		break;
 	case DW_TAG_formal_parameter:
 		if (name != NULL)
 			fprintf(fout, "%s\n", name);
-		print_die_type(dbg, fout, die);
+		print_die_type(dbg, fout, cu_die, die);
 		break;
 	case DW_TAG_unspecified_parameters:
 		fprintf(fout, "...\n");
 		break;
 	case DW_TAG_subroutine_type:
-		print_die_subroutine_type(dbg, fout, die);
+		print_die_subroutine_type(dbg, fout, cu_die, die);
 		break;
 	case DW_TAG_volatile_type:
 		fprintf(fout, "volatile ");
-		print_die_type(dbg, fout, die);
+		print_die_type(dbg, fout, cu_die, die);
 		break;
 	case DW_TAG_const_type:
 		fprintf(fout, "const ");
-		print_die_type(dbg, fout, die);
+		print_die_type(dbg, fout, cu_die, die);
 		break;
 	case DW_TAG_array_type:
 		print_die_array_type(dbg, fout, die);
-		print_die_type(dbg, fout, die);
+		print_die_type(dbg, fout, cu_die, die);
 		break;
 	default: {
 		const char *tagname = dwarf_tag_string(tag);
@@ -443,15 +448,15 @@ static int find_symbol(char **symbol_names, size_t symbol_cnt,
  * Walk all DIEs in a CU.
  * Returns true if the given symbol_name was found, otherwise false.
  */
-static void process_cu_die(Dwarf *dbg, Dwarf_Die *die,
+static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
     char **symbol_names, size_t symbol_cnt, bool *symbols_found) {
 	Dwarf_Die child_die;
 
-	if (!dwarf_haschildren(die))
+	if (!dwarf_haschildren(cu_die))
 		return;
 
 	/* Walk all DIEs in the CU */
-	dwarf_child(die, &child_die);
+	dwarf_child(cu_die, &child_die);
 	do {
 		const char *name = dwarf_diename(&child_die);
 		int found;
@@ -460,7 +465,7 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *die,
 		found = find_symbol(symbol_names, symbol_cnt, name);
 		if (found != -1 && !is_declaration(&child_die)) {
 			/* Print both the CU DIE and symbol DIE */
-			print_die(dbg, NULL, die, &child_die);
+			print_die(dbg, NULL, cu_die, &child_die);
 			symbols_found[found] = true;
 		}
 	} while (dwarf_siblingof(&child_die, &child_die) == 0);
@@ -509,12 +514,12 @@ void print_symbols(char *filepath, char **symbol_names,
 		}
 
 		/* CU is followed by a single DIE */
-		Dwarf_Die die;
-		if (dwarf_offdie(dbg, old_off + hsize, &die) == NULL) {
+		Dwarf_Die cu_die;
+		if (dwarf_offdie(dbg, old_off + hsize, &cu_die) == NULL) {
 			fail("dwarf_offdie failed for cu!\n");
 		}
 
-		process_cu_die(dbg, &die, symbol_names, symbol_cnt,
+		process_cu_die(dbg, &cu_die, symbol_names, symbol_cnt,
 		    symbols_found);
 
 		old_off = off;
