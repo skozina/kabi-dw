@@ -341,15 +341,15 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		printf("Generating %s\n", basename(file_name));
 		fout = open_output_file(file_name);
 		free(file_name);
+
+		/* Print the CU die on the first line of each file */
+		if (cu_die != NULL)
+			print_die(dbg, fout, NULL, cu_die);
 	} else {
 		fout = parent_file;
 	}
 
 	assert(fout != NULL);
-
-	/* If we are printing the CU die do it now */
-	if (cu_die != NULL)
-		print_die(dbg, fout, NULL, cu_die);
 
 	if (tag == DW_TAG_invalid)
 		fail("DW_TAG_invalid: %s\n", name);
