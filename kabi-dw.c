@@ -132,7 +132,10 @@ static bool is_inline(Dwarf_Die *die) {
 		return false;
 }
 
-/* Check if given DIE has DW_AT_external attribute */
+/*
+ * Check if given DIE has DW_AT_external attribute.
+ * That indicates that the symbol is just a declaration, not full definition.
+ */
 static bool is_declaration(Dwarf_Die *die) {
 	Dwarf_Attribute attr;
 
@@ -296,12 +299,6 @@ static void print_die_subprogram(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
     Dwarf_Die *die) {
 	const char *name = dwarf_diename(die);
 
-	/* Non-inlined functions should be exported */
-	if (!is_inline(die) && !is_external(die)) {
-		fprintf(stdout, "WARNING: Function is not external: %s\n",
-		    name);
-	}
-
 	fprintf(fout, "func %s (\n", name);
 	print_subprogram_arguments(dbg, fout, cu_die, die);
 	fprintf(fout, ")\n");
@@ -379,16 +376,10 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	case DW_TAG_subprogram:
 		print_die_subprogram(dbg, fout, cu_die, die);
 		break;
-	case DW_TAG_variable: {
+	case DW_TAG_variable:
 		fprintf(fout, "var %s ", name);
-
-		if (!is_external(die)) {
-			fprintf(stdout, "WARNING: Variable is not external: "
-			    "%s\n", name);
-		}
 		print_die_type(dbg, fout, cu_die, die);
 		break;
-	}
 	case DW_TAG_compile_unit:
 		fprintf(fout, "CU %s\n", name);
 		break;
@@ -450,7 +441,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 }
 
 /*
- * Return the index of symbol in the array of -1 if the symbol was not found.
+ * Return the index of symbol in the array or -1 if the symbol was not found.
  */
 static int find_symbol(char **symbol_names, size_t symbol_cnt,
     const char *name) {
@@ -468,6 +459,57 @@ static int find_symbol(char **symbol_names, size_t symbol_cnt,
 }
 
 /*
+ * Validate if this is the symbol we should print.
+ * Returns index into the symbol array if this is symbol to print.
+ * Otherwise returns -1.
+ */
+static int get_symbol_index(Dwarf_Die *die, char **symbol_names,
+    size_t symbol_cnt) {
+	const char *name = dwarf_diename(die);
+	unsigned int tag = dwarf_tag(die);
+	int result;
+
+	/* Is the name of the symbol one of those requested? */
+	result = find_symbol(symbol_names, symbol_cnt, name);
+	if (result == -1)
+		return -1;
+
+	/* We don't care about declarations */
+	if (is_declaration(die))
+		return -1;
+
+	/*
+	 * TODO Ensure that the symbol is exported with EXPORT_SYMBOL.
+	 * Otherwise we might find just some other exported symbol!
+	 */
+
+	/* Anything except inlined functions should be external */
+	if (!is_inline(die) && !is_external(die))
+		return -1;
+
+	/* We expect only variables or functions on whitelist */
+	switch (tag) {
+	case (DW_TAG_subprogram):
+		/*
+		 * TODO handle inline functions. They need to be in the right
+		 * header file!
+		 */
+
+		/* TODO DW_AT_prototyped? */
+		break;
+	case DW_TAG_variable:
+		break;
+	case DW_TAG_structure_type:
+		break;
+	default:
+		fail("Symbol %s has unexpected tag: %s!\n", name,
+		    dwarf_tag_string(tag));
+	}
+
+	return result;
+}
+
+/*
  * Walk all DIEs in a CU.
  * Returns true if the given symbol_name was found, otherwise false.
  */
@@ -481,15 +523,11 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 	/* Walk all DIEs in the CU */
 	dwarf_child(cu_die, &child_die);
 	do {
-		const char *name = dwarf_diename(&child_die);
-		int found;
-
-		/* Did we find full definition of our symbol? */
-		found = find_symbol(symbol_names, symbol_cnt, name);
-		if (found != -1 && !is_declaration(&child_die)) {
+		int index = get_symbol_index(&child_die, symbol_names, symbol_cnt);
+		if (index != -1) {
 			/* Print both the CU DIE and symbol DIE */
 			print_die(dbg, NULL, cu_die, &child_die);
-			symbols_found[found] = true;
+			symbols_found[index] = true;
 		}
 	} while (dwarf_siblingof(&child_die, &child_die) == 0);
 }
