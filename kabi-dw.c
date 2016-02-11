@@ -4,12 +4,15 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <dirent.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <assert.h>
-#include <libgen.h>
+#include <libgen.h> /* basename() */
 
 #include <elfutils/libdw.h>
 #include <elfutils/known-dwarf.h>
@@ -492,12 +495,8 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 	} while (dwarf_siblingof(&child_die, &child_die) == 0);
 }
 
-/*
- * Print symbol definition by walking all DIEs in a .debug_info section.
- * Returns true if the definition was printed, otherwise false.
- */
-void print_symbols(char *filepath, char **symbol_names,
-    size_t symbol_cnt) {
+static void process_symbol_file(char *filepath, char **symbol_names,
+    size_t symbol_cnt, bool *symbols_found) {
 	int fd = open(filepath, O_RDONLY);
 	Dwarf *dbg;
 
@@ -521,11 +520,6 @@ void print_symbols(char *filepath, char **symbol_names,
 	Dwarf_Off abbrev;
 	uint8_t addresssize;
 	uint8_t offsetsize;
-	bool *symbols_found = malloc(symbol_cnt * sizeof (bool *));
-	size_t i;
-
-	for (i = 0; i < symbol_cnt; i++)
-		symbols_found[i] = false;
 
 	while (dwarf_next_unit(dbg, off, &off, &hsize, &version, &abbrev,
 	    &addresssize, &offsetsize, NULL, &type_offset) == 0)
@@ -546,6 +540,51 @@ void print_symbols(char *filepath, char **symbol_names,
 		old_off = off;
 	}
 
+	dwarf_end(dbg);
+	close(fd);
+}
+
+static void process_symbol_path(char *path, char **symbol_names,
+    size_t symbol_cnt, bool *symbols_found) {
+	DIR *dir;
+	struct dirent *ent;
+	size_t len;
+	char *filepath;
+
+	if ((dir = opendir(path)) == NULL) {
+		fail("Failed to open module directory %s: %s\n", path,
+		    strerror(errno));
+	}
+
+	/* print all the files and directories within directory */
+	while ((ent = readdir(dir)) != NULL) {
+		printf ("%s\n", ent->d_name);
+		/* TODO HERE */
+	}
+
+	closedir (dir);
+
+	len = strlen(path) + strlen("/vmlinux") + 1;
+	filepath = malloc(len);
+	snprintf(filepath, len, "%s/vmlinux", path);
+	process_symbol_file(filepath, symbol_names, symbol_cnt, symbols_found);
+	free(filepath);
+}
+
+/*
+ * Print symbol definition by walking all DIEs in a .debug_info section.
+ * Returns true if the definition was printed, otherwise false.
+ */
+void generate_symbol_defs(char *path, char **symbol_names,
+    size_t symbol_cnt) {
+	bool *symbols_found = malloc(symbol_cnt * sizeof (bool *));
+	size_t i;
+
+	for (i = 0; i < symbol_cnt; i++)
+		symbols_found[i] = false;
+
+	process_symbol_path(path, symbol_names, symbol_cnt, symbols_found);
+
 	for (i = 0; i < symbol_cnt; i++) {
 		if (symbols_found[i] == false) {
 			printf("%s not found!\n", symbol_names[i]);
@@ -553,6 +592,4 @@ void print_symbols(char *filepath, char **symbol_names,
 	}
 
 	free(symbols_found);
-	dwarf_end(dbg);
-	close(fd);
 }

@@ -17,6 +17,6 @@ static inline void *safe_malloc(size_t size) {
 	return (result);
 }
 
-extern void print_symbols(char *, char **, size_t);
+extern void generate_symbol_defs(char *, char **, size_t);
 
 #endif /* KABI_DW_H_ */

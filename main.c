@@ -125,10 +125,12 @@ static void generate(int argc, char **argv) {
 			    output_dir, strerror(errno));
 		}
 	}
+	if (!S_ISDIR(dirstat.st_mode))
+		fail("Not a directory %s\n", output_dir);
 
 	symbol_names = read_symbols(symbol_file, &symbol_cnt);
 
-	print_symbols(module_dir, symbol_names, symbol_cnt);
+	generate_symbol_defs(module_dir, symbol_names, symbol_cnt);
 }
 
 int main(int argc, char **argv) {
