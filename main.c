@@ -126,7 +126,7 @@ static void generate(int argc, char **argv) {
 		}
 	}
 	if (!S_ISDIR(dirstat.st_mode))
-		fail("Not a directory %s\n", output_dir);
+		fail("Not a directory: %s\n", output_dir);
 
 	symbol_names = read_symbols(symbol_file, &symbol_cnt);
 

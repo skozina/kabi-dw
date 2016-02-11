@@ -1,3 +1,5 @@
+#define	_GNU_SOURCE	/* asprintf() */
+
 #include <dwarf.h>
 #include <inttypes.h>
 #include <libelf.h>
@@ -38,7 +40,6 @@ static char * get_symbol_file(FILE *fout, Dwarf_Die *die) {
 	unsigned int tag = dwarf_tag(die);
 	char *file_prefix = NULL;
 	char *file_name = NULL;
-	size_t output_len;
 
 	switch (tag) {
 	case DW_TAG_subprogram:
@@ -85,11 +86,9 @@ static char * get_symbol_file(FILE *fout, Dwarf_Die *die) {
 	/* We don't expect our name to be empty now */
 	assert(name != NULL);
 
-	output_len = strlen(output_dir) + strlen("/") + strlen(file_prefix) +
-	    strlen(name) + strlen(".txt") + 1;
-	file_name = malloc(output_len);
-	snprintf(file_name, output_len, "%s/%s%s.txt",
-	    output_dir, file_prefix, name);
+	if (asprintf(&file_name, "%s/%s%s.txt", output_dir, file_prefix, name)
+	    == -1)
+		fail("asprintf() failed");
 
 	return file_name;
 }
@@ -544,12 +543,21 @@ static void process_symbol_file(char *filepath, char **symbol_names,
 	close(fd);
 }
 
-static void process_symbol_path(char *path, char **symbol_names,
+static bool all_done(bool *symbols_found, size_t symbol_cnt) {
+	size_t i;
+
+	for (i = 0; i < symbol_cnt; i++) {
+		if (symbols_found[i] == false)
+			return false;
+	}
+
+	return (true);
+}
+
+static void process_symbol_dir(char *path, char **symbol_names,
     size_t symbol_cnt, bool *symbols_found) {
 	DIR *dir;
 	struct dirent *ent;
-	size_t len;
-	char *filepath;
 
 	if ((dir = opendir(path)) == NULL) {
 		fail("Failed to open module directory %s: %s\n", path,
@@ -558,17 +566,40 @@ static void process_symbol_path(char *path, char **symbol_names,
 
 	/* print all the files and directories within directory */
 	while ((ent = readdir(dir)) != NULL) {
-		printf ("%s\n", ent->d_name);
-		/* TODO HERE */
+		struct stat entstat;
+		char *entpath;
+
+		if ((strcmp(ent->d_name, "..") == 0) ||
+		    (strcmp(ent->d_name, ".") == 0))
+			continue;
+
+		if (asprintf(&entpath, "%s/%s", path, ent->d_name) == -1)
+			fail("asprintf() failed");
+
+		if (stat(entpath, &entstat) != 0) {
+			fail("Failed to stat directory %s: %s\n", entpath,
+			    strerror(errno));
+		}
+
+		if (S_ISDIR(entstat.st_mode)) {
+			process_symbol_dir(entpath, symbol_names, symbol_cnt,
+			    symbols_found);
+		} else {
+			assert(S_ISREG(entstat.st_mode));
+
+			printf("Processing %s\n", entpath);
+
+			process_symbol_file(entpath, symbol_names, symbol_cnt,
+			    symbols_found);
+
+			if (all_done(symbols_found, symbol_cnt))
+				break;
+		}
+
+		free(entpath);
 	}
 
 	closedir (dir);
-
-	len = strlen(path) + strlen("/vmlinux") + 1;
-	filepath = malloc(len);
-	snprintf(filepath, len, "%s/vmlinux", path);
-	process_symbol_file(filepath, symbol_names, symbol_cnt, symbols_found);
-	free(filepath);
 }
 
 /*
@@ -583,7 +614,7 @@ void generate_symbol_defs(char *path, char **symbol_names,
 	for (i = 0; i < symbol_cnt; i++)
 		symbols_found[i] = false;
 
-	process_symbol_path(path, symbol_names, symbol_cnt, symbols_found);
+	process_symbol_dir(path, symbol_names, symbol_cnt, symbols_found);
 
 	for (i = 0; i < symbol_cnt; i++) {
 		if (symbols_found[i] == false) {
