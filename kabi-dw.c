@@ -114,6 +114,22 @@ static bool is_external(Dwarf_Die *die) {
 	return true;
 }
 
+/* Check if given DIE was declared as inline */
+static bool is_inline(Dwarf_Die *die) {
+	Dwarf_Attribute attr;
+	Dwarf_Word value;
+
+	if (!dwarf_hasattr(die, DW_AT_inline))
+		return false;
+	(void) dwarf_attr(die, DW_AT_external, &attr);
+	(void) dwarf_formudata(&attr, &value);
+
+	if (value >= DW_INL_declared_not_inlined)
+		return true;
+	else
+		return false;
+}
+
 /* Check if given DIE has DW_AT_external attribute */
 static bool is_declaration(Dwarf_Die *die) {
 	Dwarf_Attribute attr;
@@ -278,8 +294,11 @@ static void print_die_subprogram(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
     Dwarf_Die *die) {
 	const char *name = dwarf_diename(die);
 
-	if (!is_external(die))
-		fail("Function is not external: %s\n", name);
+	/* Non-inlined functions should be exported */
+	if (!is_inline(die) && !is_external(die)) {
+		fprintf(stdout, "WARNING: Function is not external: %s\n",
+		    name);
+	}
 
 	fprintf(fout, "func %s (\n", name);
 	print_subprogram_arguments(dbg, fout, cu_die, die);
@@ -361,8 +380,10 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	case DW_TAG_variable: {
 		fprintf(fout, "var %s ", name);
 
-		if (!is_external(die))
-			fail("Variable is not external: %s\n", name);
+		if (!is_external(die)) {
+			fprintf(stdout, "WARNING: Variable is not external: "
+			    "%s\n", name);
+		}
 		print_die_type(dbg, fout, cu_die, die);
 		break;
 	}
