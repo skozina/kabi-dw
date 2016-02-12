@@ -1,0 +1,6 @@
+cscope.files
+cscope.out
+*.o
+output/*
+.depend
+kabi-dw
