@@ -133,7 +133,7 @@ static bool is_inline(Dwarf_Die *die) {
 }
 
 /*
- * Check if given DIE has DW_AT_external attribute.
+ * Check if given DIE has DW_AT_declaration attribute.
  * That indicates that the symbol is just a declaration, not full definition.
  */
 static bool is_declaration(Dwarf_Die *die) {
@@ -495,7 +495,13 @@ static int get_symbol_index(Dwarf_Die *die, char **symbol_names,
 		 * header file!
 		 */
 
-		/* TODO DW_AT_prototyped? */
+		/*
+		 * We ignore DW_AT_prototyped. This marks functions with
+		 * arguments specified in their declaration which the old
+		 * pre-ANSI C didn't require. Unfortunatelly people still omit
+		 * arguments instead of using foo(void) so we need to handle
+		 * even functions without DW_AT_prototyped. What a pity!
+		 */
 		break;
 	case DW_TAG_variable:
 		break;
