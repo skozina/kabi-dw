@@ -189,7 +189,7 @@ static void print_die_structure(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 		fprintf(fout, "struct {\n");
 
 	if (!dwarf_haschildren(die))
-		return;
+		goto done;
 
 	dwarf_child(die, die);
 	do {
@@ -201,6 +201,7 @@ static void print_die_structure(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 		print_die_struct_member(dbg, fout, cu_die, die, name);
 	} while (dwarf_siblingof(die, die) == 0);
 
+done:
 	fprintf(fout, "}\n");
 }
 
@@ -225,7 +226,7 @@ static void print_die_enumeration(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
 		fprintf(fout, "enum {\n");
 
 	if (!dwarf_haschildren(die))
-		return;
+		goto done;
 
 	dwarf_child(die, die);
 	do {
@@ -233,6 +234,7 @@ static void print_die_enumeration(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
 		print_die_enumerator(dbg, fout, die, name);
 	} while (dwarf_siblingof(die, die) == 0);
 
+done:
 	fprintf(fout, "}\n");
 }
 
@@ -247,7 +249,7 @@ static void print_die_union(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 		fprintf(fout, "union {\n");
 
 	if (!dwarf_haschildren(die))
-		return;
+		goto done;
 
 	dwarf_child(die, die);
 	do {
@@ -260,6 +262,7 @@ static void print_die_union(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 		print_die_type(dbg, fout, cu_die, die);
 	} while (dwarf_siblingof(die, die) == 0);
 
+done:
 	fprintf(fout, "}\n");
 }
 
@@ -338,15 +341,51 @@ static void print_die_array_type(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
 	} while (dwarf_siblingof(die, die) == 0);
 }
 
+static void print_file_line(FILE *fout, Dwarf_Die *cu_die, Dwarf_Die *die) {
+	Dwarf_Files *files;
+	size_t nfiles;
+	Dwarf_Attribute attr;
+	Dwarf_Word line, file;
+	const char *filename;
+
+	if (!dwarf_hasattr(die, DW_AT_decl_line) ||
+	    !dwarf_hasattr(die, DW_AT_decl_file))
+		return;
+		/*
+		fail("DIE missing file or line information: %s\n",
+		    dwarf_diename(die));
+		*/
+
+	(void) dwarf_attr(die, DW_AT_decl_line, &attr);
+	(void) dwarf_formudata(&attr, &line);
+	(void) dwarf_attr(die, DW_AT_decl_file, &attr);
+	(void) dwarf_formudata(&attr, &file);
+
+	if (dwarf_getsrcfiles(cu_die, &files, &nfiles) != 0)
+		fail("cannot get files for CU %s\n", dwarf_diename(cu_die));
+
+	filename = dwarf_filesrc(files, file, NULL, NULL);
+	fprintf(fout, "File %s:%lu\n", filename, line);
+}
+
 static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
     Dwarf_Die *die) {
 	unsigned int tag = dwarf_tag(die);
 	const char *name = dwarf_diename(die);
-	char *file_name = get_symbol_file(parent_file, die);
+	char *file_name;
 	FILE *fout;
 
-	/* Check if we need to redirect output */
-	if (file_name != NULL) {
+	/*
+	 * This is stupid. The type of some fields (eg. struct member as a
+	 * pointer to another struct) can be defined by a mere declaration
+	 * without a full specification of the type.
+	 * In such cases we just print a remote pointer to the full type
+	 * and pray it will be printed in a different occation.
+	 */
+
+	/* Check if we need to redirect output or we have a mere declaration */
+	file_name = get_symbol_file(parent_file, die);
+	if (file_name != NULL || is_declaration(die)) {
 		/* Else set our output to the file */
 		if (parent_file != NULL)
 			fprintf(parent_file, "@%s\n", basename(file_name));
@@ -356,6 +395,14 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 			free(file_name);
 			return;
 		}
+
+		if (is_declaration(die)) {
+			printf("WARNING: Skipping file as we have only "
+			    "declaration: %s\n", basename(file_name));
+			free(file_name);
+			return;
+		}
+
 		printf("Generating %s\n", basename(file_name));
 		fout = open_output_file(file_name);
 		free(file_name);
@@ -363,6 +410,9 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		/* Print the CU die on the first line of each file */
 		if (cu_die != NULL)
 			print_die(dbg, fout, NULL, cu_die);
+
+		/* Then print the source file & line */
+		print_file_line(fout, cu_die, die);
 	} else {
 		fout = parent_file;
 	}
