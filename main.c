@@ -127,13 +127,19 @@ static void check_is_directory(char *dir) {
 static void generate(int argc, char **argv) {
 	char *symbol_file;
 	config_t *conf = safe_malloc(sizeof(*conf));
+	int i = 0;
 
 	parse_generate_opts(argc, argv, conf, &symbol_file, &conf->module_dir);
 	check_is_directory(output_dir);
 	read_symbols(symbol_file, conf);
 
+	conf->symbols_found = malloc(conf->symbol_cnt * sizeof (bool *));
+	for (i = 0; i < conf->symbol_cnt; i++)
+		conf->symbols_found[i] = false;
+
 	generate_symbol_defs(conf);
 
+	free(conf->symbols_found);
 	free(conf);
 }
 

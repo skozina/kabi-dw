@@ -12,11 +12,11 @@
 #include <stdlib.h>
 #include <dirent.h>
 #include <errno.h>
-#include <stdbool.h>
 #include <assert.h>
 #include <libgen.h> /* basename() */
 
 #include <elfutils/libdw.h>
+#include <elfutils/libdwfl.h>
 #include <elfutils/known-dwarf.h>
 
 #include "main.h"
@@ -270,7 +270,6 @@ done:
 static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
     Dwarf_Die *cu_die, Dwarf_Die *die) {
 	Dwarf_Die child_die;
-	int i = 0;
 
 	if (!dwarf_haschildren(die))
 		return;
@@ -282,7 +281,6 @@ static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
 		const char *name = dwarf_diename(&child_die);
 		fprintf(fout, "%s ", name);
 		print_die_type(dbg, fout, cu_die, &child_die);
-		i++;
 	} while ((dwarf_siblingof(&child_die, &child_die) == 0) &&
 	    ((dwarf_tag(&child_die) == DW_TAG_formal_parameter) ||
 	    (dwarf_tag(&child_die) == DW_TAG_unspecified_parameters)));
@@ -567,8 +565,7 @@ static int get_symbol_index(Dwarf_Die *die, config_t *conf) {
  * Walk all DIEs in a CU.
  * Returns true if the given symbol_name was found, otherwise false.
  */
-static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die, config_t *conf,
-    bool *symbols_found) {
+static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die, config_t *conf) {
 	Dwarf_Die child_die;
 
 	if (!dwarf_haschildren(cu_die))
@@ -576,32 +573,21 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die, config_t *conf,
 
 	/* Walk all DIEs in the CU */
 	dwarf_child(cu_die, &child_die);
-	printf("CU name: %s\n", dwarf_diename(cu_die));
 	do {
 		int index = get_symbol_index(&child_die, conf);
 		if (index != -1) {
 			/* Print both the CU DIE and symbol DIE */
 			print_die(dbg, NULL, cu_die, &child_die);
-			symbols_found[index] = true;
+			conf->symbols_found[index] = true;
 		}
 	} while (dwarf_siblingof(&child_die, &child_die) == 0);
 }
 
-static void generate_type_info(char *filepath, config_t *conf,
-    bool *symbols_found) {
-	int fd = open(filepath, O_RDONLY);
-	Dwarf *dbg;
-
-	if (fd < 0) {
-		fail("Error opening file: %s (%s)\n", filepath,
-		    strerror(errno));
-	}
-
-	dbg = dwarf_begin(fd, DWARF_C_READ);
-	if (dbg == NULL) {
-		close(fd);
-		fail("Error opening DWARF: %s\n", filepath);
-	}
+static int dwflmod_generate_cb(Dwfl_Module *dwflmod, void **userdata,
+    const char *name, Dwarf_Addr base, void *arg) {
+	Dwarf_Addr dwbias;
+	Dwarf *dbg = dwfl_module_getdwarf(dwflmod, &dwbias);
+	config_t *conf = (config_t *)arg;
 
 	Dwarf_Off off = 0;
 	Dwarf_Off old_off = 0;
@@ -625,28 +611,44 @@ static void generate_type_info(char *filepath, config_t *conf,
 			fail("dwarf_offdie failed for cu!\n");
 		}
 
-		process_cu_die(dbg, &cu_die, conf, symbols_found);
+		process_cu_die(dbg, &cu_die, conf);
 
 		old_off = off;
 	}
 
-	dwarf_end(dbg);
-	close(fd);
+	return DWARF_CB_OK;
 }
 
-static bool all_done(bool *symbols_found, size_t symbol_cnt) {
+static void generate_type_info(char *filepath, config_t *conf) {
+	static const Dwfl_Callbacks callbacks =
+	{
+		.section_address = dwfl_offline_section_address,
+		.find_debuginfo = dwfl_standard_find_debuginfo
+	};
+	Dwfl *dwfl = dwfl_begin (&callbacks);
+
+	if (dwfl_report_offline (dwfl, filepath, filepath, -1) == NULL) {
+		dwfl_report_end (dwfl, NULL, NULL);
+		fail("dwfl_report_offline failed: %s\n", dwfl_errmsg(-1));
+	}
+	dwfl_report_end (dwfl, NULL, NULL);
+	dwfl_getmodules (dwfl, &dwflmod_generate_cb, conf, 0);
+
+	dwfl_end (dwfl);
+}
+
+static bool all_done(config_t *conf) {
 	size_t i;
 
-	for (i = 0; i < symbol_cnt; i++) {
-		if (symbols_found[i] == false)
+	for (i = 0; i < conf->symbol_cnt; i++) {
+		if (conf->symbols_found[i] == false)
 			return false;
 	}
 
 	return (true);
 }
 
-static void process_symbol_file(char *path, config_t *conf,
-    bool *symbols_found) {
+static void process_symbol_file(char *path, config_t *conf) {
 	char **ksymtab;
 	size_t ksymtab_len;
 
@@ -654,7 +656,7 @@ static void process_symbol_file(char *path, config_t *conf,
 
 	if (ksymtab_len > 0) {
 		printf("Processing %s\n", path);
-		generate_type_info(path, conf, symbols_found);
+		generate_type_info(path, conf);
 	} else {
 		printf("Skip %s (no exported symbols)\n", path);
 	}
@@ -662,8 +664,7 @@ static void process_symbol_file(char *path, config_t *conf,
 	free_ksymtab(ksymtab, ksymtab_len);
 }
 
-static void process_symbol_dir(char *path, config_t *conf,
-    bool *symbols_found) {
+static void process_symbol_dir(char *path, config_t *conf) {
 	DIR *dir;
 	struct dirent *ent;
 
@@ -691,11 +692,10 @@ static void process_symbol_dir(char *path, config_t *conf,
 
 		if (S_ISDIR(entstat.st_mode)) {
 			if (!S_ISLNK(entstat.st_mode))
-				process_symbol_dir(new_path, conf,
-				    symbols_found);
+				process_symbol_dir(new_path, conf);
 		} else if (S_ISREG(entstat.st_mode)) {
-			process_symbol_file(new_path, conf, symbols_found);
-			if (all_done(symbols_found, conf->symbol_cnt))
+			process_symbol_file(new_path, conf);
+			if (all_done(conf))
 				break;
 		}
 		/* Ignore symlinks */
@@ -711,20 +711,14 @@ static void process_symbol_dir(char *path, config_t *conf,
  * Returns true if the definition was printed, otherwise false.
  */
 void generate_symbol_defs(config_t *conf) {
-	bool *symbols_found = malloc(conf->symbol_cnt * sizeof (bool *));
 	size_t i;
 
-	for (i = 0; i < conf->symbol_cnt; i++)
-		symbols_found[i] = false;
-
 	/* Lets walk the normal modules */
-	process_symbol_dir(conf->module_dir, conf, symbols_found);
+	process_symbol_dir(conf->module_dir, conf);
 
 	for (i = 0; i < conf->symbol_cnt; i++) {
-		if (symbols_found[i] == false) {
+		if (conf->symbols_found[i] == false) {
 			printf("%s not found!\n", conf->symbol_names[i]);
 		}
 	}
-
-	free(symbols_found);
 }

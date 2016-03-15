@@ -1,6 +1,8 @@
 #ifndef MAIN_H_
 #define	MAIN_H_
 
+#include <stdbool.h>
+
 #define	DEFAULT_OUTPUT_DIR	"./output"
 #define	MODULE_DIR		"/usr/lib/modules"
 #define	DEBUG_MODULE_DIR	"/usr/lib/debug/lib/modules"
@@ -21,6 +23,7 @@ typedef struct {
 	char *module_dir;
 	char **symbol_names;
 	size_t symbol_cnt;
+	bool *symbols_found;
 } config_t;
 
 #define	fail(m...)	{			\
