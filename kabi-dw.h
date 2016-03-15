@@ -1,22 +1,8 @@
 #ifndef KABI_DW_H_
 #define	KABI_DW_H_
 
-#include <unistd.h>
-#include <stdbool.h>
+#include "main.h"
 
-#define	fail(m...)	{			\
-	fprintf(stderr, "%s():%d ", __func__, __LINE__);	\
-	fprintf(stderr, m);				\
-	exit(1);				\
-}
-
-static inline void *safe_malloc(size_t size) {
-	void *result = malloc(size);
-	if (result == NULL)
-		fail("Malloc of size %zu failed", size);
-	return (result);
-}
-
-extern void generate_symbol_defs(char *, char **, size_t);
+extern void generate_symbol_defs(config_t *);
 
 #endif /* KABI_DW_H_ */

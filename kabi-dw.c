@@ -21,6 +21,7 @@
 
 #include "main.h"
 #include "kabi-dw.h"
+#include "kabi-elf.h"
 
 static void print_die(Dwarf *, FILE *, Dwarf_Die *, Dwarf_Die *);
 
@@ -288,7 +289,6 @@ static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
 }
 
 /* Function pointer */
-/* TODO should function pointers go into their own files? */
 static void print_die_subroutine_type(Dwarf *dbg, FILE *fout,
     Dwarf_Die *cu_die, Dwarf_Die *die) {
 	fprintf(fout, "func %s (\n", dwarf_diename(die));
@@ -493,15 +493,14 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 /*
  * Return the index of symbol in the array or -1 if the symbol was not found.
  */
-static int find_symbol(char **symbol_names, size_t symbol_cnt,
-    const char *name) {
+static int find_symbol(config_t *conf, const char *name) {
 	int i = 0;
 
 	if (name == NULL)
 		return -1;
 
-	for (i = 0; i < symbol_cnt; i++) {
-		if (strcmp(symbol_names[i], name) == 0)
+	for (i = 0; i < conf->symbol_cnt; i++) {
+		if (strcmp(conf->symbol_names[i], name) == 0)
 			return i;
 	}
 
@@ -513,14 +512,13 @@ static int find_symbol(char **symbol_names, size_t symbol_cnt,
  * Returns index into the symbol array if this is symbol to print.
  * Otherwise returns -1.
  */
-static int get_symbol_index(Dwarf_Die *die, char **symbol_names,
-    size_t symbol_cnt) {
+static int get_symbol_index(Dwarf_Die *die, config_t *conf) {
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
 	int result;
 
 	/* Is the name of the symbol one of those requested? */
-	result = find_symbol(symbol_names, symbol_cnt, name);
+	result = find_symbol(conf, name);
 	if (result == -1)
 		return -1;
 
@@ -569,8 +567,8 @@ static int get_symbol_index(Dwarf_Die *die, char **symbol_names,
  * Walk all DIEs in a CU.
  * Returns true if the given symbol_name was found, otherwise false.
  */
-static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
-    char **symbol_names, size_t symbol_cnt, bool *symbols_found) {
+static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die, config_t *conf,
+    bool *symbols_found) {
 	Dwarf_Die child_die;
 
 	if (!dwarf_haschildren(cu_die))
@@ -578,8 +576,9 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 
 	/* Walk all DIEs in the CU */
 	dwarf_child(cu_die, &child_die);
+	printf("CU name: %s\n", dwarf_diename(cu_die));
 	do {
-		int index = get_symbol_index(&child_die, symbol_names, symbol_cnt);
+		int index = get_symbol_index(&child_die, conf);
 		if (index != -1) {
 			/* Print both the CU DIE and symbol DIE */
 			print_die(dbg, NULL, cu_die, &child_die);
@@ -588,8 +587,8 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 	} while (dwarf_siblingof(&child_die, &child_die) == 0);
 }
 
-static void process_symbol_file(char *filepath, char **symbol_names,
-    size_t symbol_cnt, bool *symbols_found) {
+static void generate_type_info(char *filepath, config_t *conf,
+    bool *symbols_found) {
 	int fd = open(filepath, O_RDONLY);
 	Dwarf *dbg;
 
@@ -598,10 +597,9 @@ static void process_symbol_file(char *filepath, char **symbol_names,
 		    strerror(errno));
 	}
 
-	dbg = dwarf_begin (fd, DWARF_C_READ);
-	if (dbg == NULL)
-	{
-		close (fd);
+	dbg = dwarf_begin(fd, DWARF_C_READ);
+	if (dbg == NULL) {
+		close(fd);
 		fail("Error opening DWARF: %s\n", filepath);
 	}
 
@@ -627,8 +625,7 @@ static void process_symbol_file(char *filepath, char **symbol_names,
 			fail("dwarf_offdie failed for cu!\n");
 		}
 
-		process_cu_die(dbg, &cu_die, symbol_names, symbol_cnt,
-		    symbols_found);
+		process_cu_die(dbg, &cu_die, conf, symbols_found);
 
 		old_off = off;
 	}
@@ -648,8 +645,25 @@ static bool all_done(bool *symbols_found, size_t symbol_cnt) {
 	return (true);
 }
 
-static void process_symbol_dir(char *path, char **symbol_names,
-    size_t symbol_cnt, bool *symbols_found) {
+static void process_symbol_file(char *path, config_t *conf,
+    bool *symbols_found) {
+	char **ksymtab;
+	size_t ksymtab_len;
+
+	ksymtab = read_ksymtab(path, &ksymtab_len);
+
+	if (ksymtab_len > 0) {
+		printf("Processing %s\n", path);
+		generate_type_info(path, conf, symbols_found);
+	} else {
+		printf("Skip %s (no exported symbols)\n", path);
+	}
+
+	free_ksymtab(ksymtab, ksymtab_len);
+}
+
+static void process_symbol_dir(char *path, config_t *conf,
+    bool *symbols_found) {
 	DIR *dir;
 	struct dirent *ent;
 
@@ -661,58 +675,54 @@ static void process_symbol_dir(char *path, char **symbol_names,
 	/* print all the files and directories within directory */
 	while ((ent = readdir(dir)) != NULL) {
 		struct stat entstat;
-		char *entpath;
+		char *new_path;
 
 		if ((strcmp(ent->d_name, "..") == 0) ||
 		    (strcmp(ent->d_name, ".") == 0))
 			continue;
 
-		if (asprintf(&entpath, "%s/%s", path, ent->d_name) == -1)
+		if (asprintf(&new_path, "%s/%s", path, ent->d_name) == -1)
 			fail("asprintf() failed");
 
-		if (stat(entpath, &entstat) != 0) {
-			fail("Failed to stat directory %s: %s\n", entpath,
+		if (lstat(new_path, &entstat) != 0) {
+			fail("Failed to stat directory %s: %s\n", new_path,
 			    strerror(errno));
 		}
 
 		if (S_ISDIR(entstat.st_mode)) {
-			process_symbol_dir(entpath, symbol_names, symbol_cnt,
-			    symbols_found);
-		} else {
-			assert(S_ISREG(entstat.st_mode));
-
-			printf("Processing %s\n", entpath);
-
-			process_symbol_file(entpath, symbol_names, symbol_cnt,
-			    symbols_found);
-
-			if (all_done(symbols_found, symbol_cnt))
+			if (!S_ISLNK(entstat.st_mode))
+				process_symbol_dir(new_path, conf,
+				    symbols_found);
+		} else if (S_ISREG(entstat.st_mode)) {
+			process_symbol_file(new_path, conf, symbols_found);
+			if (all_done(symbols_found, conf->symbol_cnt))
 				break;
 		}
+		/* Ignore symlinks */
 
-		free(entpath);
+		free(new_path);
 	}
 
-	closedir (dir);
+	closedir(dir);
 }
 
 /*
  * Print symbol definition by walking all DIEs in a .debug_info section.
  * Returns true if the definition was printed, otherwise false.
  */
-void generate_symbol_defs(char *path, char **symbol_names,
-    size_t symbol_cnt) {
-	bool *symbols_found = malloc(symbol_cnt * sizeof (bool *));
+void generate_symbol_defs(config_t *conf) {
+	bool *symbols_found = malloc(conf->symbol_cnt * sizeof (bool *));
 	size_t i;
 
-	for (i = 0; i < symbol_cnt; i++)
+	for (i = 0; i < conf->symbol_cnt; i++)
 		symbols_found[i] = false;
 
-	process_symbol_dir(path, symbol_names, symbol_cnt, symbols_found);
+	/* Lets walk the normal modules */
+	process_symbol_dir(conf->module_dir, conf, symbols_found);
 
-	for (i = 0; i < symbol_cnt; i++) {
+	for (i = 0; i < conf->symbol_cnt; i++) {
 		if (symbols_found[i] == false) {
-			printf("%s not found!\n", symbol_names[i]);
+			printf("%s not found!\n", conf->symbol_names[i]);
 		}
 	}
 
