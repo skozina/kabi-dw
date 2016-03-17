@@ -491,14 +491,14 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 /*
  * Return the index of symbol in the array or -1 if the symbol was not found.
  */
-static int find_symbol(config_t *conf, const char *name) {
+static int find_symbol(char **symbols, size_t symbol_cnt, const char *name) {
 	int i = 0;
 
 	if (name == NULL)
 		return -1;
 
-	for (i = 0; i < conf->symbol_cnt; i++) {
-		if (strcmp(conf->symbol_names[i], name) == 0)
+	for (i = 0; i < symbol_cnt; i++) {
+		if (strcmp(symbols[i], name) == 0)
 			return i;
 	}
 
@@ -516,7 +516,7 @@ static int get_symbol_index(Dwarf_Die *die, config_t *conf) {
 	int result;
 
 	/* Is the name of the symbol one of those requested? */
-	result = find_symbol(conf, name);
+	result = find_symbol(conf->symbol_names, conf->symbol_cnt, name);
 	if (result == -1)
 		return -1;
 
@@ -524,10 +524,9 @@ static int get_symbol_index(Dwarf_Die *die, config_t *conf) {
 	if (is_declaration(die))
 		return -1;
 
-	/*
-	 * TODO Ensure that the symbol is exported with EXPORT_SYMBOL.
-	 * Otherwise we might find just some other exported symbol!
-	 */
+	/* Is this symbol exported in this module with EXPORT_SYMBOL? */
+	if (find_symbol(conf->ksymtab, conf->ksymtab_len, name) == -1)
+		return -1;
 
 	/* Anything except inlined functions should be external */
 	if (!is_inline(die) && !is_external(die))
@@ -589,6 +588,10 @@ static int dwflmod_generate_cb(Dwfl_Module *dwflmod, void **userdata,
 	Dwarf *dbg = dwfl_module_getdwarf(dwflmod, &dwbias);
 	config_t *conf = (config_t *)arg;
 
+	if (*userdata != NULL)
+		fail("Multiple modules found in %s!\n", name);
+	*userdata = dwflmod;
+
 	Dwarf_Off off = 0;
 	Dwarf_Off old_off = 0;
 	Dwarf_Off type_offset = 0;
@@ -649,19 +652,18 @@ static bool all_done(config_t *conf) {
 }
 
 static void process_symbol_file(char *path, config_t *conf) {
-	char **ksymtab;
-	size_t ksymtab_len;
+	conf->ksymtab = read_ksymtab(path, &conf->ksymtab_len);
 
-	ksymtab = read_ksymtab(path, &ksymtab_len);
-
-	if (ksymtab_len > 0) {
+	if (conf->ksymtab_len > 0) {
 		printf("Processing %s\n", path);
 		generate_type_info(path, conf);
 	} else {
 		printf("Skip %s (no exported symbols)\n", path);
 	}
 
-	free_ksymtab(ksymtab, ksymtab_len);
+	free_ksymtab(conf->ksymtab, conf->ksymtab_len);
+	conf->ksymtab = NULL;
+	conf->ksymtab_len = 0;
 }
 
 static void process_symbol_dir(char *path, config_t *conf) {

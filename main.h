@@ -24,6 +24,8 @@ typedef struct {
 	char **symbol_names;
 	size_t symbol_cnt;
 	bool *symbols_found;
+	char **ksymtab;
+	size_t ksymtab_len;
 } config_t;
 
 #define	fail(m...)	{			\
