@@ -20,7 +20,7 @@ static char *progname;
 
 void usage(void) {
 	printf("Usage:\n"
-	    "\t %s generate -s symbol_file [-o output_dir] module_dir\n"
+	    "\t %s generate [-s symbol_file] [-o output_dir] module_dir\n"
 	    "\t %s check symbols_dir module_dir\n",
 	    progname, progname);
 	exit(1);
@@ -117,9 +117,6 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 		}
 	}
 
-	if (*symbol_file == NULL)
-		usage();
-
 	if (argc != 1)
 		usage();
 
@@ -134,15 +131,20 @@ static void generate(int argc, char **argv) {
 
 	parse_generate_opts(argc, argv, conf, &symbol_file);
 	check_is_directory(output_dir);
-	read_symbols(symbol_file, conf);
 
-	conf->symbols_found = malloc(conf->symbol_cnt * sizeof (bool *));
-	for (i = 0; i < conf->symbol_cnt; i++)
-		conf->symbols_found[i] = false;
+	if (symbol_file != NULL) {
+		read_symbols(symbol_file, conf);
+
+		conf->symbols_found = malloc(conf->symbol_cnt *
+		    sizeof (bool *));
+		for (i = 0; i < conf->symbol_cnt; i++)
+			conf->symbols_found[i] = false;
+	}
 
 	generate_symbol_defs(conf);
 
-	free(conf->symbols_found);
+	if (symbol_file != NULL)
+		free(conf->symbols_found);
 	free(conf);
 }
 

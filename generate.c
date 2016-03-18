@@ -509,12 +509,15 @@ static int find_symbol(char **symbols, size_t symbol_cnt, const char *name) {
 static int get_symbol_index(Dwarf_Die *die, generate_config_t *conf) {
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
-	int result;
+	int result = 0;
 
-	/* Is the name of the symbol one of those requested? */
-	result = find_symbol(conf->symbol_names, conf->symbol_cnt, name);
-	if (result == -1)
-		return (-1);
+	/* If symbol file was provided, is the symbol on the list? */
+	if (conf->symbol_names != NULL) {
+		result = find_symbol(conf->symbol_names, conf->symbol_cnt,
+		    name);
+		if (result == -1)
+			return (-1);
+	}
 
 	/* We don't care about declarations */
 	if (is_declaration(die))
@@ -574,7 +577,8 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 		if (index != -1) {
 			/* Print both the CU DIE and symbol DIE */
 			print_die(dbg, NULL, cu_die, &child_die);
-			conf->symbols_found[index] = true;
+			if (conf->symbol_names != NULL)
+				conf->symbols_found[index] = true;
 		}
 	} while (dwarf_siblingof(&child_die, &child_die) == 0);
 }
@@ -639,6 +643,9 @@ static void generate_type_info(char *filepath, generate_config_t *conf) {
 
 static bool all_done(generate_config_t *conf) {
 	size_t i;
+
+	if (conf->symbol_names == NULL)
+		return (false);
 
 	for (i = 0; i < conf->symbol_cnt; i++) {
 		if (conf->symbols_found[i] == false)

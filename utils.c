@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <assert.h>
 
 #include "utils.h"
 
@@ -21,6 +22,8 @@ void walk_dir(char *path, bool (*cb)(char *, void *), void *arg) {
 	DIR *dir;
 	struct dirent *ent;
 	bool proceed = true;
+
+	assert(path != NULL && strlen(path) >= 1);
 
 	if ((dir = opendir(path)) == NULL) {
 		fail("Failed to open module directory %s: %s\n", path,
@@ -36,8 +39,15 @@ void walk_dir(char *path, bool (*cb)(char *, void *), void *arg) {
 		    (strcmp(ent->d_name, ".") == 0))
 			continue;
 
-		if (asprintf(&new_path, "%s/%s", path, ent->d_name) == -1)
-			fail("asprintf() failed");
+		if (path[strlen(path) - 1] == '/') {
+			if (asprintf(&new_path, "%s%s", path, ent->d_name)
+			    == -1)
+				fail("asprintf() failed");
+		} else {
+			if (asprintf(&new_path, "%s/%s", path, ent->d_name)
+			    == -1)
+				fail("asprintf() failed");
+		}
 
 		if (lstat(new_path, &entstat) != 0) {
 			fail("Failed to stat directory %s: %s\n", new_path,
