@@ -7,10 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include <dirent.h>
 #include <errno.h>
 #include <assert.h>
 #include <libgen.h> /* basename() */
@@ -20,6 +18,7 @@
 #include <elfutils/known-dwarf.h>
 
 #include "main.h"
+#include "utils.h"
 #include "generate.h"
 #include "ksymtab.h"
 
@@ -649,7 +648,8 @@ static bool all_done(generate_config_t *conf) {
 	return (true);
 }
 
-static void process_symbol_file(char *path, generate_config_t *conf) {
+static bool process_symbol_file(char *path, void *arg) {
+	generate_config_t *conf = (generate_config_t *)arg;
 	conf->ksymtab = read_ksymtab(path, &conf->ksymtab_len);
 
 	if (conf->ksymtab_len > 0) {
@@ -662,48 +662,9 @@ static void process_symbol_file(char *path, generate_config_t *conf) {
 	free_ksymtab(conf->ksymtab, conf->ksymtab_len);
 	conf->ksymtab = NULL;
 	conf->ksymtab_len = 0;
-}
-
-static void process_symbol_dir(char *path, generate_config_t *conf) {
-	DIR *dir;
-	struct dirent *ent;
-
-	if ((dir = opendir(path)) == NULL) {
-		fail("Failed to open module directory %s: %s\n", path,
-		    strerror(errno));
-	}
-
-	/* print all the files and directories within directory */
-	while ((ent = readdir(dir)) != NULL) {
-		struct stat entstat;
-		char *new_path;
-
-		if ((strcmp(ent->d_name, "..") == 0) ||
-		    (strcmp(ent->d_name, ".") == 0))
-			continue;
-
-		if (asprintf(&new_path, "%s/%s", path, ent->d_name) == -1)
-			fail("asprintf() failed");
-
-		if (lstat(new_path, &entstat) != 0) {
-			fail("Failed to stat directory %s: %s\n", new_path,
-			    strerror(errno));
-		}
-
-		if (S_ISDIR(entstat.st_mode)) {
-			if (!S_ISLNK(entstat.st_mode))
-				process_symbol_dir(new_path, conf);
-		} else if (S_ISREG(entstat.st_mode)) {
-			process_symbol_file(new_path, conf);
-			if (all_done(conf))
-				break;
-		}
-		/* Ignore symlinks */
-
-		free(new_path);
-	}
-
-	closedir(dir);
+	if (all_done(conf))
+		return (false);
+	return (true);
 }
 
 /*
@@ -714,7 +675,7 @@ void generate_symbol_defs(generate_config_t *conf) {
 	size_t i;
 
 	/* Lets walk the normal modules */
-	process_symbol_dir(conf->module_dir, conf);
+	walk_dir(conf->module_dir, process_symbol_file, conf);
 
 	for (i = 0; i < conf->symbol_cnt; i++) {
 		if (conf->symbols_found[i] == false) {

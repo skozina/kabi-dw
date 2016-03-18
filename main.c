@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -10,6 +11,7 @@
 #include <errno.h>
 
 #include "main.h"
+#include "utils.h"
 #include "generate.h"
 #include "check.h"
 

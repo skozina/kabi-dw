@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <stdbool.h>
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
@@ -11,6 +12,7 @@
 #include <libelf.h>
 #include <gelf.h>
 #include "main.h"
+#include "utils.h"
 
 #define	KSYMTAB_STRINGS	"__ksymtab_strings"
 
