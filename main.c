@@ -20,8 +20,8 @@ static char *progname;
 
 void usage(void) {
 	printf("Usage:\n"
-	    "\t %s generate [-s symbol_file] [-o output_dir] module_dir\n"
-	    "\t %s check symbols_dir module_dir\n",
+	    "\t %s generate [-s symbol_file] [-o kabi_dir] module_dir\n"
+	    "\t %s check [-s symbol_file] kabi_dir module_dir\n",
 	    progname, progname);
 	exit(1);
 }
@@ -43,7 +43,7 @@ static void strip(char *buf) {
 }
 
 /* Get list of symbols to generate. */
-static void read_symbols(char *filename, generate_config_t *conf) {
+static void read_symbols(char *filename, char ***symbolsp, size_t *cntp) {
 	FILE *fp = fopen(filename, "r");
 	char *line = NULL;
 	size_t len = 0;
@@ -75,8 +75,8 @@ static void read_symbols(char *filename, generate_config_t *conf) {
 
 	fclose(fp);
 
-	conf->symbol_cnt = i;
-	conf->symbol_names = symbols;
+	*symbolsp = symbols;
+	*cntp = i;
 }
 
 static void check_is_directory(char *dir) {
@@ -127,15 +127,15 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 static void generate(int argc, char **argv) {
 	char *symbol_file;
 	generate_config_t *conf = safe_malloc(sizeof (*conf));
-	int i = 0;
 
 	parse_generate_opts(argc, argv, conf, &symbol_file);
 	check_is_directory(output_dir);
 
 	if (symbol_file != NULL) {
-		read_symbols(symbol_file, conf);
+		int i;
 
-		conf->symbols_found = malloc(conf->symbol_cnt *
+		read_symbols(symbol_file, &conf->symbols, &conf->symbol_cnt);
+		conf->symbols_found = safe_malloc(conf->symbol_cnt *
 		    sizeof (bool *));
 		for (i = 0; i < conf->symbol_cnt; i++)
 			conf->symbols_found[i] = false;
@@ -148,27 +148,48 @@ static void generate(int argc, char **argv) {
 	free(conf);
 }
 
-static void parse_check_opts(int argc, char **argv, check_config_t *conf) {
+static void parse_check_opts(int argc, char **argv, check_config_t *conf,
+    char **symbol_file) {
+	*symbol_file = NULL;
+
 	while ((argc > 0) && (*argv[0] == '-')) {
-		usage();
+		if (strcmp(*argv, "-s") == 0) {
+			argc--; argv++;
+			if (argc < 1)
+				usage();
+			*symbol_file = argv[0];
+			argc--; argv++;
+		} else {
+			usage();
+		}
 	}
 
 	if (argc != 2)
 		usage();
 
-	conf->symbols_dir = *argv;
+	conf->kabi_dir = *argv;
 	argc--; argv++;
 	conf->module_dir = *argv;
 	argc--; argv++;
 
-	check_is_directory(conf->symbols_dir);
+	check_is_directory(conf->kabi_dir);
 	check_is_directory(conf->module_dir);
+
+	printf("kabi-dir %s\n", conf->kabi_dir);
+	printf("module-dir %s\n", conf->module_dir);
+	printf("output-dir %s\n", output_dir);
+	printf("symbol_file %s\n", *symbol_file);
 }
 
 static void check(int argc, char **argv) {
+	char *symbol_file;
 	check_config_t *conf = safe_malloc(sizeof (*conf));
 
-	parse_check_opts(argc, argv, conf);
+	parse_check_opts(argc, argv, conf, &symbol_file);
+
+	if (symbol_file != NULL)
+		read_symbols(symbol_file, &conf->symbols, &conf->symbol_cnt);
+
 	check_symbol_defs(conf);
 
 	free(conf);

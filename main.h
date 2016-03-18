@@ -19,7 +19,7 @@ extern char *output_dir;
 
 typedef struct {
 	char *module_dir;
-	char **symbol_names;
+	char **symbols;
 	size_t symbol_cnt;
 	bool *symbols_found;
 	char **ksymtab;
@@ -28,7 +28,9 @@ typedef struct {
 
 typedef struct {
 	char *module_dir;
-	char *symbols_dir;
+	char *kabi_dir;
+	char **symbols;
+	size_t symbol_cnt;
 } check_config_t;
 
 #endif /* MAIN_H_ */

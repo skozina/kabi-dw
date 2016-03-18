@@ -88,7 +88,7 @@ static char * get_symbol_file(FILE *fout, Dwarf_Die *die) {
 
 	if (asprintf(&file_name, "%s/%s%s.txt", output_dir, file_prefix, name)
 	    == -1)
-		fail("asprintf() failed");
+		fail("asprintf() failed\n");
 
 	return (file_name);
 }
@@ -512,8 +512,8 @@ static int get_symbol_index(Dwarf_Die *die, generate_config_t *conf) {
 	int result = 0;
 
 	/* If symbol file was provided, is the symbol on the list? */
-	if (conf->symbol_names != NULL) {
-		result = find_symbol(conf->symbol_names, conf->symbol_cnt,
+	if (conf->symbols != NULL) {
+		result = find_symbol(conf->symbols, conf->symbol_cnt,
 		    name);
 		if (result == -1)
 			return (-1);
@@ -577,7 +577,7 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 		if (index != -1) {
 			/* Print both the CU DIE and symbol DIE */
 			print_die(dbg, NULL, cu_die, &child_die);
-			if (conf->symbol_names != NULL)
+			if (conf->symbols != NULL)
 				conf->symbols_found[index] = true;
 		}
 	} while (dwarf_siblingof(&child_die, &child_die) == 0);
@@ -644,7 +644,7 @@ static void generate_type_info(char *filepath, generate_config_t *conf) {
 static bool all_done(generate_config_t *conf) {
 	size_t i;
 
-	if (conf->symbol_names == NULL)
+	if (conf->symbols == NULL)
 		return (false);
 
 	for (i = 0; i < conf->symbol_cnt; i++) {
@@ -686,7 +686,7 @@ void generate_symbol_defs(generate_config_t *conf) {
 
 	for (i = 0; i < conf->symbol_cnt; i++) {
 		if (conf->symbols_found[i] == false) {
-			printf("%s not found!\n", conf->symbol_names[i]);
+			printf("%s not found!\n", conf->symbols[i]);
 		}
 	}
 }
