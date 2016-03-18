@@ -3,6 +3,6 @@
 
 #include "main.h"
 
-extern void generate_symbol_defs(config_t *);
+extern void generate_symbol_defs(generate_config_t *);
 
 #endif /* KABI_DW_H_ */

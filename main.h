@@ -26,7 +26,12 @@ typedef struct {
 	bool *symbols_found;
 	char **ksymtab;
 	size_t ksymtab_len;
-} config_t;
+} generate_config_t;
+
+typedef struct {
+	char *module_dir;
+	char *symbols_dir;
+} check_config_t;
 
 #define	fail(m...)	{			\
 	fprintf(stderr, "%s():%d ", __func__, __LINE__);	\

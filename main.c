@@ -16,12 +16,14 @@ char *output_dir = DEFAULT_OUTPUT_DIR;
 static char *progname;
 
 void usage(void) {
-	printf("Usage:\n\t %s generate -s symbol_file [-o output_dir] "
-	    "module_dir\n", progname);
+	printf("Usage:\n"
+	    "\t %s generate -s symbol_file [-o output_dir] module_dir\n"
+	    "\t %s check symbols_dir module_dir\n",
+	    progname, progname);
 	exit(1);
 }
 
-#define WHITESPACE	" \t\n"
+#define	WHITESPACE	" \t\n"
 
 /* Remove white characters from given buffer */
 static void strip(char *buf) {
@@ -38,12 +40,12 @@ static void strip(char *buf) {
 }
 
 /* Get list of symbols to generate. */
-static void read_symbols(char *filename, config_t *conf) {
+static void read_symbols(char *filename, generate_config_t *conf) {
 	FILE *fp = fopen(filename, "r");
 	char *line = NULL;
 	size_t len = 0;
 	size_t symbols_len = DEFAULT_BUFSIZE;
-	char **symbols = safe_malloc(symbols_len * sizeof(*symbols));
+	char **symbols = safe_malloc(symbols_len * sizeof (*symbols));
 	size_t i = 0;
 
 	if (fp == NULL)
@@ -53,7 +55,7 @@ static void read_symbols(char *filename, config_t *conf) {
 		if (i == symbols_len) {
 			symbols_len *= 2;
 			symbols = realloc(symbols,
-			    symbols_len * sizeof(*symbols));
+			    symbols_len * sizeof (*symbols));
 		}
 		symbols[i] = line;
 		strip(symbols[i]);
@@ -74,10 +76,25 @@ static void read_symbols(char *filename, config_t *conf) {
 	conf->symbol_names = symbols;
 }
 
-static void parse_generate_opts(int argc, char **argv, config_t *conf,
-    char **symbol_file, char **module_dir) {
+static void check_is_directory(char *dir) {
+	struct stat dirstat;
+
+	if (stat(dir, &dirstat) != 0) {
+		if (errno == ENOENT) {
+			fail("Module directory %s does not exist!\n", dir);
+		} else {
+			fail("Failed to stat() directory %s: %s\n", dir,
+			    strerror(errno));
+		}
+	}
+
+	if (!S_ISDIR(dirstat.st_mode))
+		fail("Not a directory: %s\n", dir);
+}
+
+static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
+    char **symbol_file) {
 	*symbol_file = NULL;
-	*module_dir = NULL;
 
 	while ((argc > 0) && (*argv[0] == '-')) {
 		if (strcmp(*argv, "-o") == 0) {
@@ -92,6 +109,8 @@ static void parse_generate_opts(int argc, char **argv, config_t *conf,
 				usage();
 			*symbol_file = argv[0];
 			argc--; argv++;
+		} else {
+			usage();
 		}
 	}
 
@@ -101,35 +120,16 @@ static void parse_generate_opts(int argc, char **argv, config_t *conf,
 	if (argc != 1)
 		usage();
 
-	*module_dir = argv[0];
+	conf->module_dir = argv[0];
 	argc--; argv++;
-
-	if (*module_dir == NULL)
-		usage();
-}
-
-static void check_is_directory(char *dir) {
-	struct stat dirstat;
-
-	if (stat(dir, &dirstat) != 0) {
-		if (errno == ENOENT) {
-			fail("Module directory %s does not exist!\n", dir);
-		} else {
-			fail("Failed to stat() directory %s: %s\n", dir,
-			     strerror(errno));
-		}
-	}
-
-	if (!S_ISDIR(dirstat.st_mode))
-		fail("Not a directory: %s\n", dir);
 }
 
 static void generate(int argc, char **argv) {
 	char *symbol_file;
-	config_t *conf = safe_malloc(sizeof(*conf));
+	generate_config_t *conf = safe_malloc(sizeof (*conf));
 	int i = 0;
 
-	parse_generate_opts(argc, argv, conf, &symbol_file, &conf->module_dir);
+	parse_generate_opts(argc, argv, conf, &symbol_file);
 	check_is_directory(output_dir);
 	read_symbols(symbol_file, conf);
 
@@ -140,6 +140,31 @@ static void generate(int argc, char **argv) {
 	generate_symbol_defs(conf);
 
 	free(conf->symbols_found);
+	free(conf);
+}
+
+static void parse_check_opts(int argc, char **argv, check_config_t *conf) {
+	while ((argc > 0) && (*argv[0] == '-')) {
+		usage();
+	}
+
+	if (argc != 2)
+		usage();
+
+	conf->symbols_dir = *argv;
+	argc--; argv++;
+	conf->module_dir = *argv;
+	argc--; argv++;
+
+	check_is_directory(conf->symbols_dir);
+	check_is_directory(conf->module_dir);
+}
+
+static void check(int argc, char **argv) {
+	check_config_t *conf = safe_malloc(sizeof (*conf));
+
+	parse_check_opts(argc, argv, conf);
+
 	free(conf);
 }
 
@@ -154,6 +179,9 @@ int main(int argc, char **argv) {
 	if (strcmp(argv[0], "generate") == 0) {
 		argv++; argc--;
 		generate(argc, argv);
+	} else if (strcmp(argv[0], "check") == 0) {
+		argv++; argc--;
+		check(argc, argv);
 	} else {
 		usage();
 	}

@@ -25,14 +25,14 @@
 
 static void print_die(Dwarf *, FILE *, Dwarf_Die *, Dwarf_Die *);
 
-static const char * dwarf_tag_string (unsigned int tag) {
+static const char * dwarf_tag_string(unsigned int tag) {
 	switch (tag)
 	{
-#define DWARF_ONE_KNOWN_DW_TAG(NAME, CODE) case CODE: return #NAME;
+#define	DWARF_ONE_KNOWN_DW_TAG(NAME, CODE) case CODE: return #NAME;
 		DWARF_ALL_KNOWN_DW_TAG
 #undef DWARF_ONE_KNOWN_DW_TAG
 		default:
-			return NULL;
+			return (NULL);
 	}
 }
 
@@ -57,7 +57,7 @@ static char * get_symbol_file(FILE *fout, Dwarf_Die *die) {
 		if (name != NULL) {
 			file_prefix = ENUM_FILE;
 		} else {
-			return NULL;
+			return (NULL);
 		}
 		break;
 	case DW_TAG_structure_type:
@@ -65,7 +65,7 @@ static char * get_symbol_file(FILE *fout, Dwarf_Die *die) {
 		if (name != NULL) {
 			file_prefix = STRUCT_FILE;
 		} else {
-			return NULL;
+			return (NULL);
 		}
 		break;
 	case DW_TAG_union_type:
@@ -76,12 +76,12 @@ static char * get_symbol_file(FILE *fout, Dwarf_Die *die) {
 		if (name != NULL) {
 			file_prefix = UNION_FILE;
 		} else {
-			return NULL;
+			return (NULL);
 		}
 		break;
 	default:
 		/* No need to redirect output for other types */
-		return NULL;
+		return (NULL);
 	}
 
 	/* We don't expect our name to be empty now */
@@ -91,7 +91,7 @@ static char * get_symbol_file(FILE *fout, Dwarf_Die *die) {
 	    == -1)
 		fail("asprintf() failed");
 
-	return file_name;
+	return (file_name);
 }
 
 static FILE * open_output_file(char *file_name) {
@@ -102,7 +102,7 @@ static FILE * open_output_file(char *file_name) {
 		fail("Failed to open file %s: %s\n", file_name,
 		    strerror(errno));
 
-	return file;
+	return (file);
 }
 
 /* Check if given DIE has DW_AT_external attribute */
@@ -110,11 +110,11 @@ static bool is_external(Dwarf_Die *die) {
 	Dwarf_Attribute attr;
 
 	if (!dwarf_hasattr(die, DW_AT_external))
-		return false;
+		return (false);
 	(void) dwarf_attr(die, DW_AT_external, &attr);
 	if (!dwarf_hasform(&attr, DW_FORM_flag_present))
-		return false;
-	return true;
+		return (false);
+	return (true);
 }
 
 /* Check if given DIE was declared as inline */
@@ -123,14 +123,14 @@ static bool is_inline(Dwarf_Die *die) {
 	Dwarf_Word value;
 
 	if (!dwarf_hasattr(die, DW_AT_inline))
-		return false;
+		return (false);
 	(void) dwarf_attr(die, DW_AT_external, &attr);
 	(void) dwarf_formudata(&attr, &value);
 
 	if (value >= DW_INL_declared_not_inlined)
-		return true;
+		return (true);
 	else
-		return false;
+		return (false);
 }
 
 /*
@@ -141,11 +141,11 @@ static bool is_declaration(Dwarf_Die *die) {
 	Dwarf_Attribute attr;
 
 	if (!dwarf_hasattr(die, DW_AT_declaration))
-		return false;
+		return (false);
 	(void) dwarf_attr(die, DW_AT_declaration, &attr);
 	if (!dwarf_hasform(&attr, DW_FORM_flag_present))
-		return false;
-	return true;
+		return (false);
+	return (true);
 }
 
 static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
@@ -348,11 +348,8 @@ static void print_file_line(FILE *fout, Dwarf_Die *cu_die, Dwarf_Die *die) {
 
 	if (!dwarf_hasattr(die, DW_AT_decl_line) ||
 	    !dwarf_hasattr(die, DW_AT_decl_file))
-		return;
-		/*
 		fail("DIE missing file or line information: %s\n",
 		    dwarf_diename(die));
-		*/
 
 	(void) dwarf_attr(die, DW_AT_decl_line, &attr);
 	(void) dwarf_formudata(&attr, &line);
@@ -495,14 +492,14 @@ static int find_symbol(char **symbols, size_t symbol_cnt, const char *name) {
 	int i = 0;
 
 	if (name == NULL)
-		return -1;
+		return (-1);
 
 	for (i = 0; i < symbol_cnt; i++) {
 		if (strcmp(symbols[i], name) == 0)
-			return i;
+			return (i);
 	}
 
-	return -1;
+	return (-1);
 }
 
 /*
@@ -510,7 +507,7 @@ static int find_symbol(char **symbols, size_t symbol_cnt, const char *name) {
  * Returns index into the symbol array if this is symbol to print.
  * Otherwise returns -1.
  */
-static int get_symbol_index(Dwarf_Die *die, config_t *conf) {
+static int get_symbol_index(Dwarf_Die *die, generate_config_t *conf) {
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
 	int result;
@@ -518,19 +515,19 @@ static int get_symbol_index(Dwarf_Die *die, config_t *conf) {
 	/* Is the name of the symbol one of those requested? */
 	result = find_symbol(conf->symbol_names, conf->symbol_cnt, name);
 	if (result == -1)
-		return -1;
+		return (-1);
 
 	/* We don't care about declarations */
 	if (is_declaration(die))
-		return -1;
+		return (-1);
 
 	/* Is this symbol exported in this module with EXPORT_SYMBOL? */
 	if (find_symbol(conf->ksymtab, conf->ksymtab_len, name) == -1)
-		return -1;
+		return (-1);
 
 	/* Anything except inlined functions should be external */
 	if (!is_inline(die) && !is_external(die))
-		return -1;
+		return (-1);
 
 	/* We expect only variables or functions on whitelist */
 	switch (tag) {
@@ -557,14 +554,15 @@ static int get_symbol_index(Dwarf_Die *die, config_t *conf) {
 		    dwarf_tag_string(tag));
 	}
 
-	return result;
+	return (result);
 }
 
 /*
  * Walk all DIEs in a CU.
  * Returns true if the given symbol_name was found, otherwise false.
  */
-static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die, config_t *conf) {
+static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
+    generate_config_t *conf) {
 	Dwarf_Die child_die;
 
 	if (!dwarf_haschildren(cu_die))
@@ -586,7 +584,7 @@ static int dwflmod_generate_cb(Dwfl_Module *dwflmod, void **userdata,
     const char *name, Dwarf_Addr base, void *arg) {
 	Dwarf_Addr dwbias;
 	Dwarf *dbg = dwfl_module_getdwarf(dwflmod, &dwbias);
-	config_t *conf = (config_t *)arg;
+	generate_config_t *conf = (generate_config_t *)arg;
 
 	if (*userdata != NULL)
 		fail("Multiple modules found in %s!\n", name);
@@ -619,39 +617,39 @@ static int dwflmod_generate_cb(Dwfl_Module *dwflmod, void **userdata,
 		old_off = off;
 	}
 
-	return DWARF_CB_OK;
+	return (DWARF_CB_OK);
 }
 
-static void generate_type_info(char *filepath, config_t *conf) {
+static void generate_type_info(char *filepath, generate_config_t *conf) {
 	static const Dwfl_Callbacks callbacks =
 	{
 		.section_address = dwfl_offline_section_address,
 		.find_debuginfo = dwfl_standard_find_debuginfo
 	};
-	Dwfl *dwfl = dwfl_begin (&callbacks);
+	Dwfl *dwfl = dwfl_begin(&callbacks);
 
-	if (dwfl_report_offline (dwfl, filepath, filepath, -1) == NULL) {
-		dwfl_report_end (dwfl, NULL, NULL);
+	if (dwfl_report_offline(dwfl, filepath, filepath, -1) == NULL) {
+		dwfl_report_end(dwfl, NULL, NULL);
 		fail("dwfl_report_offline failed: %s\n", dwfl_errmsg(-1));
 	}
-	dwfl_report_end (dwfl, NULL, NULL);
-	dwfl_getmodules (dwfl, &dwflmod_generate_cb, conf, 0);
+	dwfl_report_end(dwfl, NULL, NULL);
+	dwfl_getmodules(dwfl, &dwflmod_generate_cb, conf, 0);
 
-	dwfl_end (dwfl);
+	dwfl_end(dwfl);
 }
 
-static bool all_done(config_t *conf) {
+static bool all_done(generate_config_t *conf) {
 	size_t i;
 
 	for (i = 0; i < conf->symbol_cnt; i++) {
 		if (conf->symbols_found[i] == false)
-			return false;
+			return (false);
 	}
 
 	return (true);
 }
 
-static void process_symbol_file(char *path, config_t *conf) {
+static void process_symbol_file(char *path, generate_config_t *conf) {
 	conf->ksymtab = read_ksymtab(path, &conf->ksymtab_len);
 
 	if (conf->ksymtab_len > 0) {
@@ -666,7 +664,7 @@ static void process_symbol_file(char *path, config_t *conf) {
 	conf->ksymtab_len = 0;
 }
 
-static void process_symbol_dir(char *path, config_t *conf) {
+static void process_symbol_dir(char *path, generate_config_t *conf) {
 	DIR *dir;
 	struct dirent *ent;
 
@@ -712,7 +710,7 @@ static void process_symbol_dir(char *path, config_t *conf) {
  * Print symbol definition by walking all DIEs in a .debug_info section.
  * Returns true if the definition was printed, otherwise false.
  */
-void generate_symbol_defs(config_t *conf) {
+void generate_symbol_defs(generate_config_t *conf) {
 	size_t i;
 
 	/* Lets walk the normal modules */

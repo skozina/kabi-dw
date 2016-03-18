@@ -34,9 +34,9 @@ static char **print_section(Elf *elf, Elf_Scn *scn, size_t *symbol_cnt) {
 	size_t size = 0, i = 0;
 
 	ksymtab_len = DEFAULT_BUFSIZE;
-	ksymtab = safe_malloc(ksymtab_len * sizeof(*ksymtab));
+	ksymtab = safe_malloc(ksymtab_len * sizeof (*ksymtab));
 
-	if (gelf_getshdr(scn , &shdr) != &shdr)
+	if (gelf_getshdr(scn, &shdr) != &shdr)
 		fail("getshdr() failed: %s\n", elf_errmsg(-1));
 
 	data = elf_getdata(scn, NULL);
@@ -63,7 +63,7 @@ static char **print_section(Elf *elf, Elf_Scn *scn, size_t *symbol_cnt) {
 			if (i == ksymtab_len) {
 				ksymtab_len *= 2;
 				ksymtab = realloc(ksymtab,
-				    ksymtab_len * sizeof(*ksymtab));
+				    ksymtab_len * sizeof (*ksymtab));
 			}
 
 			ksymtab[i] = safe_malloc(len + 1);
@@ -75,7 +75,7 @@ static char **print_section(Elf *elf, Elf_Scn *scn, size_t *symbol_cnt) {
 	}
 
 	*symbol_cnt = i;
-	return ksymtab;
+	return (ksymtab);
 }
 
 /* Build list of exported symbols, ie. read seciton __ksymtab_strings */
@@ -96,11 +96,11 @@ char **read_ksymtab(char *filename, size_t *ksymtab_len) {
 	if (elf_version(EV_CURRENT) == EV_NONE)
 		fail("elf_version() failed: %s\n", elf_errmsg(-1));
 
-	if ((fd = open(filename, O_RDONLY , 0)) < 0)
+	if ((fd = open(filename, O_RDONLY, 0)) < 0)
 		fail("Failed to open file %s: %s\n", filename,
 		    strerror(errno));
 
-	if ((elf = elf_begin(fd, ELF_C_READ , NULL)) == NULL)
+	if ((elf = elf_begin(fd, ELF_C_READ, NULL)) == NULL)
 		fail("elf_begin() failed: %s\n", elf_errmsg(-1));
 
 	if ((ek = elf_kind(elf) != ELF_K_ELF))
@@ -121,7 +121,7 @@ char **read_ksymtab(char *filename, size_t *ksymtab_len) {
 
 	scn = elf_nextscn(elf, NULL);
 	for (; scn != NULL; scn = elf_nextscn(elf, scn)) {
-		if (gelf_getshdr(scn , &shdr) != &shdr)
+		if (gelf_getshdr(scn, &shdr) != &shdr)
 			fail("getshdr() failed: %s\n", elf_errmsg(-1));
 		if ((name = elf_strptr(elf, shstrndx, shdr.sh_name)) == NULL)
 			fail("elf_strptr() failed: %s\n", elf_errmsg(-1));
