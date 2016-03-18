@@ -10,7 +10,7 @@
 #include <errno.h>
 
 #include "main.h"
-#include "kabi-dw.h"
+#include "generate.h"
 
 char *output_dir = DEFAULT_OUTPUT_DIR;
 static char *progname;

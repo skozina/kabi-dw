@@ -20,8 +20,8 @@
 #include <elfutils/known-dwarf.h>
 
 #include "main.h"
-#include "kabi-dw.h"
-#include "kabi-elf.h"
+#include "generate.h"
+#include "ksymtab.h"
 
 static void print_die(Dwarf *, FILE *, Dwarf_Die *, Dwarf_Die *);
 
