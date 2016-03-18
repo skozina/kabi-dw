@@ -1,5 +1,5 @@
 PROG=kabi-dw
-SRCS=generate.c ksymtab.c main.c
+SRCS=generate.c ksymtab.c check.c main.c
 
 CC=gcc
 CFLAGS=-Wall -O0 -g --std=c99 -c

@@ -11,6 +11,7 @@
 
 #include "main.h"
 #include "generate.h"
+#include "check.h"
 
 char *output_dir = DEFAULT_OUTPUT_DIR;
 static char *progname;
@@ -164,6 +165,7 @@ static void check(int argc, char **argv) {
 	check_config_t *conf = safe_malloc(sizeof (*conf));
 
 	parse_check_opts(argc, argv, conf);
+	check_symbol_defs(conf);
 
 	free(conf);
 }
