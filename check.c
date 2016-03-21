@@ -23,11 +23,10 @@ bool check_symbol_file(char *path, void *arg) {
 	return (true);
 }
 
-void generate_new_defs(char *output, check_config_t *conf) {
+void generate_new_defs(char *temp_kabi_dir, check_config_t *conf) {
 	generate_config_t *gen_conf = safe_malloc(sizeof (*gen_conf));
 
-	/* TODO move output_dir to generate_config_t */
-	output_dir = output;
+	gen_conf->kabi_dir = temp_kabi_dir;
 	gen_conf->verbose = false;
 	gen_conf->module_dir = conf->module_dir;
 	gen_conf->symbols = conf->symbols;

@@ -36,7 +36,8 @@ static const char * dwarf_tag_string(unsigned int tag) {
 	}
 }
 
-static char * get_symbol_file(FILE *fout, Dwarf_Die *die) {
+static char * get_symbol_file(FILE *fout, Dwarf_Die *die,
+     generate_config_t *conf) {
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
 	char *file_prefix = NULL;
@@ -87,8 +88,8 @@ static char * get_symbol_file(FILE *fout, Dwarf_Die *die) {
 	/* We don't expect our name to be empty now */
 	assert(name != NULL);
 
-	if (asprintf(&file_name, "%s/%s%s.txt", output_dir, file_prefix, name)
-	    == -1)
+	if (asprintf(&file_name, "%s/%s%s.txt", conf->kabi_dir, file_prefix,
+	    name) == -1)
 		fail("asprintf() failed\n");
 
 	return (file_name);
@@ -379,7 +380,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	 */
 
 	/* Check if we need to redirect output or we have a mere declaration */
-	file_name = get_symbol_file(parent_file, die);
+	file_name = get_symbol_file(parent_file, die, conf);
 	if (file_name != NULL || is_declaration(die)) {
 		/* Else set our output to the file */
 		if (parent_file != NULL)

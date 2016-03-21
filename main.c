@@ -15,7 +15,6 @@
 #include "generate.h"
 #include "check.h"
 
-char *output_dir = DEFAULT_OUTPUT_DIR;
 static char *progname;
 
 void usage(void) {
@@ -99,6 +98,7 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
     char **symbol_file) {
 	*symbol_file = NULL;
 	conf->verbose = false;
+	conf->kabi_dir = DEFAULT_OUTPUT_DIR;
 
 	while ((argc > 0) && (*argv[0] == '-')) {
 		if (strcmp(*argv, "-v") == 0) {
@@ -108,7 +108,7 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 			argc--; argv++;
 			if (argc < 1)
 				usage();
-			output_dir = argv[0];
+			conf->kabi_dir = argv[0];
 			argc--; argv++;
 		} else if (strcmp(*argv, "-s") == 0) {
 			argc--; argv++;
@@ -133,7 +133,7 @@ static void generate(int argc, char **argv) {
 	generate_config_t *conf = safe_malloc(sizeof (*conf));
 
 	parse_generate_opts(argc, argv, conf, &symbol_file);
-	check_is_directory(output_dir);
+	check_is_directory(conf->kabi_dir);
 
 	if (symbol_file != NULL) {
 		int i;

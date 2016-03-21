@@ -15,11 +15,10 @@
 #define	ENUM_FILE	"enum--"
 #define	VAR_FILE	"var--"
 
-extern char *output_dir;
-
 typedef struct {
 	bool verbose;
 	char *module_dir;
+	char *kabi_dir;
 	char **symbols;
 	size_t symbol_cnt;
 	bool *symbols_found;
