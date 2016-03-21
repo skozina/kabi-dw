@@ -37,7 +37,7 @@ static const char * dwarf_tag_string(unsigned int tag) {
 }
 
 static char * get_symbol_file(FILE *fout, Dwarf_Die *die,
-     generate_config_t *conf) {
+    generate_config_t *conf) {
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
 	char *file_prefix = NULL;

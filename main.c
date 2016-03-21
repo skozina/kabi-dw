@@ -1,4 +1,3 @@
-#define	_GNU_SOURCE	/* asprintf() */
 #define	_POSIX_C_SOURCE 200809L /* getline() */
 
 #include <stdio.h>

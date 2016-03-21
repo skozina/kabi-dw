@@ -17,21 +17,22 @@
 
 typedef struct {
 	bool verbose;
-	char *module_dir;
-	char *kabi_dir;
-	char **symbols;
+	char *module_dir; /* Path to  the kernel modules to process */
+	char *kabi_dir; /* Where to put the output */
+	char **symbols; /* List of symbols to generate */
 	size_t symbol_cnt;
 	bool *symbols_found;
-	char **ksymtab;
+	char **ksymtab; /* ksymtab of the current kernel module */
 	size_t ksymtab_len;
 } generate_config_t;
 
 typedef struct {
 	bool verbose;
-	char *module_dir;
-	char *kabi_dir;
-	char **symbols;
+	char *module_dir; /* Path to the kernel modules to check */
+	char *kabi_dir; /* Path to the stored kabi information */
+	char **symbols; /* List of symbols used to generate the info as hint */
 	size_t symbol_cnt;
+	char *temp_kabi_dir; /* Temporary directory to store the new kabi */
 } check_config_t;
 
 #endif /* MAIN_H_ */
