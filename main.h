@@ -18,6 +18,7 @@
 extern char *output_dir;
 
 typedef struct {
+	bool verbose;
 	char *module_dir;
 	char **symbols;
 	size_t symbol_cnt;
@@ -27,6 +28,7 @@ typedef struct {
 } generate_config_t;
 
 typedef struct {
+	bool verbose;
 	char *module_dir;
 	char *kabi_dir;
 	char **symbols;

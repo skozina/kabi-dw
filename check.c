@@ -17,7 +17,8 @@ bool check_symbol_file(char *path, void *arg) {
 	check_config_t *conf = (check_config_t *)arg;
 	char *filename = path + strlen(conf->kabi_dir);
 
-	printf("Checking %s\n", filename);
+	if (conf->verbose)
+		printf("Checking %s\n", filename);
 
 	return (true);
 }
@@ -27,6 +28,7 @@ void generate_new_defs(char *output, check_config_t *conf) {
 
 	/* TODO move output_dir to generate_config_t */
 	output_dir = output;
+	gen_conf->verbose = false;
 	gen_conf->module_dir = conf->module_dir;
 	gen_conf->symbols = conf->symbols;
 	gen_conf->symbol_cnt = conf->symbol_cnt;
@@ -39,7 +41,6 @@ void generate_new_defs(char *output, check_config_t *conf) {
 			gen_conf->symbols_found[i] = false;
 	}
 
-	/* TODO redirect fd 1 to /dev/null */
 	generate_symbol_defs(gen_conf);
 
 	if (conf->symbols != NULL)
@@ -59,11 +60,14 @@ static bool remove_file(char *path, void *arg) {
 void check_symbol_defs(check_config_t *conf) {
 	char *temp_dir = safe_malloc(strlen(TMP_DIR) + 1);
 
+	printf("Comparing symbols defs of %s with %s...\n", conf->module_dir,
+	    conf->kabi_dir);
+
 	strncpy(temp_dir, TMP_DIR, strlen(TMP_DIR) + 1);
 	if (mkdtemp(temp_dir) == NULL)
 		fail("mkdtemp failed: %s\n", strerror(errno));
 
-	printf("Created temp dir: %s\n", temp_dir);
+	printf("Working directory: %s\n", temp_dir);
 
 	generate_new_defs(temp_dir, conf);
 	walk_dir(conf->kabi_dir, check_symbol_file, conf);

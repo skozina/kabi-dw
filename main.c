@@ -20,8 +20,8 @@ static char *progname;
 
 void usage(void) {
 	printf("Usage:\n"
-	    "\t %s generate [-s symbol_file] [-o kabi_dir] module_dir\n"
-	    "\t %s check [-s symbol_file] kabi_dir module_dir\n",
+	    "\t %s generate [-v] [-s symbol_file] [-o kabi_dir] module_dir\n"
+	    "\t %s check [-v] [-s symbol_file] kabi_dir module_dir\n",
 	    progname, progname);
 	exit(1);
 }
@@ -98,9 +98,13 @@ static void check_is_directory(char *dir) {
 static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
     char **symbol_file) {
 	*symbol_file = NULL;
+	conf->verbose = false;
 
 	while ((argc > 0) && (*argv[0] == '-')) {
-		if (strcmp(*argv, "-o") == 0) {
+		if (strcmp(*argv, "-v") == 0) {
+			argc--; argv++;
+			conf->verbose = true;
+		} else if (strcmp(*argv, "-o") == 0) {
 			argc--; argv++;
 			if (argc < 1)
 				usage();
@@ -151,9 +155,13 @@ static void generate(int argc, char **argv) {
 static void parse_check_opts(int argc, char **argv, check_config_t *conf,
     char **symbol_file) {
 	*symbol_file = NULL;
+	conf->verbose = false;
 
 	while ((argc > 0) && (*argv[0] == '-')) {
-		if (strcmp(*argv, "-s") == 0) {
+		if (strcmp(*argv, "-v") == 0) {
+			argc--; argv++;
+			conf->verbose = true;
+		} else if (strcmp(*argv, "-s") == 0) {
 			argc--; argv++;
 			if (argc < 1)
 				usage();
@@ -174,11 +182,6 @@ static void parse_check_opts(int argc, char **argv, check_config_t *conf,
 
 	check_is_directory(conf->kabi_dir);
 	check_is_directory(conf->module_dir);
-
-	printf("kabi-dir %s\n", conf->kabi_dir);
-	printf("module-dir %s\n", conf->module_dir);
-	printf("output-dir %s\n", output_dir);
-	printf("symbol_file %s\n", *symbol_file);
 }
 
 static void check(int argc, char **argv) {

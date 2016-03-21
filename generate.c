@@ -22,7 +22,8 @@
 #include "generate.h"
 #include "ksymtab.h"
 
-static void print_die(Dwarf *, FILE *, Dwarf_Die *, Dwarf_Die *);
+static void print_die(Dwarf *, FILE *, Dwarf_Die *, Dwarf_Die *,
+    generate_config_t *);
 
 static const char * dwarf_tag_string(unsigned int tag) {
 	switch (tag)
@@ -148,7 +149,7 @@ static bool is_declaration(Dwarf_Die *die) {
 }
 
 static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
-    Dwarf_Die *die) {
+    Dwarf_Die *die, generate_config_t *conf) {
 	Dwarf_Die type_die;
 	Dwarf_Attribute attr;
 
@@ -162,11 +163,11 @@ static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 		fail("dwarf_formref_die() failed for %s\n",
 		    dwarf_diename(die));
 
-	print_die(dbg, fout, cu_die, &type_die);
+	print_die(dbg, fout, cu_die, &type_die, conf);
 }
 
 static void print_die_struct_member(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
-    Dwarf_Die *die, const char *name) {
+    Dwarf_Die *die, const char *name, generate_config_t *conf) {
 	Dwarf_Attribute attr;
 	Dwarf_Word value;
 
@@ -175,11 +176,11 @@ static void print_die_struct_member(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 
 	(void) dwarf_formudata(&attr, &value);
 	fprintf(fout, "0x%lx %s ", value, name);
-	print_die_type(dbg, fout, cu_die, die);
+	print_die_type(dbg, fout, cu_die, die, conf);
 }
 
 static void print_die_structure(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
-    Dwarf_Die *die) {
+    Dwarf_Die *die, generate_config_t *conf) {
 	unsigned int tag = dwarf_tag(die);
 	const char *name = dwarf_diename(die);
 
@@ -198,7 +199,7 @@ static void print_die_structure(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 		if (tag != DW_TAG_member)
 			fail("Unexpected tag for structure type children: "
 			    "%s\n", dwarf_tag_string(tag));
-		print_die_struct_member(dbg, fout, cu_die, die, name);
+		print_die_struct_member(dbg, fout, cu_die, die, name, conf);
 	} while (dwarf_siblingof(die, die) == 0);
 
 done:
@@ -239,7 +240,7 @@ done:
 }
 
 static void print_die_union(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
-    Dwarf_Die *die) {
+    Dwarf_Die *die, generate_config_t *conf) {
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
 
@@ -259,7 +260,7 @@ static void print_die_union(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 			fail("Unexpected tag for union type children: %s\n",
 			    dwarf_tag_string(tag));
 		fprintf(fout, "%s ", name);
-		print_die_type(dbg, fout, cu_die, die);
+		print_die_type(dbg, fout, cu_die, die, conf);
 	} while (dwarf_siblingof(die, die) == 0);
 
 done:
@@ -267,7 +268,7 @@ done:
 }
 
 static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
-    Dwarf_Die *cu_die, Dwarf_Die *die) {
+    Dwarf_Die *cu_die, Dwarf_Die *die, generate_config_t *conf) {
 	Dwarf_Die child_die;
 
 	if (!dwarf_haschildren(die))
@@ -279,7 +280,7 @@ static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
 	do {
 		const char *name = dwarf_diename(&child_die);
 		fprintf(fout, "%s ", name);
-		print_die_type(dbg, fout, cu_die, &child_die);
+		print_die_type(dbg, fout, cu_die, &child_die, conf);
 	} while ((dwarf_siblingof(&child_die, &child_die) == 0) &&
 	    ((dwarf_tag(&child_die) == DW_TAG_formal_parameter) ||
 	    (dwarf_tag(&child_die) == DW_TAG_unspecified_parameters)));
@@ -287,23 +288,23 @@ static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
 
 /* Function pointer */
 static void print_die_subroutine_type(Dwarf *dbg, FILE *fout,
-    Dwarf_Die *cu_die, Dwarf_Die *die) {
+    Dwarf_Die *cu_die, Dwarf_Die *die, generate_config_t *conf) {
 	fprintf(fout, "func %s (\n", dwarf_diename(die));
-	print_subprogram_arguments(dbg, fout, cu_die, die);
+	print_subprogram_arguments(dbg, fout, cu_die, die, conf);
 	fprintf(fout, ")\n");
 	/* Print return value */
-	print_die_type(dbg, fout, cu_die, die);
+	print_die_type(dbg, fout, cu_die, die, conf);
 }
 
 static void print_die_subprogram(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
-    Dwarf_Die *die) {
+    Dwarf_Die *die, generate_config_t *conf) {
 	const char *name = dwarf_diename(die);
 
 	fprintf(fout, "func %s (\n", name);
-	print_subprogram_arguments(dbg, fout, cu_die, die);
+	print_subprogram_arguments(dbg, fout, cu_die, die, conf);
 	fprintf(fout, ")\n");
 	/* Print return value */
-	print_die_type(dbg, fout, cu_die, die);
+	print_die_type(dbg, fout, cu_die, die, conf);
 }
 
 static void print_die_array_type(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
@@ -363,7 +364,7 @@ static void print_file_line(FILE *fout, Dwarf_Die *cu_die, Dwarf_Die *die) {
 }
 
 static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
-    Dwarf_Die *die) {
+    Dwarf_Die *die, generate_config_t *conf) {
 	unsigned int tag = dwarf_tag(die);
 	const char *name = dwarf_diename(die);
 	char *file_name;
@@ -391,19 +392,22 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		}
 
 		if (is_declaration(die)) {
-			printf("WARNING: Skipping file as we have only "
-			    "declaration: %s\n", basename(file_name));
+			if (conf->verbose)
+				printf("WARNING: Skipping following file as we "
+				    "have only declaration: %s\n",
+				    basename(file_name));
 			free(file_name);
 			return;
 		}
 
-		printf("Generating %s\n", basename(file_name));
+		if (conf->verbose)
+			printf("Generating %s\n", basename(file_name));
 		fout = open_output_file(file_name);
 		free(file_name);
 
 		/* Print the CU die on the first line of each file */
 		if (cu_die != NULL)
-			print_die(dbg, fout, NULL, cu_die);
+			print_die(dbg, fout, NULL, cu_die, conf);
 
 		/* Then print the source file & line */
 		print_file_line(fout, cu_die, die);
@@ -418,11 +422,11 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 
 	switch (tag) {
 	case DW_TAG_subprogram:
-		print_die_subprogram(dbg, fout, cu_die, die);
+		print_die_subprogram(dbg, fout, cu_die, die, conf);
 		break;
 	case DW_TAG_variable:
 		fprintf(fout, "var %s ", name);
-		print_die_type(dbg, fout, cu_die, die);
+		print_die_type(dbg, fout, cu_die, die, conf);
 		break;
 	case DW_TAG_compile_unit:
 		fprintf(fout, "CU %s\n", name);
@@ -432,43 +436,43 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		break;
 	case DW_TAG_pointer_type:
 		fprintf(fout, "* ");
-		print_die_type(dbg, fout, cu_die, die);
+		print_die_type(dbg, fout, cu_die, die, conf);
 		break;
 	case DW_TAG_structure_type:
-		print_die_structure(dbg, fout, cu_die, die);
+		print_die_structure(dbg, fout, cu_die, die, conf);
 		break;
 	case DW_TAG_enumeration_type:
 		print_die_enumeration(dbg, fout, die);
 		break;
 	case DW_TAG_union_type:
-		print_die_union(dbg, fout, cu_die, die);
+		print_die_union(dbg, fout, cu_die, die, conf);
 		break;
 	case DW_TAG_typedef:
 		fprintf(fout, "typedef %s\n", name);
-		print_die_type(dbg, fout, cu_die, die);
+		print_die_type(dbg, fout, cu_die, die, conf);
 		break;
 	case DW_TAG_formal_parameter:
 		if (name != NULL)
 			fprintf(fout, "%s\n", name);
-		print_die_type(dbg, fout, cu_die, die);
+		print_die_type(dbg, fout, cu_die, die, conf);
 		break;
 	case DW_TAG_unspecified_parameters:
 		fprintf(fout, "...\n");
 		break;
 	case DW_TAG_subroutine_type:
-		print_die_subroutine_type(dbg, fout, cu_die, die);
+		print_die_subroutine_type(dbg, fout, cu_die, die, conf);
 		break;
 	case DW_TAG_volatile_type:
 		fprintf(fout, "volatile ");
-		print_die_type(dbg, fout, cu_die, die);
+		print_die_type(dbg, fout, cu_die, die, conf);
 		break;
 	case DW_TAG_const_type:
 		fprintf(fout, "const ");
-		print_die_type(dbg, fout, cu_die, die);
+		print_die_type(dbg, fout, cu_die, die, conf);
 		break;
 	case DW_TAG_array_type:
 		print_die_array_type(dbg, fout, die);
-		print_die_type(dbg, fout, cu_die, die);
+		print_die_type(dbg, fout, cu_die, die, conf);
 		break;
 	default: {
 		const char *tagname = dwarf_tag_string(tag);
@@ -576,7 +580,7 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 		int index = get_symbol_index(&child_die, conf);
 		if (index != -1) {
 			/* Print both the CU DIE and symbol DIE */
-			print_die(dbg, NULL, cu_die, &child_die);
+			print_die(dbg, NULL, cu_die, &child_die, conf);
 			if (conf->symbols != NULL)
 				conf->symbols_found[index] = true;
 		}
@@ -660,10 +664,12 @@ static bool process_symbol_file(char *path, void *arg) {
 	conf->ksymtab = read_ksymtab(path, &conf->ksymtab_len);
 
 	if (conf->ksymtab_len > 0) {
-		printf("Processing %s\n", path);
+		if (conf->verbose)
+			printf("Processing %s\n", path);
 		generate_type_info(path, conf);
 	} else {
-		printf("Skip %s (no exported symbols)\n", path);
+		if (conf->verbose)
+			printf("Skip %s (no exported symbols)\n", path);
 	}
 
 	free_ksymtab(conf->ksymtab, conf->ksymtab_len);
@@ -682,11 +688,14 @@ void generate_symbol_defs(generate_config_t *conf) {
 	size_t i;
 
 	/* Lets walk the normal modules */
+	printf("Generating symbol defs from %s...\n", conf->module_dir);
 	walk_dir(conf->module_dir, process_symbol_file, conf);
 
-	for (i = 0; i < conf->symbol_cnt; i++) {
-		if (conf->symbols_found[i] == false) {
-			printf("%s not found!\n", conf->symbols[i]);
+	if (conf->verbose) {
+		for (i = 0; i < conf->symbol_cnt; i++) {
+			if (conf->symbols_found[i] == false) {
+				printf("%s not found!\n", conf->symbols[i]);
+			}
 		}
 	}
 }
