@@ -22,6 +22,19 @@
 #include "generate.h"
 #include "ksymtab.h"
 
+struct dwarf_type {
+	unsigned int dwarf_tag;
+	char *prefix;
+} known_dwarf_types[] = {
+	{ DW_TAG_subprogram, FUNC_FILE },
+	{ DW_TAG_typedef, TYPEDEF_FILE },
+	{ DW_TAG_variable, VAR_FILE },
+	{ DW_TAG_enumeration_type, ENUM_FILE },
+	{ DW_TAG_structure_type, STRUCT_FILE },
+	{ DW_TAG_union_type, UNION_FILE },
+	{ 0, NULL }
+};
+
 static void print_die(Dwarf *, FILE *, Dwarf_Die *, Dwarf_Die *,
     generate_config_t *);
 
@@ -36,6 +49,17 @@ static const char * dwarf_tag_string(unsigned int tag) {
 	}
 }
 
+static char * get_file_prefix(unsigned int dwarf_tag) {
+	struct dwarf_type *current;
+
+	for (current = known_dwarf_types; current->prefix != NULL; current++) {
+		if (dwarf_tag == current->dwarf_tag)
+			break;
+	}
+
+	return (current->prefix);
+}
+
 static char * get_symbol_file(FILE *fout, Dwarf_Die *die,
     generate_config_t *conf) {
 	const char *name = dwarf_diename(die);
@@ -43,46 +67,25 @@ static char * get_symbol_file(FILE *fout, Dwarf_Die *die,
 	char *file_prefix = NULL;
 	char *file_name = NULL;
 
-	switch (tag) {
-	case DW_TAG_subprogram:
-		file_prefix = FUNC_FILE;
-		break;
-	case DW_TAG_typedef:
-		file_prefix = TYPEDEF_FILE;
-		break;
-	case DW_TAG_variable:
-		file_prefix = VAR_FILE;
-		break;
-	case DW_TAG_enumeration_type:
-		/* Anonymous enums can be a variable type */
-		if (name != NULL) {
-			file_prefix = ENUM_FILE;
-		} else {
-			return (NULL);
-		}
-		break;
-	case DW_TAG_structure_type:
-		/* Anonymous structure can be a variable type */
-		if (name != NULL) {
-			file_prefix = STRUCT_FILE;
-		} else {
-			return (NULL);
-		}
-		break;
-	case DW_TAG_union_type:
-		/*
-		 * Anonymous union can be a variable type.
-		 * But it can also be included in a structure!
-		 */
-		if (name != NULL) {
-			file_prefix = UNION_FILE;
-		} else {
-			return (NULL);
-		}
-		break;
-	default:
-		/* No need to redirect output for other types */
+	if ((file_prefix = get_file_prefix(tag)) == NULL) {
+		/* No need to redirect output for this type */
 		return (NULL);
+	}
+
+	/*
+	 * Following types can be anonymous, eg. used directly as variable type
+	 * in the declaration. We don't create new file for them if that's
+	 * the case, embed them directly in the current file.
+	 * Note that anonymous unions can also be embedded directly in the
+	 * structure!
+	 */
+	switch (tag) {
+	case DW_TAG_enumeration_type:
+	case DW_TAG_structure_type:
+	case DW_TAG_union_type:
+		if (name == NULL)
+			return (NULL);
+		break;
 	}
 
 	/* We don't expect our name to be empty now */

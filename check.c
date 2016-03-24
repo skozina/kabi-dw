@@ -15,30 +15,115 @@
 #include "check.h"
 #include "generate.h"
 
+typedef bool (*parse_func_t)(char *, check_config_t *);
+
+bool parse_typedef_file(char *, check_config_t *);
+bool parse_func_file(char *, check_config_t *);
+bool parse_struct_file(char *, check_config_t *);
+bool parse_union_file(char *, check_config_t *);
+bool parse_enum_file(char *, check_config_t *);
+bool parse_var_file(char *, check_config_t *);
+
+struct file_prefix {
+	char *prefix;
+	parse_func_t parse_func;
+} file_prefixes[] = {
+	{ TYPEDEF_FILE, parse_typedef_file},
+	{ FUNC_FILE, parse_func_file},
+	{ STRUCT_FILE, parse_struct_file},
+	{ UNION_FILE, parse_union_file},
+	{ ENUM_FILE, parse_enum_file},
+	{ VAR_FILE, parse_var_file},
+	{ NULL, NULL}
+};
+
+bool parse_typedef_file(char *file_name, check_config_t *conf) {
+	printf("Typedef file: %s\n", file_name);
+	return (true);
+}
+
+bool parse_func_file(char *file_name, check_config_t *conf) {
+	printf("Func file: %s\n", file_name);
+	return (true);
+}
+
+bool parse_struct_file(char *file_name, check_config_t *conf) {
+	printf("Struct file: %s\n", file_name);
+	return (true);
+}
+
+bool parse_union_file(char *file_name, check_config_t *conf) {
+	printf("Union file: %s\n", file_name);
+	return (true);
+}
+
+bool parse_enum_file(char *file_name, check_config_t *conf) {
+	printf("Union file: %s\n", file_name);
+	return (true);
+}
+
+bool parse_var_file(char *file_name, check_config_t *conf) {
+	printf("Var file: %s\n", file_name);
+	return (true);
+}
+
+parse_func_t get_parse_func(char *file_name) {
+	struct file_prefix *current;
+	char *delimiter_str;
+
+	if ((delimiter_str = strstr(file_name, "--")) == NULL)
+		return (NULL);
+
+	for (current = file_prefixes; current->prefix != NULL; current++) {
+		if (strncmp(file_name, current->prefix,
+		    delimiter_str - file_name) == 0)
+			break;
+	}
+
+	return (current->parse_func);
+}
+
 bool check_symbol_file(char *kabi_path, void *arg) {
 	check_config_t *conf = (check_config_t *)arg;
-	char *filename = kabi_path + strlen(conf->kabi_dir);
+	char *file_name = kabi_path + strlen(conf->kabi_dir);
 	struct stat fstat;
 	char *temp_kabi_path;
+	FILE *fp;
+	bool (*parse_func)(char *, check_config_t *);
 
 	if (conf->verbose)
-		printf("Checking %s\n", filename);
+		printf("Checking %s\n", file_name);
 
-	if (asprintf(&temp_kabi_path, "%s/%s", conf->temp_kabi_dir, filename)
+	if (asprintf(&temp_kabi_path, "%s/%s", conf->temp_kabi_dir, file_name)
 	    == -1)
 		fail("asprintf() failed\n");
 
 	if (stat(temp_kabi_path, &fstat) != 0) {
 		if (errno == ENOENT) {
-			printf("Symbol removed from kabi: %s\n", filename);
+			printf("Symbol removed from kabi: %s\n", file_name);
 		} else {
 			printf("Failed to stat() file%s: %s\n", temp_kabi_path,
 			    strerror(errno));
 		}
+
+		goto done;
 	}
 
-	free(temp_kabi_path);
+	if ((parse_func = get_parse_func(file_name)) == NULL) {
+		printf("Unexpected name of the file: %s\n", file_name);
+		goto done;
+	}
 
+	if ((fp = fopen(temp_kabi_path, "r")) == NULL) {
+		printf("Failed to open file: %s\n", temp_kabi_path);
+		goto done;
+	}
+
+	(*parse_func)(file_name, conf);
+
+	fclose(fp);
+done:
+	free(temp_kabi_path);
 	return (true);
 }
 
