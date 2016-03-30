@@ -91,6 +91,10 @@ bool check_symbol_file(char *kabi_path, void *arg) {
 	FILE *fp;
 	bool (*parse_func)(char *, check_config_t *);
 
+	/* If conf->kabi_dir doesn't contain trailing slashes, skip them too */
+	while (*file_name == '/')
+		file_name++;
+
 	if (conf->verbose)
 		printf("Checking %s\n", file_name);
 

@@ -67,3 +67,62 @@ void walk_dir(char *path, bool (*cb)(char *, void *), void *arg) {
 
 	closedir(dir);
 }
+
+int check_is_directory(char *dir) {
+	struct stat dirstat;
+
+	if (stat(dir, &dirstat) != 0)
+		return (errno);
+
+	if (!S_ISDIR(dirstat.st_mode))
+		return (ENOTDIR);
+
+	return (0);
+}
+
+static void safe_mkdir(char *path) {
+	if (mkdir(path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0)
+		fail(strerror(errno));
+}
+
+void rec_mkdir(char *path) {
+	char *buf;
+	char *pos;
+	size_t len = strlen(path);
+
+	assert(path != NULL && len > 0);
+
+	buf = safe_malloc(strlen(path) + 1);
+	strcpy(buf, path);
+
+	/* Get rid of trailing slashes */
+	for (pos = buf + len - 1; pos > buf && *pos == '/'; --pos)
+		*pos = '\0';
+
+	pos = buf;
+	while (pos != NULL) {
+		int rv;
+		char *next;
+
+		/* Skip multiple slashes */
+		for (next = pos + 1; *next == '/'; next++)
+			;
+
+		pos = strchr(next, '/');
+		if (pos != NULL)
+			*pos = '\0';
+		rv = check_is_directory(buf);
+		if (rv != 0) {
+			if (rv == ENOENT) {
+				safe_mkdir(buf);
+			} else {
+				fail(strerror(rv));
+			}
+		}
+
+		if (pos != NULL)
+			*pos = '/';
+	}
+
+	free(buf);
+}

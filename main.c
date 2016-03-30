@@ -77,22 +77,6 @@ static void read_symbols(char *filename, char ***symbolsp, size_t *cntp) {
 	*cntp = i;
 }
 
-static void check_is_directory(char *dir) {
-	struct stat dirstat;
-
-	if (stat(dir, &dirstat) != 0) {
-		if (errno == ENOENT) {
-			fail("Module directory %s does not exist!\n", dir);
-		} else {
-			fail("Failed to stat() directory %s: %s\n", dir,
-			    strerror(errno));
-		}
-	}
-
-	if (!S_ISDIR(dirstat.st_mode))
-		fail("Not a directory: %s\n", dir);
-}
-
 static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
     char **symbol_file) {
 	*symbol_file = NULL;
@@ -125,6 +109,8 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 
 	conf->module_dir = argv[0];
 	argc--; argv++;
+
+	rec_mkdir(conf->kabi_dir);
 }
 
 static void generate(int argc, char **argv) {
@@ -132,7 +118,6 @@ static void generate(int argc, char **argv) {
 	generate_config_t *conf = safe_malloc(sizeof (*conf));
 
 	parse_generate_opts(argc, argv, conf, &symbol_file);
-	check_is_directory(conf->kabi_dir);
 
 	if (symbol_file != NULL) {
 		int i;
@@ -155,6 +140,7 @@ static void parse_check_opts(int argc, char **argv, check_config_t *conf,
     char **symbol_file) {
 	*symbol_file = NULL;
 	conf->verbose = false;
+	int rv;
 
 	while ((argc > 0) && (*argv[0] == '-')) {
 		if (strcmp(*argv, "-v") == 0) {
@@ -179,8 +165,10 @@ static void parse_check_opts(int argc, char **argv, check_config_t *conf,
 	conf->module_dir = *argv;
 	argc--; argv++;
 
-	check_is_directory(conf->kabi_dir);
-	check_is_directory(conf->module_dir);
+	if ((rv = check_is_directory(conf->kabi_dir)) != 0)
+		fail("%s: %s\n", strerror(rv), conf->kabi_dir);
+	if ((rv = check_is_directory(conf->module_dir)) != 0)
+		fail("%s: %s\n", strerror(rv), conf->module_dir);
 }
 
 static void check(int argc, char **argv) {

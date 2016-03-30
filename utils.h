@@ -16,5 +16,7 @@ static inline void *safe_malloc(size_t size) {
 }
 
 extern void walk_dir(char *, bool (*)(char *, void *), void *);
+extern int check_is_directory(char *);
+extern void rec_mkdir(char *);
 
 #endif /* UTILS_H */
