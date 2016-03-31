@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <libgen.h> /* basename(), dirname() */
 
 #include "main.h"
 #include "utils.h"
@@ -38,32 +39,38 @@ struct file_prefix {
 };
 
 bool parse_typedef_file(char *file_name, check_config_t *conf) {
-	printf("Typedef file: %s\n", file_name);
+	if (conf->verbose)
+		printf("Typedef file: %s\n", file_name);
 	return (true);
 }
 
 bool parse_func_file(char *file_name, check_config_t *conf) {
-	printf("Func file: %s\n", file_name);
+	if (conf->verbose)
+		printf("Func file: %s\n", file_name);
 	return (true);
 }
 
 bool parse_struct_file(char *file_name, check_config_t *conf) {
-	printf("Struct file: %s\n", file_name);
+	if (conf->verbose)
+		printf("Struct file: %s\n", file_name);
 	return (true);
 }
 
 bool parse_union_file(char *file_name, check_config_t *conf) {
-	printf("Union file: %s\n", file_name);
+	if (conf->verbose)
+		printf("Union file: %s\n", file_name);
 	return (true);
 }
 
 bool parse_enum_file(char *file_name, check_config_t *conf) {
-	printf("Union file: %s\n", file_name);
+	if (conf->verbose)
+		printf("Union file: %s\n", file_name);
 	return (true);
 }
 
 bool parse_var_file(char *file_name, check_config_t *conf) {
-	printf("Var file: %s\n", file_name);
+	if (conf->verbose)
+		printf("Var file: %s\n", file_name);
 	return (true);
 }
 
@@ -113,7 +120,7 @@ bool check_symbol_file(char *kabi_path, void *arg) {
 		goto done;
 	}
 
-	if ((parse_func = get_parse_func(file_name)) == NULL) {
+	if ((parse_func = get_parse_func(basename(file_name))) == NULL) {
 		printf("Unexpected name of the file: %s\n", file_name);
 		goto done;
 	}
