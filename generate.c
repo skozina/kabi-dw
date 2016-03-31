@@ -719,7 +719,7 @@ void generate_symbol_defs(generate_config_t *conf) {
 
 	/* Lets walk the normal modules */
 	printf("Generating symbol defs from %s...\n", conf->kernel_dir);
-	walk_dir(conf->kernel_dir, process_symbol_file, conf);
+	walk_dir(conf->kernel_dir, false, process_symbol_file, conf);
 
 	for (i = 0; i < conf->symbol_cnt; i++) {
 		if (conf->symbols_found[i] == false) {

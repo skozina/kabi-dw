@@ -155,9 +155,9 @@ void generate_new_defs(check_config_t *conf) {
 	free(gen_conf);
 }
 
-static bool remove_file(char *path, void *arg) {
-	if (unlink(path) != 0) {
-		printf("ERROR: Failed to unlink %s: %s\n", path,
+static bool remove_node(char *path, void *arg) {
+	if (remove(path) != 0) {
+		printf("ERROR: Failed to remove %s: %s\n", path,
 		    strerror(errno));
 	}
 
@@ -177,9 +177,9 @@ void check_symbol_defs(check_config_t *conf) {
 	printf("Working directory: %s\n", conf->temp_kabi_dir);
 
 	generate_new_defs(conf);
-	walk_dir(conf->kabi_dir, check_symbol_file, conf);
+	walk_dir(conf->kabi_dir, false, check_symbol_file, conf);
 
-	walk_dir(conf->temp_kabi_dir, remove_file, NULL);
+	walk_dir(conf->temp_kabi_dir, true, remove_node, NULL);
 	if (rmdir(conf->temp_kabi_dir) != 0) {
 		printf("ERROR: Failed to remove temp directory %s: %s\n",
 		    conf->temp_kabi_dir, strerror(errno));

@@ -14,11 +14,13 @@
 #include "utils.h"
 
 /*
- * Call cb() on each file in the directory structure @path.
+ * Call cb() on each node in the directory structure @path.
+ * If list_dirs == true list subdirectories as well, otherwise list only files.
  * The cb() has to return true if we continue directory walk or false if we're
  * all done.
  */
-void walk_dir(char *path, bool (*cb)(char *, void *), void *arg) {
+void walk_dir(char *path, bool list_dirs, bool (*cb)(char *, void *),
+    void *arg) {
 	DIR *dir;
 	struct dirent *ent;
 	bool proceed = true;
@@ -57,7 +59,9 @@ void walk_dir(char *path, bool (*cb)(char *, void *), void *arg) {
 		if (S_ISDIR(entstat.st_mode)) {
 			/* Ignore symlinks */
 			if (!S_ISLNK(entstat.st_mode))
-				walk_dir(new_path, cb, arg);
+				walk_dir(new_path, list_dirs, cb, arg);
+			if (list_dirs)
+				proceed = cb(new_path, arg);
 		} else if (S_ISREG(entstat.st_mode)) {
 			proceed = cb(new_path, arg);
 		}
