@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <assert.h>
-#include <libgen.h> /* basename() */
+#include <libgen.h> /* basename(), dirname() */
 
 #include <elfutils/libdw.h>
 #include <elfutils/libdwfl.h>
@@ -60,8 +60,7 @@ static char * get_file_prefix(unsigned int dwarf_tag) {
 	return (current->prefix);
 }
 
-static char * get_symbol_file(FILE *fout, Dwarf_Die *die,
-    generate_config_t *conf) {
+static char * get_symbol_file(Dwarf_Die *die, generate_config_t *conf) {
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
 	char *file_prefix = NULL;
@@ -91,15 +90,20 @@ static char * get_symbol_file(FILE *fout, Dwarf_Die *die,
 	/* We don't expect our name to be empty now */
 	assert(name != NULL);
 
-	if (asprintf(&file_name, "%s/%s%s.txt", conf->kabi_dir, file_prefix,
-	    name) == -1)
+	if (asprintf(&file_name, "%s/%s/%s%s.txt", conf->kabi_dir, conf->module,
+	    file_prefix, name) == -1)
 		fail("asprintf() failed\n");
 
 	return (file_name);
 }
 
 static FILE * open_output_file(char *file_name) {
+	char *temp;
 	FILE *file;
+
+	temp = strdup(file_name);
+	rec_mkdir(dirname(temp));
+	free(temp);
 
 	file = fopen(file_name, "w");
 	if (file == NULL)
@@ -395,7 +399,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	 */
 
 	/* Check if we need to redirect output or we have a mere declaration */
-	file_name = get_symbol_file(parent_file, die, conf);
+	file_name = get_symbol_file(die, conf);
 	if (file_name != NULL || is_declaration(die)) {
 		/* Else set our output to the file */
 		if (parent_file != NULL)
@@ -689,6 +693,9 @@ static bool process_symbol_file(char *path, void *arg) {
 	if (conf->ksymtab_len > 0) {
 		if (conf->verbose)
 			printf("Processing %s\n", path);
+
+		/* Set the output dir for this module */
+		conf->module = path + strlen(conf->kernel_dir);
 		generate_type_info(path, conf);
 	} else {
 		if (conf->verbose)
@@ -711,14 +718,12 @@ void generate_symbol_defs(generate_config_t *conf) {
 	size_t i;
 
 	/* Lets walk the normal modules */
-	printf("Generating symbol defs from %s...\n", conf->module_dir);
-	walk_dir(conf->module_dir, process_symbol_file, conf);
+	printf("Generating symbol defs from %s...\n", conf->kernel_dir);
+	walk_dir(conf->kernel_dir, process_symbol_file, conf);
 
-	if (conf->verbose) {
-		for (i = 0; i < conf->symbol_cnt; i++) {
-			if (conf->symbols_found[i] == false) {
-				printf("%s not found!\n", conf->symbols[i]);
-			}
+	for (i = 0; i < conf->symbol_cnt; i++) {
+		if (conf->symbols_found[i] == false) {
+			printf("%s not found!\n", conf->symbols[i]);
 		}
 	}
 }

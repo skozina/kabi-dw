@@ -18,8 +18,8 @@ static char *progname;
 
 void usage(void) {
 	printf("Usage:\n"
-	    "\t %s generate [-v] [-s symbol_file] [-o kabi_dir] module_dir\n"
-	    "\t %s check [-v] [-s symbol_file] kabi_dir module_dir\n",
+	    "\t %s generate [-v] [-s symbol_file] [-o kabi_dir] kernel_dir\n"
+	    "\t %s check [-v] [-s symbol_file] kabi_dir kernel_dir\n",
 	    progname, progname);
 	exit(1);
 }
@@ -52,6 +52,7 @@ static void read_symbols(char *filename, char ***symbolsp, size_t *cntp) {
 	if (fp == NULL)
 		fail("Failed to open symbol file: %s\n", strerror(errno));
 
+	errno = 0;
 	while ((getline(&line, &len, fp)) != -1) {
 		if (i == symbols_len) {
 			symbols_len *= 2;
@@ -66,7 +67,8 @@ static void read_symbols(char *filename, char ***symbolsp, size_t *cntp) {
 	}
 
 	if (errno != 0)
-		fail("getline() failed: %s\n", strerror(errno));
+		fail("getline() failed for %s: %s\n", filename,
+		    strerror(errno));
 
 	if (line != NULL)
 		free(line);
@@ -107,7 +109,7 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 	if (argc != 1)
 		usage();
 
-	conf->module_dir = argv[0];
+	conf->kernel_dir = argv[0];
 	argc--; argv++;
 
 	rec_mkdir(conf->kabi_dir);
@@ -123,6 +125,9 @@ static void generate(int argc, char **argv) {
 		int i;
 
 		read_symbols(symbol_file, &conf->symbols, &conf->symbol_cnt);
+
+		if (conf->verbose)
+			printf("Loaded %ld symbols\n", conf->symbol_cnt);
 		conf->symbols_found = safe_malloc(conf->symbol_cnt *
 		    sizeof (bool *));
 		for (i = 0; i < conf->symbol_cnt; i++)
@@ -162,13 +167,13 @@ static void parse_check_opts(int argc, char **argv, check_config_t *conf,
 
 	conf->kabi_dir = *argv;
 	argc--; argv++;
-	conf->module_dir = *argv;
+	conf->kernel_dir = *argv;
 	argc--; argv++;
 
 	if ((rv = check_is_directory(conf->kabi_dir)) != 0)
 		fail("%s: %s\n", strerror(rv), conf->kabi_dir);
-	if ((rv = check_is_directory(conf->module_dir)) != 0)
-		fail("%s: %s\n", strerror(rv), conf->module_dir);
+	if ((rv = check_is_directory(conf->kernel_dir)) != 0)
+		fail("%s: %s\n", strerror(rv), conf->kernel_dir);
 }
 
 static void check(int argc, char **argv) {
@@ -179,6 +184,9 @@ static void check(int argc, char **argv) {
 
 	if (symbol_file != NULL)
 		read_symbols(symbol_file, &conf->symbols, &conf->symbol_cnt);
+
+	if (conf->verbose)
+		printf("Loaded %ld symbols\n", conf->symbol_cnt);
 
 	check_symbol_defs(conf);
 

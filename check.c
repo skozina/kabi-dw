@@ -136,7 +136,7 @@ void generate_new_defs(check_config_t *conf) {
 
 	gen_conf->kabi_dir = conf->temp_kabi_dir;
 	gen_conf->verbose = conf->verbose;
-	gen_conf->module_dir = conf->module_dir;
+	gen_conf->kernel_dir = conf->kernel_dir;
 	gen_conf->symbols = conf->symbols;
 	gen_conf->symbol_cnt = conf->symbol_cnt;
 	if (conf->symbols != NULL) {
@@ -165,7 +165,7 @@ static bool remove_file(char *path, void *arg) {
 }
 
 void check_symbol_defs(check_config_t *conf) {
-	printf("Comparing symbols defs of %s with %s...\n", conf->module_dir,
+	printf("Comparing symbols defs of %s with %s...\n", conf->kernel_dir,
 	    conf->kabi_dir);
 
 	if (asprintf(&conf->temp_kabi_dir, "%s", TMP_DIR) == -1)
