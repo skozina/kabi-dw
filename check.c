@@ -55,12 +55,15 @@ static parse_func_t get_parse_func(char *type) {
 	return (current->parse_func);
 }
 
-/* Read word delimited by ' ' or '\n' from fp. */
-static char *read_word(FILE *fp) {
+/*
+ * Read word delimited by ' ' or '\n' from fp.
+ * Return the last char in *endchar.
+ */
+static char *read_word(FILE *fp, int *endchar) {
 	size_t size = DEF_BUFSIZE;
 	char *result = malloc(size);
 	size_t i = 0;
-	int c;
+	int c = 0;
 
 	while (true) {
 		if (i == size - 1) {
@@ -77,22 +80,26 @@ static char *read_word(FILE *fp) {
 	}
 
 	result[i] = '\0';
+
+	if (endchar != NULL)
+		*endchar = c;
 	return (result);
 }
 
 static bool parse_type(FILE *fp_old, FILE *fp_new, char *file_name) {
 	char *oldw, *neww;
 	parse_func_t parse_func;
+	bool result = true;
+	int c = 0;
 
-	/* Read the type from the original file */
-	oldw = read_word(fp_old);
-	parse_func = get_parse_func(oldw);
+	while (c != EOF) {
+		/* Read the type from the original file */
+		oldw = read_word(fp_old, &c);
+		neww = read_word(fp_new, NULL);
+		if (c == EOF)
+			goto done;
 
-	if (parse_func != NULL) {
-		bool result = true;
-
-		/* Verify the word to parse */
-		neww = read_word(fp_new);
+		/* Verify the word we just read */
 		if (strcmp(oldw, neww) != 0) {
 			printf("Different type in %s:\n", file_name);
 			printf("Expected: %s\n", oldw);
@@ -100,21 +107,53 @@ static bool parse_type(FILE *fp_old, FILE *fp_new, char *file_name) {
 			result = false;
 		}
 
-		result &= parse_func(fp_old, fp_new, file_name);
-		return (result);
+		parse_func = get_parse_func(oldw);
+		if (parse_func != NULL) {
+			result &= parse_func(fp_old, fp_new, file_name);
+			goto done;
+		}
+
+		/*
+		 * Verify remote reference files.
+		 * As we walk all the files in the kabi dir there's no need to
+		 * descent into the referenced file.
+		 */
+		if (oldw[0] == '@') {
+			printf("Reference: %s\n", oldw);
+			goto done;
+		}
+
+		printf("%s", oldw);
+		/* We must have parsed base type now which ends with newline */
+		if (c == '\n') {
+			printf("\n");
+			goto done;
+		}
+		printf(" ");
+
+		free(oldw);
+		free(neww);
 	}
 
-	/* TODO compare basic types here */
-	return (true);
+done:
+	free(oldw);
+	free(neww);
+	return (result);
 }
 
 static bool parse_typedef(FILE *fp_old, FILE * fp_new, char *file_name) {
 	char *oldw, *neww;
 	bool result = true;
+	int c;
 
 	/* The name of the typedef */
-	oldw = read_word(fp_old);
-	neww = read_word(fp_new);
+	oldw = read_word(fp_old, &c);
+	neww = read_word(fp_new, NULL);
+
+	if (c == EOF) {
+		printf("WARNING: Missing expected name of typedef in: %s\n",
+		    file_name);
+	}
 
 	if (strcmp(oldw, neww) != 0) {
 		printf("Different typedef name in %s:\n", file_name);
@@ -123,13 +162,103 @@ static bool parse_typedef(FILE *fp_old, FILE * fp_new, char *file_name) {
 		result = false;
 	}
 
+	free(oldw);
+	free(neww);
+
 	/* The type of the typedef follows */
+	printf("Type: ");
 	result &= parse_type(fp_old, fp_new, file_name);
 	return (result);
 }
 
 static bool parse_func(FILE *fp_old, FILE * fp_new, char *file_name) {
-	return (true);
+	char *oldw, *neww;
+	bool result = true;
+	int c;
+
+	/* The name of the function */
+	oldw = read_word(fp_old, &c);
+	neww = read_word(fp_new, NULL);
+
+	if (c == EOF) {
+		printf("WARNING: Missing expected name of function in: %s\n",
+		    file_name);
+	}
+
+	if (strcmp(oldw, neww) != 0) {
+		printf("Different variable name in %s:\n", file_name);
+		printf("Expected: %s\n", oldw);
+		printf("Current: %s\n", neww);
+		result = false;
+	}
+	printf("Func name parsed: %s\n", oldw);
+
+	free(oldw);
+	free(neww);
+
+	/* Left bracket */
+	oldw = read_word(fp_old, &c);
+	neww = read_word(fp_new, NULL);
+
+	if (c == EOF) {
+		printf("WARNING: Missing function left bracket in: %s\n",
+		    file_name);
+	}
+
+	if (strcmp(oldw, neww) != 0) {
+		printf("Different variable name in %s:\n", file_name);
+		printf("Expected: %s\n", oldw);
+		printf("Current: %s\n", neww);
+		result = false;
+	}
+
+	free(oldw);
+	free(neww);
+
+	/* Arguments */
+	while (true) {
+		oldw = read_word(fp_old, &c);
+		neww = read_word(fp_new, NULL);
+
+		if (c == EOF) {
+			printf("WARNING: Missing function right bracket in: %s\n",
+			    file_name);
+		}
+
+		if (strcmp(oldw, neww) != 0) {
+			if (strcmp(oldw, ")") == 0) {
+				printf("Unexpected argument found in %s:\n",
+				    file_name);
+				printf("Argument: %s\n", neww);
+			} else {
+				printf("Different argument name in %s:\n",
+				    file_name);
+				printf("Expected: %s\n", oldw);
+				printf("Current: %s\n", neww);
+			}
+			result = false;
+		}
+
+		if (strcmp(oldw, ")") == 0) {
+			free(oldw);
+			free(neww);
+			break;
+		}
+
+		printf("Argument name: %s, ", oldw);
+
+		free(oldw);
+		free(neww);
+
+		/* Argument type */
+		printf("type: ");
+		result &= parse_type(fp_old, fp_new, file_name);
+	}
+
+	/* Function return type */
+	printf("Return value: ");
+	result &= parse_type(fp_old, fp_new, file_name);
+	return (result);
 }
 
 static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name) {
@@ -147,10 +276,16 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, char *file_name) {
 static bool parse_var(FILE *fp_old, FILE * fp_new, char *file_name) {
 	char *oldw, *neww;
 	bool result = true;
+	int c;
 
 	/* The name of the variable */
-	oldw = read_word(fp_old);
-	neww = read_word(fp_new);
+	oldw = read_word(fp_old, &c);
+	neww = read_word(fp_new, NULL);
+
+	if (c == EOF) {
+		printf("WARNING: Missing expected name of typedef in: %s\n",
+		    file_name);
+	}
 
 	if (strcmp(oldw, neww) != 0) {
 		printf("Different variable name in %s:\n", file_name);
@@ -159,7 +294,11 @@ static bool parse_var(FILE *fp_old, FILE * fp_new, char *file_name) {
 		result = false;
 	}
 
+	free(oldw);
+	free(neww);
+
 	/* The type of the variable follows */
+	printf("Type: ");
 	result &= parse_type(fp_old, fp_new, file_name);
 	return (result);
 }
@@ -211,7 +350,7 @@ static bool check_symbol_file(char *kabi_path, void *arg) {
 	while (*file_name == '/')
 		file_name++;
 
-	if (conf->verbose)
+	//if (conf->verbose)
 		printf("Checking %s\n", file_name);
 
 	if (asprintf(&temp_kabi_path, "%s/%s", conf->temp_kabi_dir, file_name)

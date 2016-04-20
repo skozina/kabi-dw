@@ -288,7 +288,17 @@ static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
 	do {
 		const char *name = get_die_name(&child_die);
 		fprintf(fout, "%s ", name);
-		print_die_type(dbg, fout, cu_die, &child_die, conf);
+
+		/*
+		 * Print type of the argument.
+		 * If there are unspecified arguments (... in C) print the DIE
+		 * itself.
+		 */
+		if (dwarf_tag(&child_die) != DW_TAG_unspecified_parameters)
+			print_die_type(dbg, fout, cu_die, &child_die, conf);
+		else
+			print_die(dbg, fout, cu_die, &child_die, conf);
+
 	} while ((dwarf_siblingof(&child_die, &child_die) == 0) &&
 	    ((dwarf_tag(&child_die) == DW_TAG_formal_parameter) ||
 	    (dwarf_tag(&child_die) == DW_TAG_unspecified_parameters)));
