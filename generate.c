@@ -22,6 +22,8 @@
 #include "generate.h"
 #include "ksymtab.h"
 
+#define	EMPTY_NAME	"(NULL)"
+
 struct dwarf_type {
 	unsigned int dwarf_tag;
 	char *prefix;
@@ -47,6 +49,13 @@ static const char * dwarf_tag_string(unsigned int tag) {
 		default:
 			return (NULL);
 	}
+}
+
+static const char *get_die_name(Dwarf_Die *die) {
+	if (dwarf_hasattr(die, DW_AT_name))
+		return (dwarf_diename(die));
+	else
+		return (EMPTY_NAME);
 }
 
 static char * get_file_prefix(unsigned int dwarf_tag) {
@@ -190,19 +199,16 @@ static void print_die_struct_member(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 static void print_die_structure(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
     Dwarf_Die *die, generate_config_t *conf) {
 	unsigned int tag = dwarf_tag(die);
-	const char *name = dwarf_diename(die);
+	const char *name = get_die_name(die);
 
-	if (name != NULL)
-		fprintf(fout, "struct %s {\n", name);
-	else
-		fprintf(fout, "struct {\n");
+	fprintf(fout, "struct %s {\n", name);
 
 	if (!dwarf_haschildren(die))
 		goto done;
 
 	dwarf_child(die, die);
 	do {
-		name = dwarf_diename(die);
+		name = get_die_name(die);
 		tag = dwarf_tag(die);
 		if (tag != DW_TAG_member)
 			fail("Unexpected tag for structure type children: "
@@ -227,19 +233,16 @@ static void print_die_enumerator(Dwarf *dbg, FILE *fout, Dwarf_Die *die,
 }
 
 static void print_die_enumeration(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
-	const char *name = dwarf_diename(die);
+	const char *name = get_die_name(die);
 
-	if (name != NULL)
-		fprintf(fout, "enum %s {\n", name);
-	else
-		fprintf(fout, "enum {\n");
+	fprintf(fout, "enum %s {\n", name);
 
 	if (!dwarf_haschildren(die))
 		goto done;
 
 	dwarf_child(die, die);
 	do {
-		name = dwarf_diename(die);
+		name = get_die_name(die);
 		print_die_enumerator(dbg, fout, die, name);
 	} while (dwarf_siblingof(die, die) == 0);
 
@@ -249,20 +252,17 @@ done:
 
 static void print_die_union(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
     Dwarf_Die *die, generate_config_t *conf) {
-	const char *name = dwarf_diename(die);
+	const char *name = get_die_name(die);
 	unsigned int tag = dwarf_tag(die);
 
-	if (name != NULL)
-		fprintf(fout, "union %s {\n", name);
-	else
-		fprintf(fout, "union {\n");
+	fprintf(fout, "union %s {\n", name);
 
 	if (!dwarf_haschildren(die))
 		goto done;
 
 	dwarf_child(die, die);
 	do {
-		name = dwarf_diename(die);
+		name = get_die_name(die);
 		tag = dwarf_tag(die);
 		if (tag != DW_TAG_member)
 			fail("Unexpected tag for union type children: %s\n",
@@ -286,7 +286,7 @@ static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
 	dwarf_child(die, &child_die);
 	/* Walk all arguments until we run into the function body */
 	do {
-		const char *name = dwarf_diename(&child_die);
+		const char *name = get_die_name(&child_die);
 		fprintf(fout, "%s ", name);
 		print_die_type(dbg, fout, cu_die, &child_die, conf);
 	} while ((dwarf_siblingof(&child_die, &child_die) == 0) &&
@@ -294,21 +294,9 @@ static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
 	    (dwarf_tag(&child_die) == DW_TAG_unspecified_parameters)));
 }
 
-/* Function pointer */
-static void print_die_subroutine_type(Dwarf *dbg, FILE *fout,
-    Dwarf_Die *cu_die, Dwarf_Die *die, generate_config_t *conf) {
-	fprintf(fout, "func %s (\n", dwarf_diename(die));
-	print_subprogram_arguments(dbg, fout, cu_die, die, conf);
-	fprintf(fout, ")\n");
-	/* Print return value */
-	print_die_type(dbg, fout, cu_die, die, conf);
-}
-
 static void print_die_subprogram(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
     Dwarf_Die *die, generate_config_t *conf) {
-	const char *name = dwarf_diename(die);
-
-	fprintf(fout, "func %s (\n", name);
+	fprintf(fout, "func %s (\n", get_die_name(die));
 	print_subprogram_arguments(dbg, fout, cu_die, die, conf);
 	fprintf(fout, ")\n");
 	/* Print return value */
@@ -480,7 +468,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		fprintf(fout, "...\n");
 		break;
 	case DW_TAG_subroutine_type:
-		print_die_subroutine_type(dbg, fout, cu_die, die, conf);
+		print_die_subprogram(dbg, fout, cu_die, die, conf);
 		break;
 	case DW_TAG_volatile_type:
 		fprintf(fout, "volatile ");

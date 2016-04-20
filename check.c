@@ -91,6 +91,7 @@ static bool parse_type(FILE *fp_old, FILE *fp_new, char *file_name) {
 	if (parse_func != NULL) {
 		bool result = true;
 
+		/* Verify the word to parse */
 		neww = read_word(fp_new);
 		if (strcmp(oldw, neww) != 0) {
 			printf("Different type in %s:\n", file_name);
@@ -103,11 +104,28 @@ static bool parse_type(FILE *fp_old, FILE *fp_new, char *file_name) {
 		return (result);
 	}
 
+	/* TODO compare basic types here */
 	return (true);
 }
 
 static bool parse_typedef(FILE *fp_old, FILE * fp_new, char *file_name) {
-	return (true);
+	char *oldw, *neww;
+	bool result = true;
+
+	/* The name of the typedef */
+	oldw = read_word(fp_old);
+	neww = read_word(fp_new);
+
+	if (strcmp(oldw, neww) != 0) {
+		printf("Different typedef name in %s:\n", file_name);
+		printf("Expected: %s\n", oldw);
+		printf("Current: %s\n", neww);
+		result = false;
+	}
+
+	/* The type of the typedef follows */
+	result &= parse_type(fp_old, fp_new, file_name);
+	return (result);
 }
 
 static bool parse_func(FILE *fp_old, FILE * fp_new, char *file_name) {
@@ -127,7 +145,23 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, char *file_name) {
 }
 
 static bool parse_var(FILE *fp_old, FILE * fp_new, char *file_name) {
-	return (true);
+	char *oldw, *neww;
+	bool result = true;
+
+	/* The name of the variable */
+	oldw = read_word(fp_old);
+	neww = read_word(fp_new);
+
+	if (strcmp(oldw, neww) != 0) {
+		printf("Different variable name in %s:\n", file_name);
+		printf("Expected: %s\n", oldw);
+		printf("Current: %s\n", neww);
+		result = false;
+	}
+
+	/* The type of the variable follows */
+	result &= parse_type(fp_old, fp_new, file_name);
+	return (result);
 }
 
 static void check_CU_and_file(FILE *fp_old, FILE *fp_new, char *file_name) {
@@ -205,7 +239,7 @@ static bool check_symbol_file(char *kabi_path, void *arg) {
 	}
 
 	check_CU_and_file(fp_old, fp_new, file_name);
-	(void)parse_type(fp_old, fp_new, file_name);
+	(void) parse_type(fp_old, fp_new, file_name);
 
 	fclose(fp_new);
 new_done:
