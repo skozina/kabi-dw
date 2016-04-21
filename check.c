@@ -86,6 +86,53 @@ static char *read_word(FILE *fp, int *endchar) {
 	return (result);
 }
 
+static int verify_const_word_fp(FILE *fp, const char *word) {
+	char *real_word;
+	bool result = true;
+	int c;
+
+	real_word = read_word(fp, &c);
+
+	if (c == EOF) {
+		result = false;
+	} else {
+		if (strcmp(real_word, word) != 0)
+			result = false;
+		free(real_word);
+	}
+
+	return (result);
+}
+
+static bool verify_const_word(FILE *fp_old, FILE *fp_new, const char *word) {
+	bool result = true;
+
+	result &= verify_const_word_fp(fp_old, word);
+	result &= verify_const_word_fp(fp_new, word);
+
+	return (result);
+}
+
+static bool verify_word(FILE *fp_old, FILE *fp_new, const char *file_name,
+    char **oldw, char **neww) {
+	bool result = true;
+	int c;
+
+	*oldw = read_word(fp_old, &c);
+	if (c == EOF)
+		fail("Required word missing in %s!\n", file_name);
+
+	*neww = read_word(fp_new, &c);
+	if (c == EOF)
+		fail("Required word missing in %s!\n", file_name);
+
+	if (strcmp(*oldw, *neww) != 0) {
+		result = false;
+	}
+
+	return (result);
+}
+
 static bool parse_type(FILE *fp_old, FILE *fp_new, char *file_name) {
 	char *oldw, *neww;
 	parse_func_t parse_func;
@@ -144,24 +191,15 @@ done:
 static bool parse_typedef(FILE *fp_old, FILE * fp_new, char *file_name) {
 	char *oldw, *neww;
 	bool result = true;
-	int c;
 
 	/* The name of the typedef */
-	oldw = read_word(fp_old, &c);
-	neww = read_word(fp_new, NULL);
-
-	if (c == EOF) {
-		printf("WARNING: Missing expected name of typedef in: %s\n",
-		    file_name);
-	}
-
-	if (strcmp(oldw, neww) != 0) {
+	result &= verify_word(fp_old, fp_new, file_name, &oldw, &neww);
+	if (!result) {
 		printf("Different typedef name in %s:\n", file_name);
 		printf("Expected: %s\n", oldw);
 		printf("Current: %s\n", neww);
-		result = false;
 	}
-
+	printf("Typedef name parsed: %s\n", oldw);
 	free(oldw);
 	free(neww);
 
@@ -177,43 +215,18 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, char *file_name) {
 	int c;
 
 	/* The name of the function */
-	oldw = read_word(fp_old, &c);
-	neww = read_word(fp_new, NULL);
-
-	if (c == EOF) {
-		printf("WARNING: Missing expected name of function in: %s\n",
-		    file_name);
-	}
-
-	if (strcmp(oldw, neww) != 0) {
+	result &= verify_word(fp_old, fp_new, file_name, &oldw, &neww);
+	if (!result) {
 		printf("Different variable name in %s:\n", file_name);
 		printf("Expected: %s\n", oldw);
 		printf("Current: %s\n", neww);
-		result = false;
 	}
 	printf("Func name parsed: %s\n", oldw);
-
 	free(oldw);
 	free(neww);
 
-	/* Left bracket */
-	oldw = read_word(fp_old, &c);
-	neww = read_word(fp_new, NULL);
-
-	if (c == EOF) {
-		printf("WARNING: Missing function left bracket in: %s\n",
-		    file_name);
-	}
-
-	if (strcmp(oldw, neww) != 0) {
-		printf("Different variable name in %s:\n", file_name);
-		printf("Expected: %s\n", oldw);
-		printf("Current: %s\n", neww);
-		result = false;
-	}
-
-	free(oldw);
-	free(neww);
+	if (!verify_const_word(fp_old, fp_new, "("))
+		fail("Missing function left bracket in: %s\n", file_name);
 
 	/* Arguments */
 	while (true) {
@@ -276,24 +289,16 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, char *file_name) {
 static bool parse_var(FILE *fp_old, FILE * fp_new, char *file_name) {
 	char *oldw, *neww;
 	bool result = true;
-	int c;
 
 	/* The name of the variable */
-	oldw = read_word(fp_old, &c);
-	neww = read_word(fp_new, NULL);
-
-	if (c == EOF) {
-		printf("WARNING: Missing expected name of typedef in: %s\n",
-		    file_name);
-	}
-
-	if (strcmp(oldw, neww) != 0) {
+	result &= verify_word(fp_old, fp_new, file_name, &oldw, &neww);
+	if (!result) {
 		printf("Different variable name in %s:\n", file_name);
 		printf("Expected: %s\n", oldw);
 		printf("Current: %s\n", neww);
-		result = false;
 	}
 
+	printf("Variable name parsed: %s\n", oldw);
 	free(oldw);
 	free(neww);
 
