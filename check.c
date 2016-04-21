@@ -274,11 +274,215 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, char *file_name) {
 	return (result);
 }
 
+static bool get_next_field(FILE *fp, char *file_name, char *oldw, char **neww,
+    char **newoff) {
+	bool result = true;
+
+	while (true) {
+		/* Skip type of the field */
+		/* TODO Test this!!! */
+		(void) parse_type(NULL, fp, file_name);
+
+		/* Get new offset */
+		free(*newoff);
+		(void) verify_word(fp, file_name, newoff);
+
+		/* And new field name */
+		free(*neww);
+		result = verify_word(fp, file_name, neww);
+		if (!result || strcmp(*neww, "}"))
+			return (false);
+
+		if (strcmp(oldw, *neww) == 0)
+			return (true);
+	}
+
+	/* Not reached */
+	return (false);
+}
+
 static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name) {
+	char *oldw, *neww;
+	bool result = true;
+
+	/* The name of the struct */
+	result &= verify_words(fp_old, fp_new, file_name, &oldw, &neww);
+	if (!result) {
+		printf("Different struct name in %s:\n", file_name);
+		printf("Expected: %s\n", oldw);
+		printf("Current: %s\n", neww);
+	}
+	printf("Struct name parsed: %s\n", oldw);
+	free(oldw);
+	free(neww);
+
+	if (!verify_const_word(fp_old, fp_new, "{"))
+		fail("Missing struct left bracket in: %s\n", file_name);
+
+	/* Struct values */
+	while (true) {
+		char *oldoff, *newoff;
+		char *oldname, *newname;
+
+		/* Field offsets */
+		int rv = verify_words(fp_old, fp_new, file_name, &oldoff,
+		    &newoff);
+		result &= rv;
+
+		/* End of old kabi file, we're done. */
+		if (strcmp(oldoff, "}") == 0) {
+			free(oldoff);
+			free(newoff);
+			break;
+		}
+
+		/* End of new kabi file, fields missing. */
+		if (strcmp(newoff, "}") == 0) {
+			printf("Struct content missing in %s:\n", file_name);
+			free(oldoff);
+			free(newoff);
+			break;
+		}
+
+		/* Field names */
+		rv = verify_words(fp_old, fp_new, file_name, &oldname,
+		    &newname);
+		result &= rv;
+
+		/*
+		 * If the struct field name differs, try to find the right
+		 * one on the next line.
+		 */
+		if (!rv) {
+			/*
+			 * If we didn't find the old struct field value
+			 * on the current line or till the end of file,
+			 * it's missing.
+			 */
+			if (!get_next_field(fp_new, file_name, oldname,
+				    &newname, &newoff)) {
+				printf("Struct field missing in %s:\n",
+				    file_name);
+				printf("Name: %s\n", oldname);
+				free(oldname);
+				free(newname);
+				break;
+			}
+		}
+
+		if (strcmp(oldname, newname) != 0)
+			fail("Struct field names not the same in %s: "
+			    "%s vs. %s\n", file_name, oldname, newname);
+
+		/* Verify the struct field offset */
+		if (strcmp(oldoff, newoff) != 0) {
+			printf("Offset of field %s differs in %s:\n", oldname,
+			    file_name);
+			printf("Expected: %s\n", oldoff);
+			printf("Current: %s\n", newoff);
+			result = false;
+		}
+		printf("Field name: %s\n", oldname);
+		printf("Field offset: %s\n", oldoff);
+
+		/* Function return type */
+		printf("Field type: ");
+		result &= parse_type(fp_old, fp_new, file_name);
+	}
 	return (true);
 }
 
+static bool get_next_union(FILE *fp, char *file_name, char *oldw,
+    char **neww) {
+	bool result = true;
+
+	while (true) {
+		/* Skip type of the field */
+		(void) parse_type(NULL, fp, file_name);
+
+		/* Get new field name */
+		free(*neww);
+		result = verify_word(fp, file_name, neww);
+		if (!result || strcmp(*neww, "}"))
+			return (false);
+
+		if (strcmp(oldw, *neww) == 0)
+			return (true);
+	}
+
+	/* Not reached */
+	return (false);
+}
+
 static bool parse_union(FILE *fp_old, FILE * fp_new, char *file_name) {
+	char *oldw, *neww;
+	bool result = true;
+
+	/* The name of the union */
+	result &= verify_words(fp_old, fp_new, file_name, &oldw, &neww);
+	if (!result) {
+		printf("Different union name in %s:\n", file_name);
+		printf("Expected: %s\n", oldw);
+		printf("Current: %s\n", neww);
+	}
+	printf("Union name parsed: %s\n", oldw);
+	free(oldw);
+	free(neww);
+
+	if (!verify_const_word(fp_old, fp_new, "{"))
+		fail("Missing struct left bracket in: %s\n", file_name);
+
+	/* Struct values */
+	while (true) {
+		/* Field names */
+		int rv = verify_words(fp_old, fp_new, file_name, &oldw, &neww);
+		result &= rv;
+
+		/* End of old kabi file, we're done. */
+		if (strcmp(oldw, "}") == 0) {
+			free(oldw);
+			free(neww);
+			break;
+		}
+
+		/* End of new kabi file, fields missing. */
+		if (strcmp(neww, "}") == 0) {
+			printf("Union content missing in %s:\n", file_name);
+			free(oldw);
+			free(neww);
+			break;
+		}
+
+		/*
+		 * If the union field name differs, try to find the right
+		 * one on the next line.
+		 */
+		if (!rv) {
+			/*
+			 * If we didn't find the old field on the current
+			 * line or till the end of file, it's missing.
+			 */
+			if (!get_next_union(fp_new, file_name, oldw,
+				    &neww)) {
+				printf("Union field missing in %s:\n",
+				    file_name);
+				printf("Name: %s\n", oldw);
+				free(oldw);
+				free(neww);
+				break;
+			}
+		}
+
+		if (strcmp(oldw, neww) != 0)
+			fail("Union field names not the same in %s: "
+			    "%s vs. %s\n", file_name, oldw, neww);
+		printf("Union Name: %s\n", oldw);
+
+		/* Union type */
+		printf("Type: ");
+		result &= parse_type(fp_old, fp_new, file_name);
+	}
+
 	return (true);
 }
 
@@ -319,7 +523,7 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, char *file_name) {
 	free(neww);
 
 	if (!verify_const_word(fp_old, fp_new, "{"))
-		fail("Missing function left bracket in: %s\n", file_name);
+		fail("Missing enum left bracket in: %s\n", file_name);
 
 	/* Enum values */
 	while (true) {
@@ -335,7 +539,10 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, char *file_name) {
 			break;
 		}
 
-		/* If the enum differs, try to find it on the next line */
+		/*
+		 * If the enum name differs, try to find the right one on
+		 * the next line
+		 */
 		if (!rv) {
 			/*
 			 * If we didn't find the old enum value on the current
@@ -447,7 +654,7 @@ static bool check_symbol_file(char *kabi_path, void *arg) {
 	while (*file_name == '/')
 		file_name++;
 
-	//if (conf->verbose)
+	// if (conf->verbose)
 		printf("Checking %s\n", file_name);
 
 	if (asprintf(&temp_kabi_path, "%s/%s", conf->temp_kabi_dir, file_name)
