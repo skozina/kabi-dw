@@ -113,22 +113,26 @@ static bool verify_const_word(FILE *fp_old, FILE *fp_new, const char *word) {
 	return (result);
 }
 
-static bool verify_word(FILE *fp_old, FILE *fp_new, const char *file_name,
-    char **oldw, char **neww) {
+static bool verify_word(FILE *fp, const char *file_name, char **word) {
 	bool result = true;
 	int c;
 
-	*oldw = read_word(fp_old, &c);
+	*word = read_word(fp, &c);
 	if (c == EOF)
 		fail("Required word missing in %s!\n", file_name);
 
-	*neww = read_word(fp_new, &c);
-	if (c == EOF)
-		fail("Required word missing in %s!\n", file_name);
+	return (result);
+}
 
-	if (strcmp(*oldw, *neww) != 0) {
+static bool verify_words(FILE *fp_old, FILE *fp_new, const char *file_name,
+    char **oldw, char **neww) {
+	bool result = true;
+
+	result &= verify_word(fp_old, file_name, oldw);
+	result &= verify_word(fp_new, file_name, neww);
+
+	if (strcmp(*oldw, *neww) != 0)
 		result = false;
-	}
 
 	return (result);
 }
@@ -193,7 +197,7 @@ static bool parse_typedef(FILE *fp_old, FILE * fp_new, char *file_name) {
 	bool result = true;
 
 	/* The name of the typedef */
-	result &= verify_word(fp_old, fp_new, file_name, &oldw, &neww);
+	result &= verify_words(fp_old, fp_new, file_name, &oldw, &neww);
 	if (!result) {
 		printf("Different typedef name in %s:\n", file_name);
 		printf("Expected: %s\n", oldw);
@@ -212,10 +216,9 @@ static bool parse_typedef(FILE *fp_old, FILE * fp_new, char *file_name) {
 static bool parse_func(FILE *fp_old, FILE * fp_new, char *file_name) {
 	char *oldw, *neww;
 	bool result = true;
-	int c;
 
 	/* The name of the function */
-	result &= verify_word(fp_old, fp_new, file_name, &oldw, &neww);
+	result &= verify_words(fp_old, fp_new, file_name, &oldw, &neww);
 	if (!result) {
 		printf("Different variable name in %s:\n", file_name);
 		printf("Expected: %s\n", oldw);
@@ -230,26 +233,24 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, char *file_name) {
 
 	/* Arguments */
 	while (true) {
-		oldw = read_word(fp_old, &c);
-		neww = read_word(fp_new, NULL);
+		int rv = verify_words(fp_old, fp_new, file_name, &oldw, &neww);
+		result &= rv;
 
-		if (c == EOF) {
-			printf("WARNING: Missing function right bracket in: %s\n",
-			    file_name);
-		}
-
-		if (strcmp(oldw, neww) != 0) {
+		if (!rv) {
 			if (strcmp(oldw, ")") == 0) {
 				printf("Unexpected argument found in %s:\n",
 				    file_name);
 				printf("Argument: %s\n", neww);
+			} else if (strcmp(neww, ")") == 0) {
+				printf("Argument missing in %s:\n",
+				    file_name);
+				printf("Argument: %s\n", oldw);
 			} else {
 				printf("Different argument name in %s:\n",
 				    file_name);
 				printf("Expected: %s\n", oldw);
 				printf("Current: %s\n", neww);
 			}
-			result = false;
 		}
 
 		if (strcmp(oldw, ")") == 0) {
@@ -259,7 +260,6 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, char *file_name) {
 		}
 
 		printf("Argument name: %s, ", oldw);
-
 		free(oldw);
 		free(neww);
 
@@ -282,8 +282,100 @@ static bool parse_union(FILE *fp_old, FILE * fp_new, char *file_name) {
 	return (true);
 }
 
+static bool get_next_enum(FILE *fp, char *file_name, char *oldw, char **neww) {
+	int i;
+	bool result = true;
+
+	while (true) {
+		/* Each enum line has 3 parts */
+		for (i = 0; i < 3; i++) {
+			free(*neww);
+			result = verify_word(fp, file_name, neww);
+			if (!result || strcmp(*neww, "}"))
+				return (false);
+		}
+
+		if (strcmp(oldw, *neww) == 0)
+			return (true);
+	}
+
+	/* Not reached */
+	return (false);
+}
+
 static bool parse_enum(FILE *fp_old, FILE * fp_new, char *file_name) {
-	return (true);
+	char *oldw, *neww;
+	bool result = true;
+
+	/* The name of the enum */
+	result &= verify_words(fp_old, fp_new, file_name, &oldw, &neww);
+	if (!result) {
+		printf("Different enum name in %s:\n", file_name);
+		printf("Expected: %s\n", oldw);
+		printf("Current: %s\n", neww);
+	}
+	printf("Enum name parsed: %s\n", oldw);
+	free(oldw);
+	free(neww);
+
+	if (!verify_const_word(fp_old, fp_new, "{"))
+		fail("Missing function left bracket in: %s\n", file_name);
+
+	/* Enum values */
+	while (true) {
+		char *oldname, *newname;
+		int rv = verify_words(fp_old, fp_new, file_name, &oldname,
+		    &newname);
+		result &= rv;
+
+		/* End of old kabi file, we're done. */
+		if (strcmp(oldname, "}") == 0) {
+			free(oldname);
+			free(newname);
+			break;
+		}
+
+		/* If the enum differs, try to find it on the next line */
+		if (!rv) {
+			/*
+			 * If we didn't find the old enum value on the current
+			 * line or till the end of file, it's missing.
+			 */
+			if ((strcmp(newname, "}") == 0) ||
+			    (!get_next_enum(fp_new, file_name, oldname,
+				    &newname))) {
+				printf("Enum value missing in %s:\n",
+				    file_name);
+				printf("Name: %s\n", oldname);
+				free(oldname);
+				free(newname);
+				break;
+			}
+		}
+
+		/* The enum names are the same, verify them */
+		if (!verify_const_word(fp_old, fp_new, "="))
+			fail("Missing equal sign in: %s\n", file_name);
+
+		/* Enum value */
+		rv = verify_words(fp_old, fp_new, file_name, &oldw, &neww);
+		result &= rv;
+
+		if (strcmp(oldw, neww) != 0) {
+			printf("Value of enum %s differs in %s:\n", oldname,
+			    file_name);
+			printf("Expected: %s\n", oldw);
+			printf("Current: %s\n", neww);
+			result = false;
+		}
+
+		printf("Enum value name: %s, ", oldname);
+		printf("value: %s\n", oldw);
+		free(oldname);
+		free(newname);
+	}
+
+	return (result);
 }
 
 static bool parse_var(FILE *fp_old, FILE * fp_new, char *file_name) {
@@ -291,7 +383,7 @@ static bool parse_var(FILE *fp_old, FILE * fp_new, char *file_name) {
 	bool result = true;
 
 	/* The name of the variable */
-	result &= verify_word(fp_old, fp_new, file_name, &oldw, &neww);
+	result &= verify_words(fp_old, fp_new, file_name, &oldw, &neww);
 	if (!result) {
 		printf("Different variable name in %s:\n", file_name);
 		printf("Expected: %s\n", oldw);
@@ -373,11 +465,11 @@ static bool check_symbol_file(char *kabi_path, void *arg) {
 		goto all_done;
 	}
 
-	if ((fp_old = fopen(temp_kabi_path, "r")) == NULL) {
+	if ((fp_new = fopen(temp_kabi_path, "r")) == NULL) {
 		printf("Failed to open file: %s\n", temp_kabi_path);
 		goto all_done;
 	}
-	if ((fp_new = fopen(kabi_path, "r")) == NULL) {
+	if ((fp_old = fopen(kabi_path, "r")) == NULL) {
 		printf("Failed to open file: %s\n", kabi_path);
 		goto new_done;
 	}
