@@ -192,7 +192,25 @@ static void print_die_struct_member(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 		fail("Offset of member %s missing!\n", name);
 
 	(void) dwarf_formudata(&attr, &value);
-	fprintf(fout, "0x%lx %s ", value, name);
+	fprintf(fout, "0x%lx", value);
+
+	if (dwarf_hasattr(die, DW_AT_bit_offset)) {
+		Dwarf_Word offset, size;
+
+		if (!dwarf_hasattr(die, DW_AT_bit_size))
+			fail("Missing expected bit size attribute in %s!\n",
+			    name);
+
+		if (dwarf_attr(die, DW_AT_bit_offset, &attr) == NULL)
+			fail("Bit offset of member %s missing!\n", name);
+		(void) dwarf_formudata(&attr, &offset);
+		if (dwarf_attr(die, DW_AT_bit_size, &attr) == NULL)
+			fail("Bit size of member %s missing!\n", name);
+		(void) dwarf_formudata(&attr, &size);
+		fprintf(fout, ":%ld-%ld", offset, offset + size);
+	}
+
+	fprintf(fout, " %s ", name);
 	print_die_type(dbg, fout, cu_die, die, conf);
 }
 
