@@ -18,14 +18,14 @@
 
 #define	DEF_BUFSIZE (16)
 
-typedef bool (*parse_func_t)(FILE *, FILE *, char *);
+typedef bool (*parse_func_t)(FILE *, FILE *, char *, check_config_t *);
 
-static bool parse_func(FILE *, FILE *, char *);
-static bool parse_typedef(FILE *, FILE *, char *);
-static bool parse_var(FILE *, FILE *, char *);
-static bool parse_enum(FILE *, FILE *, char *);
-static bool parse_struct(FILE *, FILE *, char *);
-static bool parse_union(FILE *, FILE *, char *);
+static bool parse_func(FILE *, FILE *, char *, check_config_t *);
+static bool parse_typedef(FILE *, FILE *, char *, check_config_t *);
+static bool parse_var(FILE *, FILE *, char *, check_config_t *);
+static bool parse_enum(FILE *, FILE *, char *, check_config_t *);
+static bool parse_struct(FILE *, FILE *, char *, check_config_t *);
+static bool parse_union(FILE *, FILE *, char *, check_config_t *);
 
 /*
  * Table of known types we should fine as the first word on the third line
@@ -137,7 +137,8 @@ static bool verify_words(FILE *fp_old, FILE *fp_new, const char *file_name,
 	return (result);
 }
 
-static bool parse_type(FILE *fp_old, FILE *fp_new, char *file_name) {
+static bool parse_type(FILE *fp_old, FILE *fp_new, char *file_name,
+    check_config_t *conf) {
 	char *oldw, *neww;
 	parse_func_t parse_func;
 	bool result = true;
@@ -160,7 +161,7 @@ static bool parse_type(FILE *fp_old, FILE *fp_new, char *file_name) {
 
 		parse_func = get_parse_func(oldw);
 		if (parse_func != NULL) {
-			result &= parse_func(fp_old, fp_new, file_name);
+			result &= parse_func(fp_old, fp_new, file_name, conf);
 			goto done;
 		}
 
@@ -170,17 +171,24 @@ static bool parse_type(FILE *fp_old, FILE *fp_new, char *file_name) {
 		 * descent into the referenced file.
 		 */
 		if (oldw[0] == '@') {
-			printf("Reference: %s\n", oldw);
+			if (conf->verbose)
+				printf("Reference: %s\n", oldw);
 			goto done;
 		}
 
-		printf("%s", oldw);
-		/* We must have parsed base type now which ends with newline */
+		if (conf->verbose)
+			printf("%s", oldw);
+		/*
+		 * If the word ended up with a newline, we just parsed base
+		 * type.
+		 */
 		if (c == '\n') {
-			printf("\n");
+			if (conf->verbose)
+				printf("\n");
 			goto done;
 		}
-		printf(" ");
+		if (conf->verbose)
+			printf(" ");
 
 		free(oldw);
 		free(neww);
@@ -192,7 +200,8 @@ done:
 	return (result);
 }
 
-static bool parse_typedef(FILE *fp_old, FILE * fp_new, char *file_name) {
+static bool parse_typedef(FILE *fp_old, FILE * fp_new, char *file_name,
+    check_config_t *conf) {
 	char *oldw, *neww;
 	bool result = true;
 
@@ -203,17 +212,21 @@ static bool parse_typedef(FILE *fp_old, FILE * fp_new, char *file_name) {
 		printf("Expected: %s\n", oldw);
 		printf("Current: %s\n", neww);
 	}
-	printf("Typedef name parsed: %s\n", oldw);
+	if (conf->verbose)
+		printf("Typedef name parsed: %s\n", oldw);
 	free(oldw);
 	free(neww);
 
 	/* The type of the typedef follows */
-	printf("Type: ");
-	result &= parse_type(fp_old, fp_new, file_name);
+	if (conf->verbose)
+		printf("Type: ");
+
+	result &= parse_type(fp_old, fp_new, file_name, conf);
 	return (result);
 }
 
-static bool parse_func(FILE *fp_old, FILE * fp_new, char *file_name) {
+static bool parse_func(FILE *fp_old, FILE * fp_new, char *file_name,
+    check_config_t *conf) {
 	char *oldw, *neww;
 	bool result = true;
 
@@ -224,7 +237,8 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, char *file_name) {
 		printf("Expected: %s\n", oldw);
 		printf("Current: %s\n", neww);
 	}
-	printf("Func name parsed: %s\n", oldw);
+	if (conf->verbose)
+		printf("Func name parsed: %s\n", oldw);
 	free(oldw);
 	free(neww);
 
@@ -259,29 +273,34 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, char *file_name) {
 			break;
 		}
 
-		printf("Argument name: %s, ", oldw);
+		if (conf->verbose)
+			printf("Argument name: %s, ", oldw);
 		free(oldw);
 		free(neww);
 
 		/* Argument type */
-		printf("type: ");
-		result &= parse_type(fp_old, fp_new, file_name);
+		if (conf->verbose)
+			printf("Type: ");
+
+		result &= parse_type(fp_old, fp_new, file_name, conf);
 	}
 
 	/* Function return type */
-	printf("Return value: ");
-	result &= parse_type(fp_old, fp_new, file_name);
+	if (conf->verbose)
+		printf("Return value: ");
+
+	result &= parse_type(fp_old, fp_new, file_name, conf);
 	return (result);
 }
 
 static bool get_next_field(FILE *fp, char *file_name, char *oldw, char **neww,
-    char **newoff) {
+    char **newoff, check_config_t *conf) {
 	bool result = true;
 
 	while (true) {
 		/* Skip type of the field */
 		/* TODO Test this!!! */
-		(void) parse_type(NULL, fp, file_name);
+		(void) parse_type(NULL, fp, file_name, conf);
 
 		/* Get new offset */
 		free(*newoff);
@@ -301,7 +320,8 @@ static bool get_next_field(FILE *fp, char *file_name, char *oldw, char **neww,
 	return (false);
 }
 
-static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name) {
+static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name,
+    check_config_t *conf) {
 	char *oldw, *neww;
 	bool result = true;
 
@@ -312,14 +332,15 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name) {
 		printf("Expected: %s\n", oldw);
 		printf("Current: %s\n", neww);
 	}
-	printf("Struct name parsed: %s\n", oldw);
+	if (conf->verbose)
+		printf("Struct name parsed: %s\n", oldw);
 	free(oldw);
 	free(neww);
 
 	if (!verify_const_word(fp_old, fp_new, "{"))
 		fail("Missing struct left bracket in: %s\n", file_name);
 
-	/* Struct values */
+	/* Struct fields */
 	while (true) {
 		char *oldoff, *newoff;
 		char *oldname, *newname;
@@ -338,7 +359,12 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name) {
 
 		/* End of new kabi file, fields missing. */
 		if (strcmp(newoff, "}") == 0) {
+			int c;
+			char *name;
 			printf("Struct content missing in %s:\n", file_name);
+			name = read_word(fp_old, &c);
+			printf("Field name: %s\n", name);
+			free(name);
 			free(oldoff);
 			free(newoff);
 			break;
@@ -360,10 +386,10 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name) {
 			 * it's missing.
 			 */
 			if (!get_next_field(fp_new, file_name, oldname,
-				    &newname, &newoff)) {
+				    &newname, &newoff, conf)) {
 				printf("Struct field missing in %s:\n",
 				    file_name);
-				printf("Name: %s\n", oldname);
+				printf("Field name: %s\n", oldname);
 				free(oldname);
 				free(newname);
 				break;
@@ -382,23 +408,28 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name) {
 			printf("Current: %s\n", newoff);
 			result = false;
 		}
-		printf("Field name: %s\n", oldname);
-		printf("Field offset: %s\n", oldoff);
+
+		if (conf->verbose) {
+			printf("Field name: %s\n", oldname);
+			printf("Field offset: %s\n", oldoff);
+		}
 
 		/* Function return type */
-		printf("Field type: ");
-		result &= parse_type(fp_old, fp_new, file_name);
+		if (conf->verbose)
+			printf("Field type: ");
+
+		result &= parse_type(fp_old, fp_new, file_name, conf);
 	}
 	return (true);
 }
 
 static bool get_next_union(FILE *fp, char *file_name, char *oldw,
-    char **neww) {
+    char **neww, check_config_t *conf) {
 	bool result = true;
 
 	while (true) {
 		/* Skip type of the field */
-		(void) parse_type(NULL, fp, file_name);
+		(void) parse_type(NULL, fp, file_name, conf);
 
 		/* Get new field name */
 		free(*neww);
@@ -414,7 +445,8 @@ static bool get_next_union(FILE *fp, char *file_name, char *oldw,
 	return (false);
 }
 
-static bool parse_union(FILE *fp_old, FILE * fp_new, char *file_name) {
+static bool parse_union(FILE *fp_old, FILE * fp_new, char *file_name,
+    check_config_t *conf) {
 	char *oldw, *neww;
 	bool result = true;
 
@@ -425,7 +457,8 @@ static bool parse_union(FILE *fp_old, FILE * fp_new, char *file_name) {
 		printf("Expected: %s\n", oldw);
 		printf("Current: %s\n", neww);
 	}
-	printf("Union name parsed: %s\n", oldw);
+	if (conf->verbose)
+		printf("Union name parsed: %s\n", oldw);
 	free(oldw);
 	free(neww);
 
@@ -447,7 +480,12 @@ static bool parse_union(FILE *fp_old, FILE * fp_new, char *file_name) {
 
 		/* End of new kabi file, fields missing. */
 		if (strcmp(neww, "}") == 0) {
-			printf("Union content missing in %s:\n", file_name);
+			int c;
+			char *name;
+			printf("Union field missing in %s:\n", file_name);
+			name = read_word(fp_old, &c);
+			printf("Field name: %s\n", name);
+			free(name);
 			free(oldw);
 			free(neww);
 			break;
@@ -463,10 +501,10 @@ static bool parse_union(FILE *fp_old, FILE * fp_new, char *file_name) {
 			 * line or till the end of file, it's missing.
 			 */
 			if (!get_next_union(fp_new, file_name, oldw,
-				    &neww)) {
+				    &neww, conf)) {
 				printf("Union field missing in %s:\n",
 				    file_name);
-				printf("Name: %s\n", oldw);
+				printf("Field name: %s\n", oldw);
 				free(oldw);
 				free(neww);
 				break;
@@ -476,11 +514,14 @@ static bool parse_union(FILE *fp_old, FILE * fp_new, char *file_name) {
 		if (strcmp(oldw, neww) != 0)
 			fail("Union field names not the same in %s: "
 			    "%s vs. %s\n", file_name, oldw, neww);
-		printf("Union Name: %s\n", oldw);
+		if (conf->verbose)
+			printf("Union Name: %s\n", oldw);
 
 		/* Union type */
-		printf("Type: ");
-		result &= parse_type(fp_old, fp_new, file_name);
+		if (conf->verbose)
+			printf("Type: ");
+
+		result &= parse_type(fp_old, fp_new, file_name, conf);
 	}
 
 	return (true);
@@ -507,7 +548,8 @@ static bool get_next_enum(FILE *fp, char *file_name, char *oldw, char **neww) {
 	return (false);
 }
 
-static bool parse_enum(FILE *fp_old, FILE * fp_new, char *file_name) {
+static bool parse_enum(FILE *fp_old, FILE * fp_new, char *file_name,
+    check_config_t *conf) {
 	char *oldw, *neww;
 	bool result = true;
 
@@ -518,7 +560,8 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, char *file_name) {
 		printf("Expected: %s\n", oldw);
 		printf("Current: %s\n", neww);
 	}
-	printf("Enum name parsed: %s\n", oldw);
+	if (conf->verbose)
+		printf("Enum name parsed: %s\n", oldw);
 	free(oldw);
 	free(neww);
 
@@ -576,8 +619,10 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, char *file_name) {
 			result = false;
 		}
 
-		printf("Enum value name: %s, ", oldname);
-		printf("value: %s\n", oldw);
+		if (conf->verbose) {
+			printf("Enum value name: %s, ", oldname);
+			printf("value: %s\n", oldw);
+		}
 		free(oldname);
 		free(newname);
 	}
@@ -585,7 +630,8 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, char *file_name) {
 	return (result);
 }
 
-static bool parse_var(FILE *fp_old, FILE * fp_new, char *file_name) {
+static bool parse_var(FILE *fp_old, FILE * fp_new, char *file_name,
+    check_config_t *conf) {
 	char *oldw, *neww;
 	bool result = true;
 
@@ -597,13 +643,16 @@ static bool parse_var(FILE *fp_old, FILE * fp_new, char *file_name) {
 		printf("Current: %s\n", neww);
 	}
 
-	printf("Variable name parsed: %s\n", oldw);
+	if (conf->verbose)
+		printf("Variable name parsed: %s\n", oldw);
 	free(oldw);
 	free(neww);
 
 	/* The type of the variable follows */
-	printf("Type: ");
-	result &= parse_type(fp_old, fp_new, file_name);
+	if (conf->verbose)
+		printf("Type: ");
+
+	result &= parse_type(fp_old, fp_new, file_name, conf);
 	return (result);
 }
 
@@ -654,7 +703,7 @@ static bool check_symbol_file(char *kabi_path, void *arg) {
 	while (*file_name == '/')
 		file_name++;
 
-	// if (conf->verbose)
+	if (conf->verbose)
 		printf("Checking %s\n", file_name);
 
 	if (asprintf(&temp_kabi_path, "%s/%s", conf->temp_kabi_dir, file_name)
@@ -682,7 +731,7 @@ static bool check_symbol_file(char *kabi_path, void *arg) {
 	}
 
 	check_CU_and_file(fp_old, fp_new, file_name);
-	(void) parse_type(fp_old, fp_new, file_name);
+	(void) parse_type(fp_old, fp_new, file_name, conf);
 
 	fclose(fp_new);
 new_done:
