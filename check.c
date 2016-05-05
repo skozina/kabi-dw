@@ -299,7 +299,12 @@ static bool get_next_field(FILE *fp, char *file_name, char *oldw, char **neww,
 
 	while (true) {
 		/* Skip type of the field */
-		/* TODO Test this!!! */
+		/*
+		 * TODO We need to allow just reading&drop from the new file.
+		 * Reasonable way to handle this is to create objects
+		 * representing each time which would be able to parse&check
+		 * themselves.
+		 */
 		(void) parse_type(NULL, fp, file_name, conf);
 
 		/* Get new offset */
