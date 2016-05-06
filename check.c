@@ -45,6 +45,17 @@ static struct type_prefix {
 	{ "NULL", NULL },
 };
 
+static void print_warning(char *msg, check_config_t *conf, char *name,
+    char *expected, char *actual) {
+	printf("=========\n");
+	printf("Difference found in file %s:\n", conf->file_name);
+	printf("%s:\n", msg);
+	if (name != NULL)
+		printf("Symbol: %s\n", name);
+	printf("Expected: %s\n", expected);
+	printf("Actual: %s\n", actual);
+}
+
 static parse_func_t get_parse_func(char *type) {
 	struct type_prefix *current;
 
@@ -156,10 +167,8 @@ static bool parse_type(FILE *fp_old, FILE *fp_new, check_config_t *conf) {
 
 			/* Verify the word we just read */
 			if (strcmp(oldw, neww) != 0) {
-				printf("Different type in %s:\n",
-				    conf->file_name);
-				printf("Expected: %s\n", oldw);
-				printf("Current: %s\n", neww);
+				print_warning("Different type", conf, NULL,
+				    oldw, neww);
 				result = false;
 				goto done;
 			}
@@ -215,9 +224,8 @@ static bool parse_typedef(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 	/* The name of the typedef */
 	result &= verify_words(fp_old, fp_new, conf, &oldw, &neww);
 	if (!result) {
-		printf("Different typedef name in %s:\n", conf->file_name);
-		printf("Expected: %s\n", oldw);
-		printf("Current: %s\n", neww);
+		print_warning("Different typedef name", conf, NULL, oldw,
+		    neww);
 	}
 	if (conf->verbose)
 		printf("Typedef name parsed: %s\n", oldw);
@@ -239,9 +247,8 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 	/* The name of the function */
 	result &= verify_words(fp_old, fp_new, conf, &oldw, &neww);
 	if (!result) {
-		printf("Different variable name in %s:\n", conf->file_name);
-		printf("Expected: %s\n", oldw);
-		printf("Current: %s\n", neww);
+		print_warning("Different variable name", conf, NULL, oldw,
+		    neww);
 	}
 	if (conf->verbose)
 		printf("Func name parsed: %s\n", oldw);
@@ -259,18 +266,14 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 
 		if (!rv) {
 			if (strcmp(oldw, ")") == 0) {
-				printf("Unexpected argument found in %s:\n",
-				    conf->file_name);
-				printf("Argument: %s\n", neww);
+				print_warning("Unexpected argument", conf,
+				    NULL, NULL, neww);
 			} else if (strcmp(neww, ")") == 0) {
-				printf("Argument missing in %s:\n",
-				    conf->file_name);
-				printf("Argument: %s\n", oldw);
+				print_warning("Argument missing", conf,
+				    NULL, oldw, NULL);
 			} else {
-				printf("Different argument name in %s:\n",
-				    conf->file_name);
-				printf("Expected: %s\n", oldw);
-				printf("Current: %s\n", neww);
+				print_warning("Different argument name", conf,
+				    NULL, oldw, neww);
 			}
 		}
 
@@ -359,9 +362,8 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 	/* The name of the struct */
 	result &= verify_words(fp_old, fp_new, conf, &oldname, &newname);
 	if (!result) {
-		printf("Different struct name in %s:\n", conf->file_name);
-		printf("Expected: %s\n", oldname);
-		printf("Current: %s\n", newname);
+		print_warning("Different struct name", conf, NULL, oldname,
+		    newname);
 	}
 	if (conf->verbose)
 		printf("Struct name parsed: %s\n", oldname);
@@ -376,9 +378,8 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 		/* Find first two fields in the struct of the same name. */
 		if (!get_next_field(fp_old, fp_new, &oldname, &newname,
 		    &oldoff, &newoff, conf)) {
-			printf("Struct field missing in %s:\n",
-			    conf->file_name);
-			printf("Field name: %s\n", oldname);
+			print_warning("Struct field missing", conf, NULL,
+			    oldname, NULL);
 			result = false;
 			break;
 		} else {
@@ -390,10 +391,8 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 
 		/* Verify the struct field offset */
 		if (strcmp(oldoff, newoff) != 0) {
-			printf("Offset of field %s differs in %s:\n", oldname,
-			    conf->file_name);
-			printf("Expected: %s\n", oldoff);
-			printf("Current: %s\n", newoff);
+			print_warning("Field offset differs", conf, oldname,
+			    oldoff, newoff);
 			result = false;
 		}
 
@@ -463,9 +462,8 @@ static bool parse_union(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 	result &= verify_words(fp_old, fp_new, conf,
 	    &oldname, &newname);
 	if (!result) {
-		printf("Different union name in %s:\n", conf->file_name);
-		printf("Expected: %s\n", oldname);
-		printf("Current: %s\n", newname);
+		print_warning("Different union name", conf, NULL, oldname,
+		    newname);
 	}
 	if (conf->verbose)
 		printf("Union name parsed: %s\n", oldname);
@@ -480,9 +478,8 @@ static bool parse_union(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 		/* Find first two fields in the union of the same name. */
 		if (!get_next_union(fp_old, fp_new, &oldname, &newname,
 		    conf)) {
-			printf("Union field missing in %s:\n",
-			    conf->file_name);
-			printf("Field name: %s\n", oldname);
+			print_warning("Union field missing", conf, NULL,
+			    oldname, NULL);
 			result = false;
 			break;
 		} else {
@@ -543,15 +540,15 @@ static bool get_next_enum(FILE *fp_old, FILE *fp_new, char **oldname,
 }
 
 static bool parse_enum(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
+	char *oldval, *newval;
 	char *oldname, *newname;
 	bool result = true;
 
 	/* The name of the enum */
 	result &= verify_words(fp_old, fp_new, conf, &oldname, &newname);
 	if (!result) {
-		printf("Different enum name in %s:\n", conf->file_name);
-		printf("Expected: %s\n", oldname);
-		printf("Current: %s\n", newname);
+		print_warning("Different enum name", conf, NULL, oldname,
+		    newname);
 	}
 	if (conf->verbose)
 		printf("Enum name parsed: %s\n", oldname);
@@ -563,10 +560,12 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 
 	/* Enum values */
 	while (true) {
+
+		oldval = NULL;
+		newval = NULL;
 		if (!get_next_enum(fp_old, fp_new, &oldname, &newname, conf)) {
-			printf("Enum value missing in %s:\n",
-			    conf->file_name);
-			printf("Name: %s\n", oldname);
+			print_warning("Enum value missing", conf, NULL,
+			    oldname, NULL);
 			result = false;
 			break;
 		} else {
@@ -579,14 +578,12 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 			fail("Missing equal sign in: %s\n", conf->file_name);
 
 		/* Enum value */
-		result &= verify_words(fp_old, fp_new, conf, &oldname,
-		    &newname);
+		result &= verify_words(fp_old, fp_new, conf, &oldval,
+		    &newval);
 
-		if (strcmp(oldname, newname) != 0) {
-			printf("Value of enum %s differs in %s:\n", oldname,
-			    conf->file_name);
-			printf("Expected: %s\n", oldname);
-			printf("Current: %s\n", newname);
+		if (strcmp(oldval, newval) != 0) {
+			print_warning("Value of enum differs", conf,
+			    oldname, oldval, newval);
 			result = false;
 		}
 
@@ -594,10 +591,14 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 			printf("Enum value name: %s, ", oldname);
 			printf("value: %s\n", oldname);
 		}
+		free(oldval);
+		free(newval);
 		free(oldname);
 		free(newname);
 	}
 
+	free(oldval);
+	free(newval);
 	free(oldname);
 	free(newname);
 	return (result);
@@ -610,9 +611,8 @@ static bool parse_var(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 	/* The name of the variable */
 	result &= verify_words(fp_old, fp_new, conf, &oldw, &neww);
 	if (!result) {
-		printf("Different variable name in %s:\n", conf->file_name);
-		printf("Expected: %s\n", oldw);
-		printf("Current: %s\n", neww);
+		print_warning("Different variable name", conf, NULL,
+		    oldw, neww);
 	}
 
 	if (conf->verbose)
@@ -635,28 +635,26 @@ static void check_CU_and_file(FILE *fp_old, FILE *fp_new,
 
 	/* Check CU */
 	if (getline(&line_old, &len_old, fp_old) == -1) {
-		printf("CU line missing in: %s\n", conf->file_name);
+		fail("CU line missing in: %s\n", conf->file_name);
 	}
 	if (getline(&line_new, &len_new, fp_new) == -1) {
-		printf("CU line missing in: %s\n", conf->file_name);
+		fail("CU line missing in: %s\n", conf->file_name);
 	}
 	if (strcmp(line_new, line_old) != 0) {
-		printf("CU of %s differs:\n", conf->file_name);
-		printf("Should be: %s\n", line_old);
-		printf("Is: %s\n", line_new);
+		print_warning("Defined in different CU", conf, NULL,
+		    line_old, line_new);
 	}
 
 	/* Check file */
 	if (getline(&line_old, &len_old, fp_old) == -1) {
-		printf("File line missing in: %s\n", conf->file_name);
+		fail("File line missing in: %s\n", conf->file_name);
 	}
 	if (getline(&line_new, &len_new, fp_new) == -1) {
-		printf("File line missing in: %s\n", conf->file_name);
+		fail("File line missing in: %s\n", conf->file_name);
 	}
 	if (strcmp(line_new, line_old) != 0) {
-		printf("File of %s differs:\n", conf->file_name);
-		printf("Should be: %s\n", line_old);
-		printf("Is: %s\n", line_new);
+		print_warning("Defined in different files", conf, NULL,
+		    line_old, line_new);
 	}
 
 	if (line_old != NULL)
@@ -685,9 +683,10 @@ static bool check_symbol_file(char *kabi_path, void *arg) {
 
 	if (stat(temp_kabi_path, &fstat) != 0) {
 		if (errno == ENOENT) {
-			printf("Symbol removed from kabi: %s\n", file_name);
+			print_warning("Symbol removed from KABI", conf, NULL,
+			    conf->file_name, NULL);
 		} else {
-			printf("Failed to stat() file%s: %s\n", temp_kabi_path,
+			fail("Failed to stat() file%s: %s\n", temp_kabi_path,
 			    strerror(errno));
 		}
 
