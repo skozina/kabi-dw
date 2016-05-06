@@ -34,6 +34,7 @@ typedef struct {
 	char **symbols; /* List of symbols used to generate the info as hint */
 	size_t symbol_cnt;
 	char *temp_kabi_dir; /* Temporary directory to store the new kabi */
+	char *file_name; /* Currently processing file */
 } check_config_t;
 
 #endif /* MAIN_H_ */
