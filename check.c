@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <errno.h>
 #include <libgen.h> /* basename(), dirname() */
 
@@ -107,34 +108,34 @@ static int verify_const_word_fp(FILE *fp, const char *word) {
 static bool verify_const_word(FILE *fp_old, FILE *fp_new, const char *word) {
 	bool result = true;
 
-	result &= verify_const_word_fp(fp_old, word);
+	if (fp_new != NULL)
+		result &= verify_const_word_fp(fp_old, word);
 	result &= verify_const_word_fp(fp_new, word);
 
 	return (result);
 }
 
-static bool verify_word(FILE *fp, const char *file_name, char **word) {
-	bool result = true;
+static void verify_word(FILE *fp, const char *file_name, char **word) {
 	int c;
 
 	*word = read_word(fp, &c);
 	if (c == EOF)
 		fail("Required word missing in %s!\n", file_name);
-
-	return (result);
 }
 
 static bool verify_words(FILE *fp_old, FILE *fp_new, const char *file_name,
     char **oldw, char **neww) {
-	bool result = true;
+	verify_word(fp_new, file_name, neww);
 
-	result &= verify_word(fp_old, file_name, oldw);
-	result &= verify_word(fp_new, file_name, neww);
+	if (fp_old != NULL) {
+		verify_word(fp_old, file_name, oldw);
+		if (strcmp(*oldw, *neww) != 0)
+			return (false);
+	} else {
+		*neww = strdup("");
+	}
 
-	if (strcmp(*oldw, *neww) != 0)
-		result = false;
-
-	return (result);
+	return (true);
 }
 
 static bool parse_type(FILE *fp_old, FILE *fp_new, char *file_name,
@@ -144,22 +145,27 @@ static bool parse_type(FILE *fp_old, FILE *fp_new, char *file_name,
 	bool result = true;
 	int c = 0;
 
+	assert(fp_new != NULL);
+
 	while (c != EOF) {
 		/* Read the type from the original file */
-		oldw = read_word(fp_old, &c);
-		neww = read_word(fp_new, NULL);
-		if (c == EOF)
-			goto done;
+		neww = read_word(fp_new, &c);
+		if (fp_old != NULL) {
+			oldw = read_word(fp_old, &c);
+			if (c == EOF)
+				goto done;
 
-		/* Verify the word we just read */
-		if (strcmp(oldw, neww) != 0) {
-			printf("Different type in %s:\n", file_name);
-			printf("Expected: %s\n", oldw);
-			printf("Current: %s\n", neww);
-			result = false;
+			/* Verify the word we just read */
+			if (strcmp(oldw, neww) != 0) {
+				printf("Different type in %s:\n", file_name);
+				printf("Expected: %s\n", oldw);
+				printf("Current: %s\n", neww);
+				result = false;
+				goto done;
+			}
 		}
 
-		parse_func = get_parse_func(oldw);
+		parse_func = get_parse_func(neww);
 		if (parse_func != NULL) {
 			result &= parse_func(fp_old, fp_new, file_name, conf);
 			goto done;
@@ -170,14 +176,14 @@ static bool parse_type(FILE *fp_old, FILE *fp_new, char *file_name,
 		 * As we walk all the files in the kabi dir there's no need to
 		 * descent into the referenced file.
 		 */
-		if (oldw[0] == '@') {
+		if (neww[0] == '@') {
 			if (conf->verbose)
-				printf("Reference: %s\n", oldw);
+				printf("Reference: %s\n", neww);
 			goto done;
 		}
 
 		if (conf->verbose)
-			printf("%s", oldw);
+			printf("%s", neww);
 		/*
 		 * If the word ended up with a newline, we just parsed base
 		 * type.
@@ -190,12 +196,14 @@ static bool parse_type(FILE *fp_old, FILE *fp_new, char *file_name,
 		if (conf->verbose)
 			printf(" ");
 
-		free(oldw);
+		if (fp_old != NULL)
+			free(oldw);
 		free(neww);
 	}
 
 done:
-	free(oldw);
+	if (fp_old != NULL)
+		free(oldw);
 	free(neww);
 	return (result);
 }
@@ -295,26 +303,22 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, char *file_name,
 
 static bool get_next_field(FILE *fp, char *file_name, char *oldw, char **neww,
     char **newoff, check_config_t *conf) {
-	bool result = true;
-
 	while (true) {
+		if (conf->verbose)
+			printf("Skipping field: %s %s ", *newoff, *neww);
+
 		/* Skip type of the field */
-		/*
-		 * TODO We need to allow just reading&drop from the new file.
-		 * Reasonable way to handle this is to create objects
-		 * representing each time which would be able to parse&check
-		 * themselves.
-		 */
 		(void) parse_type(NULL, fp, file_name, conf);
 
 		/* Get new offset */
 		free(*newoff);
-		(void) verify_word(fp, file_name, newoff);
+		verify_word(fp, file_name, newoff);
 
 		/* And new field name */
 		free(*neww);
-		result = verify_word(fp, file_name, neww);
-		if (!result || strcmp(*neww, "}"))
+		verify_word(fp, file_name, neww);
+
+		if (strcmp(*neww, "}") == 0)
 			return (false);
 
 		if (strcmp(oldw, *neww) == 0)
@@ -366,7 +370,7 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name,
 		if (strcmp(newoff, "}") == 0) {
 			int c;
 			char *name;
-			printf("Struct content missing in %s:\n", file_name);
+			printf("Struct field missing in %s:\n", file_name);
 			name = read_word(fp_old, &c);
 			printf("Field name: %s\n", name);
 			free(name);
@@ -417,11 +421,8 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name,
 		if (conf->verbose) {
 			printf("Field name: %s\n", oldname);
 			printf("Field offset: %s\n", oldoff);
-		}
-
-		/* Function return type */
-		if (conf->verbose)
 			printf("Field type: ");
+		}
 
 		result &= parse_type(fp_old, fp_new, file_name, conf);
 	}
@@ -430,16 +431,14 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name,
 
 static bool get_next_union(FILE *fp, char *file_name, char *oldw,
     char **neww, check_config_t *conf) {
-	bool result = true;
-
 	while (true) {
 		/* Skip type of the field */
 		(void) parse_type(NULL, fp, file_name, conf);
 
 		/* Get new field name */
 		free(*neww);
-		result = verify_word(fp, file_name, neww);
-		if (!result || strcmp(*neww, "}"))
+		verify_word(fp, file_name, neww);
+		if (strcmp(*neww, "}") == 0)
 			return (false);
 
 		if (strcmp(oldw, *neww) == 0)
@@ -534,14 +533,12 @@ static bool parse_union(FILE *fp_old, FILE * fp_new, char *file_name,
 
 static bool get_next_enum(FILE *fp, char *file_name, char *oldw, char **neww) {
 	int i;
-	bool result = true;
-
 	while (true) {
 		/* Each enum line has 3 parts */
 		for (i = 0; i < 3; i++) {
 			free(*neww);
-			result = verify_word(fp, file_name, neww);
-			if (!result || strcmp(*neww, "}"))
+			verify_word(fp, file_name, neww);
+			if (strcmp(*neww, "}") == 0)
 				return (false);
 		}
 
