@@ -301,27 +301,51 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, char *file_name,
 	return (result);
 }
 
-static bool get_next_field(FILE *fp, char *file_name, char *oldw, char **neww,
-    char **newoff, check_config_t *conf) {
+static bool get_next_field(FILE *fp_old, FILE *fp_new, char *file_name,
+    char **oldname, char **newname, char **oldoff, char **newoff,
+    check_config_t *conf) {
+
+	/* Field offsets */
+	(void) verify_words(fp_old, fp_new, file_name, oldoff, newoff);
+
+	/* End of old kabi file, we're done. */
+	if (strcmp(*oldoff, "}") == 0) {
+		*newname = NULL;
+		*oldname = NULL;
+		return (true);
+	}
+
+	/* End of new kabi file, fields missing. */
+	if (strcmp(*newoff, "}") == 0) {
+		int c;
+		*oldname = read_word(fp_old, &c);
+		*newname = NULL;
+		return (false);
+	}
+
+	/* Field names */
+	if (verify_words(fp_old, fp_new, file_name, oldname, newname))
+		return (true);
+
 	while (true) {
 		if (conf->verbose)
-			printf("Skipping field: %s %s ", *newoff, *neww);
+			printf("Skipping field: %s %s ", *newoff, *newname);
 
 		/* Skip type of the field */
-		(void) parse_type(NULL, fp, file_name, conf);
+		(void) parse_type(NULL, fp_new, file_name, conf);
 
 		/* Get new offset */
 		free(*newoff);
-		verify_word(fp, file_name, newoff);
+		verify_word(fp_new, file_name, newoff);
 
-		/* And new field name */
-		free(*neww);
-		verify_word(fp, file_name, neww);
-
-		if (strcmp(*neww, "}") == 0)
+		if (strcmp(*newoff, "}") == 0)
 			return (false);
 
-		if (strcmp(oldw, *neww) == 0)
+		/* And new field name */
+		free(*newname);
+		verify_word(fp_new, file_name, newname);
+
+		if (strcmp(*oldname, *newname) == 0)
 			return (true);
 	}
 
@@ -331,83 +355,40 @@ static bool get_next_field(FILE *fp, char *file_name, char *oldw, char **neww,
 
 static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name,
     check_config_t *conf) {
-	char *oldw, *neww;
+	char *oldoff, *newoff;
+	char *oldname, *newname;
 	bool result = true;
 
 	/* The name of the struct */
-	result &= verify_words(fp_old, fp_new, file_name, &oldw, &neww);
+	result &= verify_words(fp_old, fp_new, file_name, &oldname, &newname);
 	if (!result) {
 		printf("Different struct name in %s:\n", file_name);
-		printf("Expected: %s\n", oldw);
-		printf("Current: %s\n", neww);
+		printf("Expected: %s\n", oldname);
+		printf("Current: %s\n", newname);
 	}
 	if (conf->verbose)
-		printf("Struct name parsed: %s\n", oldw);
-	free(oldw);
-	free(neww);
+		printf("Struct name parsed: %s\n", oldname);
+	free(oldname);
+	free(newname);
 
 	if (!verify_const_word(fp_old, fp_new, "{"))
 		fail("Missing struct left bracket in: %s\n", file_name);
 
 	/* Struct fields */
 	while (true) {
-		char *oldoff, *newoff;
-		char *oldname, *newname;
-
-		/* Field offsets */
-		int rv = verify_words(fp_old, fp_new, file_name, &oldoff,
-		    &newoff);
-		result &= rv;
-
-		/* End of old kabi file, we're done. */
-		if (strcmp(oldoff, "}") == 0) {
-			free(oldoff);
-			free(newoff);
-			break;
-		}
-
-		/* End of new kabi file, fields missing. */
-		if (strcmp(newoff, "}") == 0) {
-			int c;
-			char *name;
+		/* Find first two fields in the struct of the same name. */
+		if (!get_next_field(fp_old, fp_new, file_name, &oldname,
+		    &newname, &oldoff, &newoff, conf)) {
 			printf("Struct field missing in %s:\n", file_name);
-			name = read_word(fp_old, &c);
-			printf("Field name: %s\n", name);
-			free(name);
-			free(oldoff);
-			free(newoff);
+			printf("Field name: %s\n", oldname);
+			result = false;
 			break;
-		}
-
-		/* Field names */
-		rv = verify_words(fp_old, fp_new, file_name, &oldname,
-		    &newname);
-		result &= rv;
-
-		/*
-		 * If the struct field name differs, try to find the right
-		 * one on the next line.
-		 */
-		if (!rv) {
-			/*
-			 * If we didn't find the old struct field value
-			 * on the current line or till the end of file,
-			 * it's missing.
-			 */
-			if (!get_next_field(fp_new, file_name, oldname,
-				    &newname, &newoff, conf)) {
-				printf("Struct field missing in %s:\n",
-				    file_name);
-				printf("Field name: %s\n", oldname);
-				free(oldname);
-				free(newname);
+		} else {
+			if (strcmp(oldoff, "}") == 0)
 				break;
-			}
 		}
 
-		if (strcmp(oldname, newname) != 0)
-			fail("Struct field names not the same in %s: "
-			    "%s vs. %s\n", file_name, oldname, newname);
+		assert(strcmp(oldname, newname) == 0);
 
 		/* Verify the struct field offset */
 		if (strcmp(oldoff, newoff) != 0) {
@@ -424,9 +405,16 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name,
 			printf("Field type: ");
 		}
 
+		free(oldname);
+		free(newname);
 		result &= parse_type(fp_old, fp_new, file_name, conf);
 	}
-	return (true);
+
+	free(oldname);
+	free(newname);
+	free(oldoff);
+	free(newoff);
+	return (result);
 }
 
 static bool get_next_union(FILE *fp, char *file_name, char *oldw,
