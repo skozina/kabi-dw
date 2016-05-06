@@ -405,31 +405,51 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, char *file_name,
 			printf("Field type: ");
 		}
 
+		free(oldoff);
+		free(newoff);
 		free(oldname);
 		free(newname);
 		result &= parse_type(fp_old, fp_new, file_name, conf);
 	}
 
-	free(oldname);
-	free(newname);
 	free(oldoff);
 	free(newoff);
+	free(oldname);
+	free(newname);
 	return (result);
 }
 
-static bool get_next_union(FILE *fp, char *file_name, char *oldw,
-    char **neww, check_config_t *conf) {
+static bool get_next_union(FILE *fp_old, FILE *fp_new, char *file_name,
+    char **oldname, char **newname, check_config_t *conf) {
+	/* Field names */
+	(void) verify_words(fp_old, fp_new, file_name, oldname, newname);
+
+	/* End of old kabi file, we're done. */
+	if (strcmp(*oldname, "}") == 0)
+		return (true);
+
+	/* End of new kabi file, fields missing. */
+	if (strcmp(*newname, "}") == 0)
+		return (false);
+
+	if (strcmp(*oldname, *newname) == 0)
+		return (true);
+
 	while (true) {
+		if (conf->verbose)
+			printf("Skipping field: %s ", *newname);
+
 		/* Skip type of the field */
-		(void) parse_type(NULL, fp, file_name, conf);
+		(void) parse_type(NULL, fp_new, file_name, conf);
 
 		/* Get new field name */
-		free(*neww);
-		verify_word(fp, file_name, neww);
-		if (strcmp(*neww, "}") == 0)
+		free(*newname);
+		verify_word(fp_new, file_name, newname);
+
+		if (strcmp(*newname, "}") == 0)
 			return (false);
 
-		if (strcmp(oldw, *neww) == 0)
+		if (strcmp(*oldname, *newname) == 0)
 			return (true);
 	}
 
@@ -439,98 +459,84 @@ static bool get_next_union(FILE *fp, char *file_name, char *oldw,
 
 static bool parse_union(FILE *fp_old, FILE * fp_new, char *file_name,
     check_config_t *conf) {
-	char *oldw, *neww;
+	char *oldname, *newname;
 	bool result = true;
 
 	/* The name of the union */
-	result &= verify_words(fp_old, fp_new, file_name, &oldw, &neww);
+	result &= verify_words(fp_old, fp_new, file_name, &oldname, &newname);
 	if (!result) {
 		printf("Different union name in %s:\n", file_name);
-		printf("Expected: %s\n", oldw);
-		printf("Current: %s\n", neww);
+		printf("Expected: %s\n", oldname);
+		printf("Current: %s\n", newname);
 	}
 	if (conf->verbose)
-		printf("Union name parsed: %s\n", oldw);
-	free(oldw);
-	free(neww);
+		printf("Union name parsed: %s\n", oldname);
+	free(oldname);
+	free(newname);
 
 	if (!verify_const_word(fp_old, fp_new, "{"))
-		fail("Missing struct left bracket in: %s\n", file_name);
+		fail("Missing union left bracket in: %s\n", file_name);
 
-	/* Struct values */
+	/* Union fields */
 	while (true) {
-		/* Field names */
-		int rv = verify_words(fp_old, fp_new, file_name, &oldw, &neww);
-		result &= rv;
-
-		/* End of old kabi file, we're done. */
-		if (strcmp(oldw, "}") == 0) {
-			free(oldw);
-			free(neww);
+		/* Find first two fields in the union of the same name. */
+		if (!get_next_union(fp_old, fp_new, file_name, &oldname,
+		    &newname, conf)) {
+			printf("Union field missing in %s:\n",
+			    file_name);
+			printf("Field name: %s\n", oldname);
+			result = false;
 			break;
-		}
-
-		/* End of new kabi file, fields missing. */
-		if (strcmp(neww, "}") == 0) {
-			int c;
-			char *name;
-			printf("Union field missing in %s:\n", file_name);
-			name = read_word(fp_old, &c);
-			printf("Field name: %s\n", name);
-			free(name);
-			free(oldw);
-			free(neww);
-			break;
-		}
-
-		/*
-		 * If the union field name differs, try to find the right
-		 * one on the next line.
-		 */
-		if (!rv) {
-			/*
-			 * If we didn't find the old field on the current
-			 * line or till the end of file, it's missing.
-			 */
-			if (!get_next_union(fp_new, file_name, oldw,
-				    &neww, conf)) {
-				printf("Union field missing in %s:\n",
-				    file_name);
-				printf("Field name: %s\n", oldw);
-				free(oldw);
-				free(neww);
+		} else {
+			if (strcmp(oldname, "}") == 0)
 				break;
-			}
 		}
 
-		if (strcmp(oldw, neww) != 0)
-			fail("Union field names not the same in %s: "
-			    "%s vs. %s\n", file_name, oldw, neww);
-		if (conf->verbose)
-			printf("Union Name: %s\n", oldw);
+		assert(strcmp(oldname, newname) == 0);
 
-		/* Union type */
-		if (conf->verbose)
+		if (conf->verbose) {
+			printf("Union Name: %s\n", oldname);
 			printf("Type: ");
+		}
 
+		free(oldname);
+		free(newname);
 		result &= parse_type(fp_old, fp_new, file_name, conf);
 	}
 
-	return (true);
+	free(oldname);
+	free(newname);
+	return (result);
 }
 
-static bool get_next_enum(FILE *fp, char *file_name, char *oldw, char **neww) {
+static bool get_next_enum(FILE *fp_old, FILE *fp_new, char *file_name,
+    char **oldname, char **newname) {
 	int i;
+
+	/* Enum name */
+	(void) verify_words(fp_old, fp_new, file_name, oldname, newname);
+
+	/* End of old kabi file, we're done. */
+	if (strcmp(*oldname, "}") == 0)
+		return (true);
+
+	/* End of new kabi file, fields missing. */
+	if (strcmp(*newname, "}") == 0)
+		return (false);
+
+	if (strcmp(*oldname, *newname) == 0)
+		return (true);
+
 	while (true) {
 		/* Each enum line has 3 parts */
 		for (i = 0; i < 3; i++) {
-			free(*neww);
-			verify_word(fp, file_name, neww);
-			if (strcmp(*neww, "}") == 0)
+			free(*newname);
+			verify_word(fp_new, file_name, newname);
+			if (strcmp(*newname, "}") == 0)
 				return (false);
 		}
 
-		if (strcmp(oldw, *neww) == 0)
+		if (strcmp(*oldname, *newname) == 0)
 			return (true);
 	}
 
@@ -540,57 +546,36 @@ static bool get_next_enum(FILE *fp, char *file_name, char *oldw, char **neww) {
 
 static bool parse_enum(FILE *fp_old, FILE * fp_new, char *file_name,
     check_config_t *conf) {
-	char *oldw, *neww;
+	char *oldname, *newname;
 	bool result = true;
 
 	/* The name of the enum */
-	result &= verify_words(fp_old, fp_new, file_name, &oldw, &neww);
+	result &= verify_words(fp_old, fp_new, file_name, &oldname, &newname);
 	if (!result) {
 		printf("Different enum name in %s:\n", file_name);
-		printf("Expected: %s\n", oldw);
-		printf("Current: %s\n", neww);
+		printf("Expected: %s\n", oldname);
+		printf("Current: %s\n", newname);
 	}
 	if (conf->verbose)
-		printf("Enum name parsed: %s\n", oldw);
-	free(oldw);
-	free(neww);
+		printf("Enum name parsed: %s\n", oldname);
+	free(oldname);
+	free(newname);
 
 	if (!verify_const_word(fp_old, fp_new, "{"))
 		fail("Missing enum left bracket in: %s\n", file_name);
 
 	/* Enum values */
 	while (true) {
-		char *oldname, *newname;
-		int rv = verify_words(fp_old, fp_new, file_name, &oldname,
-		    &newname);
-		result &= rv;
-
-		/* End of old kabi file, we're done. */
-		if (strcmp(oldname, "}") == 0) {
-			free(oldname);
-			free(newname);
+		if (!get_next_enum(fp_old, fp_new, file_name, &oldname,
+		    &newname)) {
+			printf("Enum value missing in %s:\n",
+			    file_name);
+			printf("Name: %s\n", oldname);
+			result = false;
 			break;
-		}
-
-		/*
-		 * If the enum name differs, try to find the right one on
-		 * the next line
-		 */
-		if (!rv) {
-			/*
-			 * If we didn't find the old enum value on the current
-			 * line or till the end of file, it's missing.
-			 */
-			if ((strcmp(newname, "}") == 0) ||
-			    (!get_next_enum(fp_new, file_name, oldname,
-				    &newname))) {
-				printf("Enum value missing in %s:\n",
-				    file_name);
-				printf("Name: %s\n", oldname);
-				free(oldname);
-				free(newname);
+		} else {
+			if (strcmp(oldname, "}") == 0)
 				break;
-			}
 		}
 
 		/* The enum names are the same, verify them */
@@ -598,25 +583,27 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, char *file_name,
 			fail("Missing equal sign in: %s\n", file_name);
 
 		/* Enum value */
-		rv = verify_words(fp_old, fp_new, file_name, &oldw, &neww);
-		result &= rv;
+		result &= verify_words(fp_old, fp_new, file_name, &oldname,
+		    &newname);
 
-		if (strcmp(oldw, neww) != 0) {
+		if (strcmp(oldname, newname) != 0) {
 			printf("Value of enum %s differs in %s:\n", oldname,
 			    file_name);
-			printf("Expected: %s\n", oldw);
-			printf("Current: %s\n", neww);
+			printf("Expected: %s\n", oldname);
+			printf("Current: %s\n", newname);
 			result = false;
 		}
 
 		if (conf->verbose) {
 			printf("Enum value name: %s, ", oldname);
-			printf("value: %s\n", oldw);
+			printf("value: %s\n", oldname);
 		}
 		free(oldname);
 		free(newname);
 	}
 
+	free(oldname);
+	free(newname);
 	return (result);
 }
 
