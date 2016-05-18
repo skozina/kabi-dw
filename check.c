@@ -119,7 +119,7 @@ static int verify_const_word_fp(FILE *fp, const char *word) {
 static bool verify_const_word(FILE *fp_old, FILE *fp_new, const char *word) {
 	bool result = true;
 
-	if (fp_new != NULL)
+	if (fp_old != NULL)
 		result &= verify_const_word_fp(fp_old, word);
 	result &= verify_const_word_fp(fp_new, word);
 
