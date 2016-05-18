@@ -143,7 +143,7 @@ static bool verify_words(FILE *fp_old, FILE *fp_new, check_config_t *conf,
 		if (strcmp(*oldw, *neww) != 0)
 			return (false);
 	} else {
-		*neww = strdup("");
+		*oldw = strdup("");
 	}
 
 	return (true);
@@ -251,7 +251,7 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 		    neww);
 	}
 	if (conf->verbose)
-		printf("Func name parsed: %s\n", oldw);
+		printf("Func name parsed: %s\n", neww);
 	free(oldw);
 	free(neww);
 
@@ -277,14 +277,15 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 			}
 		}
 
-		if (strcmp(oldw, ")") == 0) {
+		if ((strcmp(oldw, ")") == 0) ||
+		    (strcmp(neww, ")") == 0)) {
 			free(oldw);
 			free(neww);
 			break;
 		}
 
 		if (conf->verbose)
-			printf("Argument name: %s, ", oldw);
+			printf("Argument name: %s, ", neww);
 		free(oldw);
 		free(neww);
 
@@ -366,7 +367,7 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 		    newname);
 	}
 	if (conf->verbose)
-		printf("Struct name parsed: %s\n", oldname);
+		printf("Struct name parsed: %s\n", newname);
 	free(oldname);
 	free(newname);
 
@@ -466,7 +467,7 @@ static bool parse_union(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 		    newname);
 	}
 	if (conf->verbose)
-		printf("Union name parsed: %s\n", oldname);
+		printf("Union name parsed: %s\n", newname);
 	free(oldname);
 	free(newname);
 
@@ -551,7 +552,7 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 		    newname);
 	}
 	if (conf->verbose)
-		printf("Enum name parsed: %s\n", oldname);
+		printf("Enum name parsed: %s\n", newname);
 	free(oldname);
 	free(newname);
 
