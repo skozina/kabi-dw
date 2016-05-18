@@ -395,23 +395,11 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	FILE *fout;
 
 	/*
-	 * This is stupid. The type of some fields (eg. struct member as a
-	 * pointer to another struct) can be defined by a mere declaration
-	 * without a full specification of the type.
-	 * In such cases we just print a remote pointer to the full type
-	 * and pray it will be printed in a different occation.
-	 *
-	 * TODO That's not enough. Lets say we have just one symbol on
-	 * whitelist which leads to printing a full definition of
-	 * a struct (foo) which contains another structure (bar).
-	 * Then we add another symbol on whitelist which we actually find
-	 * earlier than our original symbol. This one leads to printing a
-	 * structure (foo) which contains only a declaration pointer to (bar).
-	 * If we try to print the original symbol later we don't print (foo)
-	 * because this one already exist, but that means we actually never
-	 * print full definition of (bar)!
-	 * Looks like we'll need to split all generated stuff into directory
-	 * structre per CU.
+	 * Sigh. The type of some fields (eg. struct member as a pointer to
+	 * another struct) can be defined by a mere declaration without a full
+	 * specification of the type.  In such cases we just print a remote
+	 * pointer to the full type and pray it will be printed in a different
+	 * occation.
 	 */
 
 	/* Check if we need to redirect output or we have a mere declaration */
@@ -574,11 +562,6 @@ static int get_symbol_index(Dwarf_Die *die, generate_config_t *conf) {
 	/* We expect only variables or functions on whitelist */
 	switch (tag) {
 	case (DW_TAG_subprogram):
-		/*
-		 * TODO handle inline functions. They need to be in the right
-		 * header file!
-		 */
-
 		/*
 		 * We ignore DW_AT_prototyped. This marks functions with
 		 * arguments specified in their declaration which the old

@@ -640,10 +640,10 @@ static void check_CU_and_file(FILE *fp_old, FILE *fp_new,
 	if (getline(&line_new, &len_new, fp_new) == -1) {
 		fail("CU line missing in: %s\n", conf->file_name);
 	}
-	if (strcmp(line_new, line_old) != 0) {
-		print_warning("Defined in different CU", conf, NULL,
-		    line_old, line_new);
-	}
+	/*
+	 * We don't care if the CU has changed, it only needs to be provided by
+	 * the same module.
+	 */
 
 	/* Check file */
 	if (getline(&line_old, &len_old, fp_old) == -1) {
@@ -652,10 +652,7 @@ static void check_CU_and_file(FILE *fp_old, FILE *fp_new,
 	if (getline(&line_new, &len_new, fp_new) == -1) {
 		fail("File line missing in: %s\n", conf->file_name);
 	}
-	if (strcmp(line_new, line_old) != 0) {
-		print_warning("Defined in different files", conf, NULL,
-		    line_old, line_new);
-	}
+	/* No need to compare file either. */
 
 	if (line_old != NULL)
 		free(line_old);
