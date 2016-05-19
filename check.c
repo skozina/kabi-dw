@@ -663,20 +663,20 @@ static void check_CU_and_file(FILE *fp_old, FILE *fp_new,
 
 static bool check_symbol_file(char *kabi_path, void *arg) {
 	check_config_t *conf = (check_config_t *)arg;
-	char *file_name = kabi_path + strlen(conf->kabi_dir);
 	struct stat fstat;
 	char *temp_kabi_path;
 	FILE *fp_new, *fp_old;
 
 	/* If conf->kabi_dir doesn't contain trailing slashes, skip them too */
-	while (*file_name == '/')
-		file_name++;
+	conf->file_name = kabi_path + strlen(conf->kabi_dir);
+	while (*conf->file_name == '/')
+		conf->file_name++;
 
 	if (conf->verbose)
-		printf("Checking %s\n", file_name);
+		printf("Checking %s\n", conf->file_name);
 
-	if (asprintf(&temp_kabi_path, "%s/%s", conf->temp_kabi_dir, file_name)
-	    == -1)
+	if (asprintf(&temp_kabi_path, "%s/%s", conf->temp_kabi_dir,
+	    conf->file_name) == -1)
 		fail("asprintf() failed\n");
 
 	if (stat(temp_kabi_path, &fstat) != 0) {
@@ -700,7 +700,6 @@ static bool check_symbol_file(char *kabi_path, void *arg) {
 		goto new_done;
 	}
 
-	conf->file_name = file_name;
 	check_CU_and_file(fp_old, fp_new, conf);
 	(void) parse_type(fp_old, fp_new, conf);
 
