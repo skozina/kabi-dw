@@ -37,6 +37,41 @@ struct dwarf_type {
 	{ 0, NULL }
 };
 
+static const char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
+	Dwarf_Files *files;
+	size_t nfiles;
+	Dwarf_Attribute attr;
+	Dwarf_Word file;
+	const char *filename;
+
+	if (!dwarf_hasattr(die, DW_AT_decl_file))
+		fail("DIE missing file information: %s\n",
+		    dwarf_diename(die));
+
+	(void) dwarf_attr(die, DW_AT_decl_file, &attr);
+	(void) dwarf_formudata(&attr, &file);
+
+	if (dwarf_getsrcfiles(cu_die, &files, &nfiles) != 0)
+		fail("cannot get files for CU %s\n", dwarf_diename(cu_die));
+
+	filename = dwarf_filesrc(files, file, NULL, NULL);
+	return (filename);
+}
+
+static long get_line(Dwarf_Die *cu_die, Dwarf_Die *die) {
+	Dwarf_Attribute attr;
+	Dwarf_Word line;
+
+	if (!dwarf_hasattr(die, DW_AT_decl_line))
+		fail("DIE missing file or line information: %s\n",
+		    dwarf_diename(die));
+
+	(void) dwarf_attr(die, DW_AT_decl_line, &attr);
+	(void) dwarf_formudata(&attr, &line);
+
+	return (line);
+}
+
 static void print_die(Dwarf *, FILE *, Dwarf_Die *, Dwarf_Die *,
     generate_config_t *);
 
@@ -69,7 +104,8 @@ static char * get_file_prefix(unsigned int dwarf_tag) {
 	return (current->prefix);
 }
 
-static char * get_symbol_file(Dwarf_Die *die, generate_config_t *conf) {
+static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die,
+    generate_config_t *conf) {
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
 	char *file_prefix = NULL;
@@ -99,8 +135,8 @@ static char * get_symbol_file(Dwarf_Die *die, generate_config_t *conf) {
 	/* We don't expect our name to be empty now */
 	assert(name != NULL);
 
-	if (asprintf(&file_name, "%s/%s/%s%s.txt", conf->kabi_dir, conf->module,
-	    file_prefix, name) == -1)
+	if (asprintf(&file_name, "%s/%s/%s/%s%s.txt", conf->kabi_dir, conf->module,
+	    dwarf_diename(cu_die), file_prefix, name) == -1)
 		fail("asprintf() failed\n");
 
 	return (file_name);
@@ -363,30 +399,6 @@ static void print_die_array_type(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
 	} while (dwarf_siblingof(die, die) == 0);
 }
 
-static void print_file_line(FILE *fout, Dwarf_Die *cu_die, Dwarf_Die *die) {
-	Dwarf_Files *files;
-	size_t nfiles;
-	Dwarf_Attribute attr;
-	Dwarf_Word line, file;
-	const char *filename;
-
-	if (!dwarf_hasattr(die, DW_AT_decl_line) ||
-	    !dwarf_hasattr(die, DW_AT_decl_file))
-		fail("DIE missing file or line information: %s\n",
-		    dwarf_diename(die));
-
-	(void) dwarf_attr(die, DW_AT_decl_line, &attr);
-	(void) dwarf_formudata(&attr, &line);
-	(void) dwarf_attr(die, DW_AT_decl_file, &attr);
-	(void) dwarf_formudata(&attr, &file);
-
-	if (dwarf_getsrcfiles(cu_die, &files, &nfiles) != 0)
-		fail("cannot get files for CU %s\n", dwarf_diename(cu_die));
-
-	filename = dwarf_filesrc(files, file, NULL, NULL);
-	fprintf(fout, "File %s:%lu\n", filename, line);
-}
-
 static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
     Dwarf_Die *die, generate_config_t *conf) {
 	unsigned int tag = dwarf_tag(die);
@@ -403,8 +415,11 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	 */
 
 	/* Check if we need to redirect output or we have a mere declaration */
-	file_name = get_symbol_file(die, conf);
+	file_name = get_symbol_file(die, cu_die, conf);
 	if (file_name != NULL || is_declaration(die)) {
+		const char *file;
+		long line;
+
 		/* Else set our output to the file */
 		if (parent_file != NULL)
 			fprintf(parent_file, "@%s\n", basename(file_name));
@@ -434,7 +449,9 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 			print_die(dbg, fout, NULL, cu_die, conf);
 
 		/* Then print the source file & line */
-		print_file_line(fout, cu_die, die);
+		file = get_file(cu_die, die);
+		line = get_line(cu_die, die);
+		fprintf(fout, "File %s:%lu\n", file, line);
 	} else {
 		fout = parent_file;
 	}

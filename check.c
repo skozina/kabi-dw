@@ -326,7 +326,8 @@ static bool get_next_field(FILE *fp_old, FILE *fp_new, char **oldname,
 	}
 
 	/* Field names */
-	if (verify_words(fp_old, fp_new, conf, oldname, newname))
+	if (verify_words(fp_old, fp_new, conf, oldname, newname) &&
+	    (fp_old != NULL))
 		return (true);
 
 	while (true) {
@@ -379,8 +380,9 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 		/* Find first two fields in the struct of the same name. */
 		if (!get_next_field(fp_old, fp_new, &oldname, &newname,
 		    &oldoff, &newoff, conf)) {
-			print_warning("Struct field missing", conf, NULL,
-			    oldname, NULL);
+			if (fp_old != NULL)
+				print_warning("Struct field missing", conf,
+				    NULL, oldname, NULL);
 			result = false;
 			break;
 		} else {
@@ -479,8 +481,9 @@ static bool parse_union(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 		/* Find first two fields in the union of the same name. */
 		if (!get_next_union(fp_old, fp_new, &oldname, &newname,
 		    conf)) {
-			print_warning("Union field missing", conf, NULL,
-			    oldname, NULL);
+			if (fp_old != NULL)
+				print_warning("Union field missing", conf,
+				    NULL, oldname, NULL);
 			result = false;
 			break;
 		} else {
