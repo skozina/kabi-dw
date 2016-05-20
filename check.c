@@ -341,14 +341,18 @@ static bool get_next_field(FILE *fp_old, FILE *fp_new, char **oldname,
 		free(*newoff);
 		verify_word(fp_new, conf, newoff);
 
-		if (strcmp(*newoff, "}") == 0)
+		if (strcmp(*newoff, "}") == 0) {
+			/* Skip the type in the old file */
+			if (fp_old != NULL)
+				parse_type(NULL, fp_old, conf);
 			return (false);
+		}
 
 		/* And new field name */
 		free(*newname);
 		verify_word(fp_new, conf, newname);
 
-		if (strcmp(*oldname, *newname) == 0)
+		if ((fp_old != NULL) && (strcmp(*oldname, *newname) == 0))
 			return (true);
 	}
 
@@ -393,7 +397,7 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 		assert(strcmp(oldname, newname) == 0);
 
 		/* Verify the struct field offset */
-		if (strcmp(oldoff, newoff) != 0) {
+		if ((fp_old != NULL) && (strcmp(oldoff, newoff) != 0)) {
 			print_warning("Field offset differs", conf, oldname,
 			    oldoff, newoff);
 			result = false;
@@ -432,7 +436,7 @@ static bool get_next_union(FILE *fp_old, FILE *fp_new, char **oldname,
 	if (strcmp(*newname, "}") == 0)
 		return (false);
 
-	if (strcmp(*oldname, *newname) == 0)
+	if ((fp_old != NULL) && (strcmp(*oldname, *newname) == 0))
 		return (true);
 
 	while (true) {
@@ -446,10 +450,14 @@ static bool get_next_union(FILE *fp_old, FILE *fp_new, char **oldname,
 		free(*newname);
 		verify_word(fp_new, conf, newname);
 
-		if (strcmp(*newname, "}") == 0)
+		if (strcmp(*newname, "}") == 0) {
+			/* Skip the type in the old file */
+			if (fp_old != NULL)
+				parse_type(NULL, fp_old, conf);
 			return (false);
+		}
 
-		if (strcmp(*oldname, *newname) == 0)
+		if ((fp_old != NULL) && (strcmp(*oldname, *newname) == 0))
 			return (true);
 	}
 
@@ -523,7 +531,7 @@ static bool get_next_enum(FILE *fp_old, FILE *fp_new, char **oldname,
 	if (strcmp(*newname, "}") == 0)
 		return (false);
 
-	if (strcmp(*oldname, *newname) == 0)
+	if ((fp_old != NULL) && (strcmp(*oldname, *newname) == 0))
 		return (true);
 
 	while (true) {
@@ -535,7 +543,7 @@ static bool get_next_enum(FILE *fp_old, FILE *fp_new, char **oldname,
 				return (false);
 		}
 
-		if (strcmp(*oldname, *newname) == 0)
+		if ((fp_old != NULL) && (strcmp(*oldname, *newname) == 0))
 			return (true);
 	}
 
@@ -585,7 +593,7 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 		result &= verify_words(fp_old, fp_new, conf, &oldval,
 		    &newval);
 
-		if (strcmp(oldval, newval) != 0) {
+		if ((fp_old != NULL) && (strcmp(oldval, newval) != 0)) {
 			print_warning("Value of enum differs", conf,
 			    oldname, oldval, newval);
 			result = false;
