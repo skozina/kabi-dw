@@ -556,9 +556,31 @@ static bool parse_union(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 	return (result);
 }
 
+static void skip_rest_of_enum(FILE *fp, check_config_t *conf) {
+	char *name = NULL;
+
+	while (true) {
+		/* Equal sign */
+		if (!verify_const_word(NULL, fp, "="))
+			fail("Missing equal sign in: %s\n", conf->file_name);
+
+		/* Value */
+		free(name);
+		verify_word(fp, conf, &name);
+
+		/* New name */
+		free(name);
+		verify_word(fp, conf, &name);
+
+		if (strcmp(name, "}") == 0)
+			break;
+	}
+
+	free(name);
+}
+
 static bool get_next_enum(FILE *fp_old, FILE *fp_new, char **oldname,
     char **newname, check_config_t *conf) {
-	int i;
 
 	/* Enum name */
 	(void) verify_words(fp_old, fp_new, conf, oldname, newname);
@@ -575,12 +597,24 @@ static bool get_next_enum(FILE *fp_old, FILE *fp_new, char **oldname,
 		return (true);
 
 	while (true) {
-		/* Each enum line has 3 parts */
-		for (i = 0; i < 3; i++) {
-			free(*newname);
-			verify_word(fp_new, conf, newname);
-			if (strcmp(*newname, "}") == 0)
-				return (false);
+		if (conf->verbose)
+			printf("Skipping enum: %s ", *newname);
+
+		/* Equal sign */
+		if (!verify_const_word(NULL, fp_new, "="))
+			fail("Missing equal sign in: %s\n", conf->file_name);
+
+		/* Value */
+		free(*newname);
+		verify_word(fp_new, conf, newname);
+
+		/* New name */
+		free(*newname);
+		verify_word(fp_new, conf, newname);
+		if (strcmp(*newname, "}") == 0) {
+			if (fp_old != NULL)
+				skip_rest_of_enum(fp_old, conf);
+			return (false);
 		}
 
 		if ((fp_old != NULL) && (strcmp(*oldname, *newname) == 0))
@@ -612,18 +646,20 @@ static bool parse_enum(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 
 	/* Enum values */
 	while (true) {
-
 		oldval = NULL;
 		newval = NULL;
 		if (!get_next_enum(fp_old, fp_new, &oldname, &newname, conf)) {
-			print_warning("Enum value missing", conf, NULL,
-			    oldname, NULL);
+			if (fp_old != NULL)
+				print_warning("Enum value missing", conf, NULL,
+				    oldname, NULL);
 			result = false;
 			break;
 		} else {
 			if (strcmp(oldname, "}") == 0)
 				break;
 		}
+
+		assert(strcmp(oldname, newname) == 0);
 
 		/* The enum names are the same, verify them */
 		if (!verify_const_word(fp_old, fp_new, "="))
