@@ -304,6 +304,28 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 	return (result);
 }
 
+static void skip_rest_of_struct(FILE *fp, check_config_t *conf) {
+	char *off = NULL, *name = NULL;
+
+	while (true) {
+		/* Skip type of the field */
+		(void) parse_type(NULL, fp, conf);
+
+		/* Get new offset */
+		free(off);
+		verify_word(fp, conf, &off);
+
+		if (strcmp(off, "}") == 0)
+			break;
+
+		/* And new field name */
+		free(name);
+		verify_word(fp, conf, &name);
+	}
+
+	free(off);
+}
+
 static bool get_next_field(FILE *fp_old, FILE *fp_new, char **oldname,
     char **newname, char **oldoff, char **newoff, check_config_t *conf) {
 
@@ -344,7 +366,7 @@ static bool get_next_field(FILE *fp_old, FILE *fp_new, char **oldname,
 		if (strcmp(*newoff, "}") == 0) {
 			/* Skip the type in the old file */
 			if (fp_old != NULL)
-				parse_type(NULL, fp_old, conf);
+				skip_rest_of_struct(fp_old, conf);
 			return (false);
 		}
 
@@ -423,6 +445,24 @@ static bool parse_struct(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 	return (result);
 }
 
+static void skip_rest_of_union(FILE *fp, check_config_t *conf) {
+	char *name = NULL;
+
+	/* Skip type of the field */
+	while (true) {
+		(void) parse_type(NULL, fp, conf);
+
+		/* Get new field name */
+		free(name);
+		verify_word(fp, conf, &name);
+
+		if (strcmp(name, "}") == 0)
+			break;
+	}
+
+	free(name);
+}
+
 static bool get_next_union(FILE *fp_old, FILE *fp_new, char **oldname,
     char **newname, check_config_t *conf) {
 	/* Field names */
@@ -451,9 +491,9 @@ static bool get_next_union(FILE *fp_old, FILE *fp_new, char **oldname,
 		verify_word(fp_new, conf, newname);
 
 		if (strcmp(*newname, "}") == 0) {
-			/* Skip the type in the old file */
+			/* Skip the rest of the old file */
 			if (fp_old != NULL)
-				parse_type(NULL, fp_old, conf);
+				skip_rest_of_union(fp_old, conf);
 			return (false);
 		}
 
@@ -502,7 +542,7 @@ static bool parse_union(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 		assert(strcmp(oldname, newname) == 0);
 
 		if (conf->verbose) {
-			printf("Union Name: %s\n", oldname);
+			printf("Union field name: %s\n", oldname);
 			printf("Type: ");
 		}
 
