@@ -442,29 +442,21 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		const char *file;
 		long line;
 
-		/* Else set our output to the file */
-		if (parent_file != NULL)
-			fprintf(parent_file, "@%s\n", basename(file_name));
-
 		/* If the file already exist, we're done */
-		if (access(file_name, F_OK) == 0) {
-			free(file_name);
-			return;
-		}
+		if (access(file_name, F_OK) == 0)
+			goto done;
 
 		if (is_declaration(die)) {
 			if (conf->verbose)
 				printf("WARNING: Skipping following file as we "
 				    "have only declaration: %s\n",
 				    basename(file_name));
-			free(file_name);
-			return;
+			goto done;
 		}
 
 		if (conf->verbose)
 			printf("Generating %s\n", basename(file_name));
 		fout = open_output_file(file_name);
-		free(file_name);
 
 		/* Print the CU die on the first line of each file */
 		if (cu_die != NULL)
@@ -549,6 +541,15 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 
 	if (file_name != NULL)
 		fclose(fout);
+
+done:
+	if (file_name != NULL || is_declaration(die)) {
+		/* Put the link to the new file in the old file */
+		if (parent_file != NULL)
+			fprintf(parent_file, "@%s\n", basename(file_name));
+	}
+
+	free(file_name);
 }
 
 /*
