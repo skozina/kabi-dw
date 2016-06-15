@@ -59,6 +59,21 @@ struct dwarf_type {
 	{ 0, NULL }
 };
 
+/*
+ * Check if given DIE has DW_AT_declaration attribute.
+ * That indicates that the symbol is just a declaration, not full definition.
+ */
+static bool is_declaration(Dwarf_Die *die) {
+	Dwarf_Attribute attr;
+
+	if (!dwarf_hasattr(die, DW_AT_declaration))
+		return (false);
+	(void) dwarf_attr(die, DW_AT_declaration, &attr);
+	if (!dwarf_hasform(&attr, DW_FORM_flag_present))
+		return (false);
+	return (true);
+}
+
 static const char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 	Dwarf_Files *files;
 	size_t nfiles;
@@ -132,6 +147,11 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die,
 	unsigned int tag = dwarf_tag(die);
 	char *file_prefix = NULL;
 	char *file_name = NULL;
+	const char *dec_file;
+
+	/* DW_AT_declaration don't have DW_AT_decl_file */
+	if (is_declaration(die))
+		return (NULL);
 
 	if ((file_prefix = get_file_prefix(tag)) == NULL) {
 		/* No need to redirect output for this type */
@@ -157,8 +177,11 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die,
 	/* We don't expect our name to be empty now */
 	assert(name != NULL);
 
-	if (asprintf(&file_name, "%s/%s/%s/%s%s.txt", conf->kabi_dir, conf->module,
-	    dwarf_diename(cu_die), file_prefix, name) == -1)
+	dec_file = get_file(cu_die, die);
+	assert(dec_file != NULL);
+
+	if (asprintf(&file_name, "%s/%s/%s%s.txt", conf->kabi_dir,
+	    dec_file, file_prefix, name) == -1)
 		fail("asprintf() failed\n");
 
 	return (file_name);
@@ -206,21 +229,6 @@ static bool is_inline(Dwarf_Die *die) {
 		return (true);
 	else
 		return (false);
-}
-
-/*
- * Check if given DIE has DW_AT_declaration attribute.
- * That indicates that the symbol is just a declaration, not full definition.
- */
-static bool is_declaration(Dwarf_Die *die) {
-	Dwarf_Attribute attr;
-
-	if (!dwarf_hasattr(die, DW_AT_declaration))
-		return (false);
-	(void) dwarf_attr(die, DW_AT_declaration, &attr);
-	if (!dwarf_hasform(&attr, DW_FORM_flag_present))
-		return (false);
-	return (true);
 }
 
 static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
@@ -433,7 +441,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	 * another struct) can be defined by a mere declaration without a full
 	 * specification of the type.  In such cases we just print a remote
 	 * pointer to the full type and pray it will be printed in a different
-	 * occation.
+	 * occasion.
 	 */
 
 	/* Check if we need to redirect output or we have a mere declaration */
