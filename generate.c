@@ -59,6 +59,13 @@ struct dwarf_type {
 	{ 0, NULL }
 };
 
+static const char *get_die_name(Dwarf_Die *die) {
+	if (dwarf_hasattr(die, DW_AT_name))
+		return (dwarf_diename(die));
+	else
+		return (EMPTY_NAME);
+}
+
 /*
  * Check if given DIE has DW_AT_declaration attribute.
  * That indicates that the symbol is just a declaration, not full definition.
@@ -80,6 +87,13 @@ static const char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 	Dwarf_Attribute attr;
 	Dwarf_Word file;
 	const char *filename;
+
+	/*
+	 * Handle types built-in in C compiler. These are for example the
+	 * variable argument list which is defined as * struct __va_list_tag.
+	 */
+	if (strcmp(get_die_name(die), "__va_list_tag") == 0)
+		return ("<built-in>");
 
 	if (!dwarf_hasattr(die, DW_AT_decl_file))
 		fail("DIE missing file information: %s\n",
@@ -121,13 +135,6 @@ static const char * dwarf_tag_string(unsigned int tag) {
 		default:
 			return (NULL);
 	}
-}
-
-static const char *get_die_name(Dwarf_Die *die) {
-	if (dwarf_hasattr(die, DW_AT_name))
-		return (dwarf_diename(die));
-	else
-		return (EMPTY_NAME);
 }
 
 static char * get_file_prefix(unsigned int dwarf_tag) {
