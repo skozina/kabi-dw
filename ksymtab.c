@@ -170,7 +170,7 @@ char **read_ksymtab(char *filename, size_t *ksymtab_len) {
 			    "SHT_NOBITS. Most likely you're running this "
 			    "tool on modules coming from kernel-debuginfo "
 			    "packages. They don't contain the " KSYMTAB_STRINGS
-			    "section, you need to use the raw modules before "
+			    " section, you need to use the raw modules before "
 			    "they are stripped\n");
 			exit(1);
 		}
