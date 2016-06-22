@@ -269,7 +269,7 @@ static bool parse_func(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
 	/* The name of the function */
 	result &= verify_words(fp_old, fp_new, conf, &oldw, &neww);
 	if (!result) {
-		print_warning("Different variable name", conf, NULL, oldw,
+		print_warning("Different func name", conf, NULL, oldw,
 		    neww);
 	}
 	if (conf->verbose)
