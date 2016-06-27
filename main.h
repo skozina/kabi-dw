@@ -32,6 +32,9 @@
 #define	ENUM_FILE	"enum--"
 #define	VAR_FILE	"var--"
 
+/* Path used for built-in types */
+#define	BUILTIN_PATH	"<built-in>"
+
 typedef struct {
 	bool verbose;
 	char *kernel_dir; /* Path to  the kernel modules to process */

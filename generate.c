@@ -59,6 +59,24 @@ struct dwarf_type {
 	{ 0, NULL }
 };
 
+/* List of types built-in the compiler */
+static const char *builtin_types[] = {
+	"__va_list_tag",
+	"__builtin_strlen",
+	"__builtin_strcpy"
+};
+
+static const bool is_builtin(const char *name) {
+	const char **p;
+
+	for (p = builtin_types; *p != NULL; p++) {
+		if (strcmp(*p, name) == 0)
+			return (true);
+	}
+
+	return (false);
+}
+
 static const char *get_die_name(Dwarf_Die *die) {
 	if (dwarf_hasattr(die, DW_AT_name))
 		return (dwarf_diename(die));
@@ -92,8 +110,8 @@ static const char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 	 * Handle types built-in in C compiler. These are for example the
 	 * variable argument list which is defined as * struct __va_list_tag.
 	 */
-	if (strcmp(get_die_name(die), "__va_list_tag") == 0)
-		return ("<built-in>");
+	if (is_builtin(get_die_name(die)))
+		return (BUILTIN_PATH);
 
 	if (!dwarf_hasattr(die, DW_AT_decl_file))
 		fail("DIE missing file information: %s\n",
