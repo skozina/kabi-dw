@@ -124,6 +124,14 @@ static const char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 		fail("cannot get files for CU %s\n", dwarf_diename(cu_die));
 
 	filename = dwarf_filesrc(files, file, NULL, NULL);
+
+	/* Skip current dir prefix */
+	while (strncmp(filename, "./", 2) == 0) {
+		filename += 2;
+		while (*filename == '/')
+			filename++;
+	}
+
 	return (filename);
 }
 
@@ -166,21 +174,28 @@ static char * get_file_prefix(unsigned int dwarf_tag) {
 	return (current->prefix);
 }
 
-static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die,
-    generate_config_t *conf) {
+static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
 	char *file_prefix = NULL;
 	char *file_name = NULL;
 	const char *dec_file;
 
-	/* DW_AT_declaration don't have DW_AT_decl_file */
-	if (is_declaration(die))
-		return (NULL);
-
 	if ((file_prefix = get_file_prefix(tag)) == NULL) {
 		/* No need to redirect output for this type */
 		return (NULL);
+	}
+
+	/*
+	 * DW_AT_declaration don't have DW_AT_decl_file.
+	 * Pretend like it's in other, non existent file.
+	 */
+	if (is_declaration(die)) {
+		if (asprintf(&file_name, DECLARATION_PATH "/%s%s.txt",
+		    file_prefix, name) == -1)
+			fail("asprintf() failed\n");
+
+		return (file_name);
 	}
 
 	/*
@@ -205,8 +220,8 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die,
 	dec_file = get_file(cu_die, die);
 	assert(dec_file != NULL);
 
-	if (asprintf(&file_name, "%s/%s/%s%s.txt", conf->kabi_dir,
-	    dec_file, file_prefix, name) == -1)
+	if (asprintf(&file_name, "%s/%s%s.txt", dec_file, file_prefix, name)
+	    == -1)
 		fail("asprintf() failed\n");
 
 	return (file_name);
@@ -458,7 +473,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
     Dwarf_Die *die, generate_config_t *conf) {
 	unsigned int tag = dwarf_tag(die);
 	const char *name = dwarf_diename(die);
-	char *file_name;
+	char *file;
 	FILE *fout;
 
 	/*
@@ -470,35 +485,43 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	 */
 
 	/* Check if we need to redirect output or we have a mere declaration */
-	file_name = get_symbol_file(die, cu_die, conf);
-	if (file_name != NULL || is_declaration(die)) {
-		const char *file;
-		long line;
+	file = get_symbol_file(die, cu_die);
+
+	if (file != NULL) {
+		const char *dec_file;
+		long dec_line;
+		char *file_path;
+
+		if (asprintf(&file_path, "%s/%s", conf->kabi_dir, file) == -1)
+			fail("asprintf() failed\n");
 
 		/* If the file already exist, we're done */
-		if (access(file_name, F_OK) == 0)
+		if (access(file_path, F_OK) == 0) {
+			free(file_path);
 			goto done;
+		}
 
 		if (is_declaration(die)) {
 			if (conf->verbose)
 				printf("WARNING: Skipping following file as we "
-				    "have only declaration: %s\n",
-				    basename(file_name));
+				    "have only declaration: %s\n", file);
+			free(file_path);
 			goto done;
 		}
 
 		if (conf->verbose)
-			printf("Generating %s\n", basename(file_name));
-		fout = open_output_file(file_name);
+			printf("Generating %s\n", file);
+		fout = open_output_file(file_path);
+		free(file_path);
 
 		/* Print the CU die on the first line of each file */
 		if (cu_die != NULL)
 			print_die(dbg, fout, NULL, cu_die, conf);
 
 		/* Then print the source file & line */
-		file = get_file(cu_die, die);
-		line = get_line(cu_die, die);
-		fprintf(fout, "File %s:%lu\n", file, line);
+		dec_file = get_file(cu_die, die);
+		dec_line = get_line(cu_die, die);
+		fprintf(fout, "File %s:%lu\n", dec_file, dec_line);
 	} else {
 		fout = parent_file;
 	}
@@ -572,17 +595,15 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	}
 	}
 
-	if (file_name != NULL)
+	if (file != NULL)
 		fclose(fout);
 
 done:
-	if (file_name != NULL || is_declaration(die)) {
-		/* Put the link to the new file in the old file */
-		if (parent_file != NULL)
-			fprintf(parent_file, "@%s\n", basename(file_name));
-	}
+	/* Put the link to the new file in the old file */
+	if (parent_file != NULL && file != NULL)
+		fprintf(parent_file, "@%s\n", file);
 
-	free(file_name);
+	free(file);
 }
 
 /*

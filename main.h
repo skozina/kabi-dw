@@ -33,7 +33,9 @@
 #define	VAR_FILE	"var--"
 
 /* Path used for built-in types */
-#define	BUILTIN_PATH	"<built-in>"
+#define	BUILTIN_PATH		"<built-in>"
+/* Path used for DW_AT_declaration, ie. those we don't have */
+#define	DECLARATION_PATH	"<declarations>"
 
 typedef struct {
 	bool verbose;
