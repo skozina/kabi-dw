@@ -47,7 +47,7 @@ static char *progname;
 void usage(void) {
 	printf("Usage:\n"
 	    "\t %s generate [-v] [-s symbol_file] [-o kabi_dir] kernel_dir\n"
-	    "\t %s check [-v] [-s symbol_file] kabi_dir_old kabi_dir_new\n",
+	    "\t %s check [-v] kabi_dir_old kabi_dir_new\n",
 	    progname, progname);
 	exit(1);
 }
@@ -169,9 +169,7 @@ static void generate(int argc, char **argv) {
 	free(conf);
 }
 
-static void parse_check_opts(int argc, char **argv, check_config_t *conf,
-    char **symbol_file) {
-	*symbol_file = NULL;
+static void parse_check_opts(int argc, char **argv, check_config_t *conf) {
 	conf->verbose = false;
 	int rv;
 
@@ -179,12 +177,6 @@ static void parse_check_opts(int argc, char **argv, check_config_t *conf,
 		if (strcmp(*argv, "-v") == 0) {
 			argc--; argv++;
 			conf->verbose = true;
-		} else if (strcmp(*argv, "-s") == 0) {
-			argc--; argv++;
-			if (argc < 1)
-				usage();
-			*symbol_file = argv[0];
-			argc--; argv++;
 		} else {
 			usage();
 		}
@@ -205,16 +197,9 @@ static void parse_check_opts(int argc, char **argv, check_config_t *conf,
 }
 
 static void check(int argc, char **argv) {
-	char *symbol_file;
 	check_config_t *conf = safe_malloc(sizeof (*conf));
 
-	parse_check_opts(argc, argv, conf, &symbol_file);
-
-	if (symbol_file != NULL)
-		read_symbols(symbol_file, &conf->symbols, &conf->symbol_cnt);
-
-	if (conf->verbose)
-		printf("Loaded %ld symbols\n", conf->symbol_cnt);
+	parse_check_opts(argc, argv, conf);
 
 	check_symbol_defs(conf);
 

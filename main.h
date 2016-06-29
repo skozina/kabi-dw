@@ -53,8 +53,6 @@ typedef struct {
 	bool verbose;
 	char *kabi_dir_old; /* Path to the stored kabi information */
 	char *kabi_dir_new; /* Path to the new kabi information */
-	char **symbols; /* List of symbols used to generate the info as hint */
-	size_t symbol_cnt;
 	char *file_name; /* Currently processing file */
 } check_config_t;
 
