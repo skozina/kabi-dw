@@ -14,23 +14,43 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 PROG=kabi-dw
-SRCS=generate.c ksymtab.c check.c utils.c main.c
+SRCS=generate.c ksymtab.c check.c utils.c main.c objects.c
 
 CC=gcc
 CFLAGS=-Wall -O0 -g --std=c99 -c
-LDFLAGS=-ldw -lelf
+LDFLAGS=-ldw -lelf -lfl
+
+YACC=bison
+YACCFLAGS=-d -t
+
+FLEX=flex
+FLEXFLAGS=
 
 OBJS=$(SRCS:.c=.o)
+OBJS+=parser.yy.o parser.tab.o
 
 .PHONY: clean all depend
 
 all: $(PROG)
 
+debug: CFLAGS += -DDEBUG
+debug: FLEXFLAGS += -d
+debug: $(PROG)
+
+
 $(PROG): $(OBJS)
-	$(CC) $(LDFLAGS) -o $(PROG) $(OBJS)
+	$(CC) -o $(PROG) $(OBJS) $(LDFLAGS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) $< -o $@
+
+parser.tab.c: parser.y
+	$(YACC) $(YACCFLAGS) parser.y
+
+parser.yy.c: parser.tab.c parser.l parser.h
+#	$(YACC) $(YACCFLAGS) parser.y
+	$(FLEX) $(FLEXFLAGS) -o parser.yy.c parser.l
+#	$(CC) $(CFLAGS) parser.tab.c parser.yy.c
 
 depend: .depend
 
@@ -40,4 +60,4 @@ depend: .depend
 -include .depend
 
 clean:
-	rm -f $(PROG) $(OBJS) .depend
+	rm -f $(PROG) $(OBJS) .depend parser *.tab.c *.tab.h *.yy.c
