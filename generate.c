@@ -540,10 +540,10 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		print_die_type(dbg, fout, cu_die, die, conf);
 		break;
 	case DW_TAG_compile_unit:
-		fprintf(fout, "CU %s\n", name);
+		fprintf(fout, "CU \"%s\"\n", name);
 		break;
 	case DW_TAG_base_type:
-		fprintf(fout, "%s\n", name);
+		fprintf(fout, "\"%s\"\n", name);
 		break;
 	case DW_TAG_pointer_type:
 		fprintf(fout, "* ");
@@ -601,7 +601,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 done:
 	/* Put the link to the new file in the old file */
 	if (parent_file != NULL && file != NULL)
-		fprintf(parent_file, "@%s\n", file);
+		fprintf(parent_file, "\"@%s\"\n", file);
 
 	free(file);
 }
