@@ -19,7 +19,6 @@ NUM		[0-9]
 ALPHA		[a-zA-Z]
 INDENT_FIRST	[a-zA-Z_]
 INDENT		[a-zA-Z0-9_]
- /* TODO: what are those  <declarations> and <built-in> directory? */
 FILECHAR	[a-zA-Z0-9_/<>\-\.]
 HEX		[a-fA-F0-9]
 
@@ -29,33 +28,18 @@ HEX		[a-fA-F0-9]
 %}
 
 %option nounput
+%x IN_STRING
 
 %%
 
-"char"		{ return(CHAR); }
 "const"		{ return(CONST); }
 "enum"		{ return(ENUM); }
-"int"		{ return(INT); }
-"long"		{ return(LONG); }
-"short"		{ return(SHORT); }
-"signed"	{ return(SIGNED); }
 "struct"	{ return(STRUCT); }
 "typedef"	{ return(TYPEDEF); }
 "union"		{ return(UNION); }
-"unsigned"	{ return(UNSIGNED); }
-"void"		{ return(VOID); }
 "volatile"	{ return(VOLATILE); }
-"float"		{ return(FLOAT); }	/* Some struct may include fp type */
-"double"	{ return(DOUBLE); }	/* Some struct may include fp type */
-"_Bool"		{ return(BOOL); }
 
 "..."		{ return(ELLIPSIS); }
-
-	/* TODO need better rules for filenames */
-{FILECHAR}+".txt"	{ yylval.str = strdup(yytext);
-			  debug("Reference file: %s\n", yylval.str);
-			  return(REFFILE);
-			}
 
 {FILECHAR}+"."[ch]|"<built-in>"	{ yylval.str = strdup(yytext);
 				  debug("Source file: %s\n", yylval.str);
@@ -85,6 +69,12 @@ HEX		[a-fA-F0-9]
 "\n"		{ return(NEWLINE); }
 
 [ \t\v\f]	{ ; }
+"\""		{ BEGIN(IN_STRING); }
+<IN_STRING>[^"]*	{ yylval.str = strdup(yytext);
+		  debug("String: %s\n", yylval.str);
+		  return(STRING);
+		}
+<IN_STRING>"\""	{ BEGIN(INITIAL); }
 .		{ printf("Unexpected entry \"%c\"\n", *yytext); }
 
 %%

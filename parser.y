@@ -20,20 +20,6 @@
 
 extern obj_t *root;
 
-char *cat_base_type(char *s1, const char *s2) {
-	size_t sz1 = strlen(s1), sz2 = strlen(s2);
-
-	if (sz1 + sz2 + 2 >= MAX_BASE_TYPE_LEN) {
-		fprintf(stderr, "error string too long\n");
-		return s1;
-	}
-	memmove(s1+sz2+1, s1, sz1);
-	strcpy(s1, s2);
-	s1[sz2] = ' ';
-
-	return s1;
-}
-
 %}
 
 %union {
@@ -47,19 +33,18 @@ char *cat_base_type(char *s1, const char *s2) {
 	obj_list_head_t *list;
 }
 
-%token <str> IDENTIFIER SRCFILE REFFILE
+%token <str> IDENTIFIER STRING SRCFILE
 %token <l> CONSTANT
 
 %token NEWLINE
 %token TYPEDEF
-%token CHAR SHORT INT LONG SIGNED UNSIGNED VOID BOOL FLOAT DOUBLE
 %token CONST VOLATILE
 %token STRUCT UNION ENUM ELLIPSIS
 
-%type <str> type_qualifier sign_qualifier length_qualifier
-%type <obj> typed_type lengthed_type type_specifier base_type array_type
+%type <str> type_qualifier
+%type <obj> typed_type base_type reference_file array_type
 %type <obj> type ptr_type variable_var_list func_type elt enum_elt enum_type
-%type <obj> union_type struct_type struct_elt file_reference
+%type <obj> union_type struct_type struct_elt
 %type <obj> declaration_var declaration_typedef declaration kabi_dw_file
 %type <list> elt_list arg_list enum_list struct_list
 
@@ -73,7 +58,7 @@ kabi_dw_file:
 	;
 
 cu_file:
-	IDENTIFIER SRCFILE
+	IDENTIFIER STRING
 	{
 	    if (strcmp($1,"CU"))
 		fprintf(stderr, "Wrong CU keyword: \"%s\"\n", $1);
@@ -118,23 +103,14 @@ declaration_var:
 
 type:
 	base_type
+	| reference_file
 	| struct_type
 	| union_type
 	| enum_type
 	| func_type
-	| file_reference
 	| ptr_type
 	| array_type
 	| typed_type
-	;
-
-file_reference:
-	'@' REFFILE
-	{
-	    /* TODO: need to parse that file */
-	    $$ = new_none();
-	    $$->base_type = $2;
-	}
 	;
 
 struct_type:
@@ -227,7 +203,7 @@ func_type:
 	    $$->member_list = $5;
 	    $$->ptr = $8;
 	}
-	| IDENTIFIER file_reference /* protype define as typedef */
+	| IDENTIFIER reference_file /* protype define as typedef */
 	{
 	    if (strcmp($1,"func"))
 		fprintf(stderr, "Wrong func keyword: \"%s\"\n", $1);
@@ -296,22 +272,12 @@ ptr_type:
 	}
 	;
 
-/* TODO: need to deal with this sizetype nonsense */
-/* WARN: so it can be void too?! */
 array_type:
-	'[' CONSTANT ']' IDENTIFIER
-	{
-	    if (strcmp($4,"sizetype"))
-		fprintf(stderr, "Array type: \"%s\"\n", $4);
-	    $$ = new_array();
-	    $$->index = $2;
-	    $$->base_type = "sizetype";
-	}
-	| '[' CONSTANT ']' VOID
+	'[' CONSTANT ']' STRING
 	{
 	    $$ = new_array();
 	    $$->index = $2;
-	    $$->base_type = "void";
+	    $$->base_type = $4;
 	}
 	| '[' CONSTANT ']' array_type
 	{
@@ -345,92 +311,21 @@ type_qualifier:
 	}
 	;
 
-	/*
-	 * Base type specifier seem to be void, char, int, _Bool, float, double
-	 * short and long are used only as length qualifier
-	 * The order seem to be length sign specifier
-	 */
 base_type:
-	lengthed_type
-	| length_qualifier lengthed_type
+	STRING
 	{
-	    cat_base_type($2->base_type, $1);
-	    $$ = $2;
+	    debug("Base type: %s\n", $1);
+	    $$ = new_base($1);
 	}
 	;
 
-length_qualifier:
-	SHORT
+reference_file:
+	'@' STRING
 	{
-	    debug("Length: short\n");
-	    $$ = "short";
-	}
-	| LONG
-	{
-	    debug("Length: long\n");
-	    $$ = "long";
-	}
-	| LONG LONG
-	{
-	    debug("Length: long long\n");
-	    $$ = "long long";
-	}
-	;
-
-lengthed_type:
-	type_specifier
-	| sign_qualifier type_specifier
-	{
-	    cat_base_type($2->base_type, $1);
-	    $$ = $2;
-	}
-	;
-
-
-sign_qualifier:
-	SIGNED
-	{
-	    debug("Sign: signed\n");
-	    $$ = "signed";
-	}
-	| UNSIGNED
-	{
-	    debug("Sign: unsigned\n");
-	    $$ = "unsigned";
-	}
-	;
-
-type_specifier:
-        VOID
-	{
-	    debug("Type: void\n");
-	    $$ = new_base("void");
-	}
-	| CHAR
-	{
-	    debug("Type: char\n");
-	    $$ = new_base("char");
-	}
-	| INT
-	{
-	    debug("Type: int\n");
-	    $$ = new_base("int");
-	}
-	| BOOL
-	{
-	    debug("Type: _Bool\n");
-	    $$ = new_base("_Bool");
-	}
-	| FLOAT
-	{
-	    debug("Type: float\n");
-	    $$ = new_base("float");
-	}
-	| DOUBLE
-	{
-	    debug("Type: double\n");
-	    $$ = new_base("double");
-	}
+	    /* TODO: need to parse that file */
+	    $$ = new_none();
+	    $$->base_type = $2;
+	    }
 	;
 
 %%

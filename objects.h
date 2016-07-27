@@ -22,9 +22,6 @@
 #ifndef _OBJECTS_H
 #define _OBJECTS_H
 
-/* Should be abl to contain "const volatile long unsigned int" */
-#define MAX_BASE_TYPE_LEN 40
-
 typedef enum {
 	__type_none,
 	__type_struct,

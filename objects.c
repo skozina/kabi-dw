@@ -136,8 +136,7 @@ CREATE_NEW_ADD_FUNC_NONAME(array)
 obj_t *new_base(char *base_type) {
 	obj_t *new = new_obj(__type_base, NULL);
 
-	new->base_type = malloc(MAX_BASE_TYPE_LEN);
-	strcpy(new->base_type, base_type);
+	new->base_type = base_type;
 
 	return new;
 }
