@@ -277,7 +277,7 @@ static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 	Dwarf_Attribute attr;
 
 	if (!dwarf_hasattr(die, DW_AT_type)) {
-		fprintf(fout, "void\n");
+		fprintf(fout, "\"void\"\n");
 		return;
 	}
 
@@ -601,7 +601,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 done:
 	/* Put the link to the new file in the old file */
 	if (parent_file != NULL && file != NULL)
-		fprintf(parent_file, "\"@%s\"\n", file);
+		fprintf(parent_file, "@\"%s\"\n", file);
 
 	free(file);
 }
