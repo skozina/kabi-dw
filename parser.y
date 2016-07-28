@@ -199,7 +199,7 @@ enum_list:
 enum_elt:
 	IDENTIFIER '=' CONSTANT
 	{
-	    $$ = new_enum($IDENTIFIER);
+	    $$ = new_constant($IDENTIFIER);
 	    $$->constant = $CONSTANT;
 	}
 	;

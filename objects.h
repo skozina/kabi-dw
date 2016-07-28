@@ -35,6 +35,7 @@ typedef enum {
 	__type_struct_member,
 	__type_qualifier, /* a type qulifier such as "const" or "volatile" */
 	__type_base,
+	__type_constant	/* An element of an enumeration */
 } obj_types;
 
 struct obj;
@@ -60,7 +61,7 @@ typedef struct obj_list_head {
  *		(typedef) defined type
  *		(function) return type
  *		(var) type
- * constant:	(enum) constant value
+ * constant:	(constant) constant value of an enumeration
  * index:	index of array
  * offset:	(var) offset of a struct member
  * first_bit, last_bit: (var) bit range within the offset.
@@ -91,6 +92,7 @@ void free_obj(obj_t *o);
 obj_t *new_struct(char *name);
 obj_t *new_union(char *name);
 obj_t *new_enum(char *name);
+obj_t *new_constant(char *name);
 obj_t *new_none();
 obj_t *new_array();
 obj_t *new_func_add(char *name, obj_t *obj);

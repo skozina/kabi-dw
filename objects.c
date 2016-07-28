@@ -146,6 +146,7 @@ obj_t *new_##type##_add(obj_t *obj) {			\
 CREATE_NEW_FUNC(struct)
 CREATE_NEW_FUNC(union)
 CREATE_NEW_FUNC(enum)
+CREATE_NEW_FUNC(constant)
 CREATE_NEW_FUNC_NONAME(none)
 CREATE_NEW_FUNC_NONAME(array)
 CREATE_NEW_ADD_FUNC(func)
@@ -175,7 +176,8 @@ const char *obj_type_name[] = {"none",
 			       "var",
 			       "struct member",
 			       "type qualifier",
-			       "base"};
+			       "base",
+			       "constant"};
 
 static const char *typetostr(obj_types t) {
 	return obj_type_name[t];
@@ -249,6 +251,9 @@ static bool print_node_pre(obj_t *node, int depth, bool is_newline){
 		if (node->name)
 			printf(" %s", node->name);
 		printf("\n");
+		break;
+	case __type_constant:
+		printf("%s = %lx\n", node->name, node->constant);
 		break;
 	default:
 		printf("<%s, \"%s\", \"%s\", %p %lu>\n",
