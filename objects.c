@@ -240,7 +240,10 @@ static bool print_node_pre(obj_t *node, int depth, bool is_newline){
 		break;
 	case __type_array:
 		printf("[%lu]", node->index);
-		ret = false;
+		if (node->base_type)
+			printf("%s\n", node->base_type);
+		else
+			ret = false;
 		break;
 	case __type_qualifier:
 		printf("%s ", node->base_type);
