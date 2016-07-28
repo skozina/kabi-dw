@@ -139,8 +139,8 @@ obj_t *prefix##_##type##_add(char *name, obj_t *obj) {	\
 #define CREATE_NEW_ADD_FUNC(type) _CREATE_NEW_ADD_FUNC(type, new)
 #define CREATE_NEW_ADD_FUNC_NONAME(type)		\
 _CREATE_NEW_ADD_FUNC(type, _new)			\
-obj_t *new_##type##_add(obj_t *obj) {				\
-	return _new_##type##_add(NULL, obj);			\
+obj_t *new_##type##_add(obj_t *obj) {			\
+	return _new_##type##_add(NULL, obj);		\
 }
 
 CREATE_NEW_FUNC(struct)
@@ -152,6 +152,7 @@ CREATE_NEW_FUNC(var)
 CREATE_NEW_FUNC_NONAME(none)
 CREATE_NEW_FUNC_NONAME(ptr)
 CREATE_NEW_FUNC_NONAME(array)
+CREATE_NEW_FUNC_NONAME(qualifier)
 
 CREATE_NEW_ADD_FUNC(struct)
 CREATE_NEW_ADD_FUNC(union)
@@ -180,6 +181,7 @@ const char *obj_type_name[] = {"none",
 			       "typedef",
 			       "array",
 			       "var",
+			       "type qualifier",
 			       "base"};
 
 static const char *typetostr(obj_types t) {
@@ -226,6 +228,10 @@ static bool print_node_pre(obj_t *node, int depth, bool is_newline){
 		break;
 	case __type_array:
 		printf("[%lu]", node->index);
+		ret = false;
+		break;
+	case __type_qualifier:
+		printf("%s ", node->base_type);
 		ret = false;
 		break;
 	case __type_base:

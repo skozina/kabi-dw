@@ -32,6 +32,7 @@ typedef enum {
 	__type_typedef, /* do we keep that, or should it be always expanded */
 	__type_array,
 	__type_var,	/* a variable, member of an unionor strutct, a function argument */
+	__type_qualifier, /* a type qulifier such as "const" or "volatile" */
 	__type_base,
 } obj_types;
 
@@ -52,6 +53,7 @@ typedef struct obj_list_head {
  * name:	name of the symbol
  * base_type:	(base type) the type of the symbol,
  *		(function) the type of the return value.
+ *		(qualifier) the type qualifier (const or volatile)
  * member_list: (struct, union, enum) list of members
  *              (function) list of arguments
  * ptr:		(pointer) object pointed to
@@ -88,6 +90,7 @@ obj_t *new_var(char *name);
 obj_t *new_none();
 obj_t *new_ptr();
 obj_t *new_array();
+obj_t *new_qualifier();
 obj_t *new_struct_add(char *name, obj_t *obj);
 obj_t *new_union_add(char *name, obj_t *obj);
 obj_t *new_enum_add(char *name, obj_t *obj);

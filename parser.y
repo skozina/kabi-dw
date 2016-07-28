@@ -298,11 +298,9 @@ array_type:
 typed_type:
 	type_qualifier type
 	{
-	    /*
-	     * TODO: need a new object type?
-	     * Can we just add the qualifier to base_type?
-	     */
-	    $$ = $type;
+	    $$ = new_qualifier();
+	    $$->ptr = $type;
+	    $$->base_type = $type_qualifier;
 	}
 	;
 
@@ -310,12 +308,12 @@ type_qualifier:
 	CONST
 	{
 	    debug("Qualifier: const\n");
-	    $$ = "const";
+	    $$ = strdup("const");
 	}
 	| VOLATILE
 	{
 	    debug("Qualifier: volatile\n");
-	    $$ = "volatile";
+	    $$ = strdup("volatile");
 	}
 	;
 
