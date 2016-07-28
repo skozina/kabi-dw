@@ -120,6 +120,7 @@ CREATE_NEW_FUNC(union)
 CREATE_NEW_FUNC(enum)
 CREATE_NEW_FUNC(func)
 CREATE_NEW_FUNC(typedef)
+CREATE_NEW_FUNC(var)
 CREATE_NEW_FUNC_NONAME(none)
 CREATE_NEW_FUNC_NONAME(ptr)
 CREATE_NEW_FUNC_NONAME(array)
@@ -129,6 +130,7 @@ CREATE_NEW_ADD_FUNC(union)
 CREATE_NEW_ADD_FUNC(enum)
 CREATE_NEW_ADD_FUNC(func)
 CREATE_NEW_ADD_FUNC(typedef)
+CREATE_NEW_ADD_FUNC(var)
 CREATE_NEW_ADD_FUNC_NONAME(none)
 CREATE_NEW_ADD_FUNC_NONAME(ptr)
 CREATE_NEW_ADD_FUNC_NONAME(array)
@@ -149,6 +151,7 @@ const char *obj_type_name[] = {"none",
 			       "ptr",
 			       "typedef",
 			       "array",
+			       "var",
 			       "base"};
 
 const char *typetostr(obj_types t) {

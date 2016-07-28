@@ -31,6 +31,7 @@ typedef enum {
 	__type_ptr,
 	__type_typedef, /* do we keep that, or should it be always expanded */
 	__type_array,
+	__type_var,	/* a variable, member of an unionor strutct, a function argument */
 	__type_base,
 } obj_types;
 
@@ -56,6 +57,7 @@ typedef struct obj_list_head {
  * ptr:		(pointer) object pointed to
  *		(typedef) defined type
  *		(function) return type
+ *		(var) type
  * constant:	(enum) constant value
  * index:	index of array
  */
@@ -81,6 +83,7 @@ obj_t *new_union(char *name);
 obj_t *new_enum(char *name);
 obj_t *new_func(char *name);
 obj_t *new_typedef(char *name);
+obj_t *new_var(char *name);
 obj_t *new_none();
 obj_t *new_ptr();
 obj_t *new_array();
@@ -89,6 +92,7 @@ obj_t *new_union_add(char *name, obj_t *obj);
 obj_t *new_enum_add(char *name, obj_t *obj);
 obj_t *new_func_add(char *name, obj_t *obj);
 obj_t *new_typedef_add(char *name, obj_t *obj);
+obj_t *new_var_add(char *name, obj_t *obj);
 obj_t *new_none_add(obj_t *obj);
 obj_t *new_ptr_add(obj_t *obj);
 obj_t *new_array_add(obj_t *obj);

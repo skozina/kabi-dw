@@ -102,8 +102,8 @@ declaration_var:
 	{
 	    if (strcmp($1,"var"))
 		abort("Wrong var keyword: \"%s\"\n", $1);
-	    $3->name = $2;
-	    $$ = $3;
+	    $$ = new_var($2);
+	    $$->ptr = $3;
 	}
 	;
 
@@ -146,11 +146,8 @@ struct_list:
 struct_elt:
 	struct_offset IDENTIFIER type
 	{
-	    if ($3->name)
-		abort("New struct_elt: name is already set \"%s\"\n",
-			$3->name);
-	    $3->name = $2;
-	    $$ = $3;
+	    $$ = new_var($2);
+	    $$->ptr = $3;
 	}
 	;
 
@@ -262,11 +259,8 @@ elt_list:
 elt:
 	IDENTIFIER type
 	{
-	    if ($2->name)
-		abort("New elt: name is already set \"%s\"\n",
-			$2->name);
-	    $2->name = $1;
-	    $$ = $2;
+	    $$ = new_var($1);
+	    $$->ptr  = $2;
 	}
 	;
 
