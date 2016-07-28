@@ -68,6 +68,8 @@ cu_file:
 	{
 	    if (strcmp($1,"CU"))
 		abort("Wrong CU keyword: \"%s\"\n", $1);
+	    free($1);
+	    free($2);
 	}
 	;
 
@@ -76,6 +78,8 @@ source_file:
 	{
 	    if (strcmp($1,"File"))
 		abort("Wrong file keyword: \"%s\"\n", $1);
+	    free($1);
+	    free($2);
 	}
 	;
 
@@ -102,6 +106,7 @@ declaration_var:
 	{
 	    if (strcmp($1,"var"))
 		abort("Wrong var keyword: \"%s\"\n", $1);
+	    free($1);
 	    $$ = new_var($2);
 	    $$->ptr = $3;
 	}
@@ -202,6 +207,7 @@ func_type:
 	{
 	    if (strcmp($1,"func"))
 		abort("Wrong func keyword: \"%s\"\n", $1);
+	    free($1);
 	    $$ = new_func($2);
 	    $$->member_list = $5;
 	    $$->ptr = $8;
@@ -210,8 +216,10 @@ func_type:
 	{
 	    if (strcmp($1,"func"))
 		abort("Wrong func keyword: \"%s\"\n", $1);
+	    free($1);
 	    /* TODO: Need to parse other file */
-	    $$ = new_func($1);
+	    $$ = new_func(NULL);
+	    $$->ptr = $2;
 	}
 	;
 
@@ -240,7 +248,7 @@ variable_var_list:
 	IDENTIFIER ELLIPSIS
 	{
 	    /* TODO: there may be a better solution */
-	    $$ = new_base("...");
+	    $$ = new_base(strdup("..."));
 	}
 	;
 
@@ -361,6 +369,7 @@ int parse(int argc, char **argv)
 	    return ret;
 
 	walk_graph();
+	free_obj(root);
 
 	return 0;
 }

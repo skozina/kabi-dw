@@ -77,6 +77,7 @@ obj_list_t *new_list(obj_t *obj);
 obj_list_head_t *new_list_head(obj_t *obj);
 void list_add(obj_list_head_t *head, obj_t *obj);
 void add_member(obj_t *symbol, obj_t *member);
+void free_obj(obj_t *o);
 
 obj_t *new_struct(char *name);
 obj_t *new_union(char *name);
@@ -100,7 +101,5 @@ obj_t *new_array_add(obj_t *obj);
 obj_t *new_base(char *base_type);
 
 void walk_graph();
-void pop_obj();
-
 
 #endif

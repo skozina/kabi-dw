@@ -36,7 +36,7 @@ obj_list_t *new_list(obj_t *obj) {
 	return list;
 }
 
-void list_init(obj_list_head_t *head, obj_t *obj) {
+static void list_init(obj_list_head_t *head, obj_t *obj) {
 	obj_list_t *list = new_list(obj);
 	head->first = head->last = list;
 }
@@ -49,7 +49,7 @@ obj_list_head_t *new_list_head(obj_t *obj) {
 	return h;
 }
 
-bool list_empty(obj_list_head_t *head) {
+static bool list_empty(obj_list_head_t *head) {
 	return head->first == NULL;
 }
 
@@ -88,6 +88,34 @@ obj_t *new_obj(obj_types type, char *name) {
 	new->name = name; /* Should it be strduped ? */
 
 	return new;
+}
+
+void free_obj(obj_t *o) {
+	obj_list_t *list = NULL, *next;
+
+	if (!o)
+		return;
+	if(o->name)
+		free(o->name);
+	if(o->base_type)
+		free(o->base_type);
+
+	if (o->member_list) {
+		list = o->member_list->first;
+		free(o->member_list);
+	}
+
+	while ( list ) {
+		free_obj(list->member);
+		next = list->next;
+		free(list);
+		list = next;
+	}
+
+	if(o->ptr)
+		free_obj(o->ptr);
+
+	free(o);
 }
 
 #define _CREATE_NEW_FUNC(type, prefix)			\
@@ -154,11 +182,11 @@ const char *obj_type_name[] = {"none",
 			       "var",
 			       "base"};
 
-const char *typetostr(obj_types t) {
+static const char *typetostr(obj_types t) {
 	return obj_type_name[t];
 }
 
-bool print_node_pre(obj_t *node, int depth, bool is_newline){
+static bool print_node_pre(obj_t *node, int depth, bool is_newline){
 	bool ret = true;
 
 	if (is_newline)
@@ -215,7 +243,7 @@ bool print_node_pre(obj_t *node, int depth, bool is_newline){
 	return ret;
 }
 
-bool print_node_mid(obj_t *node, int depth, bool is_newline){
+static bool print_node_mid(obj_t *node, int depth, bool is_newline){
 	bool ret = is_newline;
 
 	if (!node)
@@ -239,7 +267,7 @@ bool print_node_mid(obj_t *node, int depth, bool is_newline){
 	return ret;
 }
 
-void walk_graph_rec(obj_t *o, int depth, bool is_newline) {
+static void walk_graph_rec(obj_t *o, int depth, bool is_newline) {
 	obj_list_t *list = NULL;
 	bool newline;
 	int next_depth = depth;
