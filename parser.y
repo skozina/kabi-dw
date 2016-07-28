@@ -17,6 +17,7 @@
 
 %{
 #include "parser.h"
+#include <limits.h>
 
 extern obj_t *root;
 
@@ -147,16 +148,20 @@ struct_list:
 	;
 
 struct_elt:
-	struct_offset IDENTIFIER type
+	CONSTANT IDENTIFIER type
 	{
-	    $$ = new_var_add($IDENTIFIER, $type);
+	    $$ = new_struct_member_add($IDENTIFIER, $type);
+	    $$->offset = $CONSTANT;
 	}
-	;
-
-	/* TODO need to add offsets */
-struct_offset:
-	CONSTANT
-	| CONSTANT ':' CONSTANT '-' CONSTANT
+	| CONSTANT ':' CONSTANT '-' CONSTANT IDENTIFIER type
+	{
+	    if ($5 > UCHAR_MAX || $3 > $5)
+		abort("Invalid offset: %lx:%lu:%lu\n", $1, $3, $5);
+	    $$ = new_struct_member_add($IDENTIFIER, $type);
+	    $$->offset = $1;
+	    $$->first_bit = $3;
+	    $$->last_bit = $5;
+	}
 	;
 
 union_type:

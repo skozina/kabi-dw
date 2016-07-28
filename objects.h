@@ -31,7 +31,8 @@ typedef enum {
 	__type_ptr,
 	__type_typedef, /* do we keep that, or should it be always expanded */
 	__type_array,
-	__type_var,	/* a variable, member of an unionor strutct, a function argument */
+	__type_var,	/* a variable, member of an union or a function argument */
+	__type_struct_member,
 	__type_qualifier, /* a type qulifier such as "const" or "volatile" */
 	__type_base,
 } obj_types;
@@ -61,6 +62,9 @@ typedef struct obj_list_head {
  *		(var) type
  * constant:	(enum) constant value
  * index:	index of array
+ * offset:	(var) offset of a struct member
+ * first_bit, last_bit: (var) bit range within the offset.
+ *			Only valid if last != 0
  */
 typedef struct obj {
 	obj_types type;
@@ -71,6 +75,10 @@ typedef struct obj {
 	union {
 		unsigned long constant;
 		unsigned long index;
+		struct {
+			unsigned long offset;
+			unsigned char first_bit, last_bit;
+		};
 	};
 } obj_t;
 
@@ -88,6 +96,7 @@ obj_t *new_array();
 obj_t *new_func_add(char *name, obj_t *obj);
 obj_t *new_typedef_add(char *name, obj_t *obj);
 obj_t *new_var_add(char *name, obj_t *obj);
+obj_t *new_struct_member_add(char *name, obj_t *obj);
 obj_t *new_ptr_add(obj_t *obj);
 obj_t *new_array_add(obj_t *obj);
 obj_t *new_qualifier_add(obj_t *obj);

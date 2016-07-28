@@ -151,6 +151,7 @@ CREATE_NEW_FUNC_NONAME(array)
 CREATE_NEW_ADD_FUNC(func)
 CREATE_NEW_ADD_FUNC(typedef)
 CREATE_NEW_ADD_FUNC(var)
+CREATE_NEW_ADD_FUNC(struct_member)
 CREATE_NEW_ADD_FUNC_NONAME(ptr)
 CREATE_NEW_ADD_FUNC_NONAME(array)
 CREATE_NEW_ADD_FUNC_NONAME(qualifier)
@@ -172,6 +173,7 @@ const char *obj_type_name[] = {"none",
 			       "typedef",
 			       "array",
 			       "var",
+			       "struct member",
 			       "type qualifier",
 			       "base"};
 
@@ -181,9 +183,21 @@ static const char *typetostr(obj_types t) {
 
 static bool print_node_pre(obj_t *node, int depth, bool is_newline){
 	bool ret = true;
+	char offstr[16];
 
-	if (is_newline)
-		printf("%*s", depth*4, "");
+	if (is_newline) {
+		if (node->type == __type_struct_member) {
+			if (node->last_bit)
+				snprintf(offstr, 16, "0x%lx:%2i-%-2i ",
+					 node->offset,
+					 node->first_bit,
+					 node->last_bit);
+			else
+				snprintf(offstr, 16, "0x%lx ", node->offset);
+		} else
+			offstr[0] = 0;
+		printf("%-*s", depth*4, offstr);
+	}
 
 	if (!node) {
 		printf("(nil)\n");
@@ -213,6 +227,11 @@ static bool print_node_pre(obj_t *node, int depth, bool is_newline){
 		printf("typedef %s\n", node->name);
 		break;
 	case __type_var:
+		if (node->name)
+			printf("%s ", node->name);
+		ret = false;
+		break;
+	case __type_struct_member:
 		if (node->name)
 			printf("%s ", node->name);
 		ret = false;
