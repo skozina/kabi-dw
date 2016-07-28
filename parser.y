@@ -334,6 +334,7 @@ extern void usage(void);
 
 int parse(int argc, char **argv)
 {
+	int ret;
 	char *filename;
 	FILE *kabi_file;
 
@@ -355,7 +356,9 @@ int parse(int argc, char **argv)
 	}
 
 	yyin = kabi_file;
-	yyparse();
+	ret = yyparse();
+	if (ret)
+	    return ret;
 
 	walk_graph();
 

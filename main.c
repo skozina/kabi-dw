@@ -209,6 +209,8 @@ static void check(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
+	int ret = 0;
+
 	progname = argv[0];
 
 	if (argc < 2)
@@ -224,10 +226,10 @@ int main(int argc, char **argv) {
 		check(argc, argv);
 	} else if (strcmp(argv[0], "parse") == 0) {
 		argv++; argc--;
-		parse(argc, argv);
+		ret = parse(argc, argv);
 	} else {
 		usage();
 	}
 
-	return (0);
+	return ret;
 }
