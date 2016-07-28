@@ -20,6 +20,12 @@
 
 extern obj_t *root;
 
+#define abort(...)				\
+{						\
+	fprintf(stderr, __VA_ARGS__);		\
+	YYABORT;				\
+}
+
 %}
 
 %union {
@@ -61,7 +67,7 @@ cu_file:
 	IDENTIFIER STRING
 	{
 	    if (strcmp($1,"CU"))
-		fprintf(stderr, "Wrong CU keyword: \"%s\"\n", $1);
+		abort("Wrong CU keyword: \"%s\"\n", $1);
 	}
 	;
 
@@ -69,7 +75,7 @@ source_file:
 	IDENTIFIER SRCFILE ':' CONSTANT
 	{
 	    if (strcmp($1,"File"))
-		fprintf(stderr, "Wrong file keyword: \"%s\"\n", $1);
+		abort("Wrong file keyword: \"%s\"\n", $1);
 	}
 	;
 
@@ -95,7 +101,7 @@ declaration_var:
 	IDENTIFIER IDENTIFIER type
 	{
 	    if (strcmp($1,"var"))
-		fprintf(stderr, "Wrong var keyword: \"%s\"\n", $1);
+		abort("Wrong var keyword: \"%s\"\n", $1);
 	    $3->name = $2;
 	    $$ = $3;
 	}
@@ -141,7 +147,7 @@ struct_elt:
 	struct_offset IDENTIFIER type
 	{
 	    if ($3->name)
-		fprintf(stderr, "New struct_elt: name is already set \"%s\"\n",
+		abort("New struct_elt: name is already set \"%s\"\n",
 			$3->name);
 	    $3->name = $2;
 	    $$ = $3;
@@ -198,7 +204,7 @@ func_type:
 	IDENTIFIER IDENTIFIER '(' NEWLINE arg_list ')' NEWLINE type
 	{
 	    if (strcmp($1,"func"))
-		fprintf(stderr, "Wrong func keyword: \"%s\"\n", $1);
+		abort("Wrong func keyword: \"%s\"\n", $1);
 	    $$ = new_func($2);
 	    $$->member_list = $5;
 	    $$->ptr = $8;
@@ -206,7 +212,7 @@ func_type:
 	| IDENTIFIER reference_file /* protype define as typedef */
 	{
 	    if (strcmp($1,"func"))
-		fprintf(stderr, "Wrong func keyword: \"%s\"\n", $1);
+		abort("Wrong func keyword: \"%s\"\n", $1);
 	    /* TODO: Need to parse other file */
 	    $$ = new_func($1);
 	}
@@ -257,7 +263,7 @@ elt:
 	IDENTIFIER type
 	{
 	    if ($2->name)
-		fprintf(stderr, "New elt: name is already set \"%s\"\n",
+		abort("New elt: name is already set \"%s\"\n",
 			$2->name);
 	    $2->name = $1;
 	    $$ = $2;
