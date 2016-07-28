@@ -96,8 +96,7 @@ declaration:
 declaration_typedef:
 	TYPEDEF IDENTIFIER NEWLINE type
 	{
-	    $$ = new_typedef($IDENTIFIER);
-	    $$->ptr = $type;
+	    $$ = new_typedef_add($IDENTIFIER, $type);
 	}
 	;
 
@@ -107,8 +106,7 @@ declaration_var:
 	    if (strcmp($1,"var"))
 		abort("Wrong var keyword: \"%s\"\n", $1);
 	    free($1);
-	    $$ = new_var($2);
-	    $$->ptr = $type;
+	    $$ = new_var_add($2, $type);
 	}
 	;
 
@@ -151,8 +149,7 @@ struct_list:
 struct_elt:
 	struct_offset IDENTIFIER type
 	{
-	    $$ = new_var($IDENTIFIER);
-	    $$->ptr = $type;
+	    $$ = new_var_add($IDENTIFIER, $type);
 	}
 	;
 
@@ -208,9 +205,8 @@ func_type:
 	    if (strcmp($1,"func"))
 		abort("Wrong func keyword: \"%s\"\n", $1);
 	    free($1);
-	    $$ = new_func($2);
+	    $$ = new_func_add($2, $type);
 	    $$->member_list = $arg_list;
-	    $$->ptr = $type;
 	}
 	| IDENTIFIER reference_file /* protype define as typedef */
 	{
@@ -218,8 +214,7 @@ func_type:
 		abort("Wrong func keyword: \"%s\"\n", $IDENTIFIER);
 	    free($IDENTIFIER);
 	    /* TODO: Need to parse other file */
-	    $$ = new_func(NULL);
-	    $$->ptr = $reference_file;
+	    $$ = new_func_add(NULL, $reference_file);
 	}
 	;
 
@@ -267,16 +262,14 @@ elt_list:
 elt:
 	IDENTIFIER type
 	{
-	    $$ = new_var($IDENTIFIER);
-	    $$->ptr  = $type;
+	    $$ = new_var_add($IDENTIFIER, $type);
 	}
 	;
 
 ptr_type:
 	'*' type
 	{
-	    $$ = new_ptr();
-	    $$->ptr = $type;
+	    $$ = new_ptr_add($type);
 	}
 	;
 
@@ -289,17 +282,15 @@ array_type:
 	}
 	| '[' CONSTANT ']' array_type
 	{
-	    $$ = new_array();
+	    $$ = new_array_add($4);
 	    $$->index = $CONSTANT;
-	    $$->ptr = $4;
 	}
 	;
 
 typed_type:
 	type_qualifier type
 	{
-	    $$ = new_qualifier();
-	    $$->ptr = $type;
+	    $$ = new_qualifier_add($type);
 	    $$->base_type = $type_qualifier;
 	}
 	;

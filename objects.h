@@ -51,8 +51,7 @@ typedef struct obj_list_head {
  *
  * type:	type of the symbol (such as struct, function, pointer, base type...)
  * name:	name of the symbol
- * base_type:	(base type) the type of the symbol,
- *		(function) the type of the return value.
+ * base_type:	(base type, array) the type of the symbol,
  *		(qualifier) the type qualifier (const or volatile)
  * member_list: (struct, union, enum) list of members
  *              (function) list of arguments
@@ -84,22 +83,14 @@ void free_obj(obj_t *o);
 obj_t *new_struct(char *name);
 obj_t *new_union(char *name);
 obj_t *new_enum(char *name);
-obj_t *new_func(char *name);
-obj_t *new_typedef(char *name);
-obj_t *new_var(char *name);
 obj_t *new_none();
-obj_t *new_ptr();
 obj_t *new_array();
-obj_t *new_qualifier();
-obj_t *new_struct_add(char *name, obj_t *obj);
-obj_t *new_union_add(char *name, obj_t *obj);
-obj_t *new_enum_add(char *name, obj_t *obj);
 obj_t *new_func_add(char *name, obj_t *obj);
 obj_t *new_typedef_add(char *name, obj_t *obj);
 obj_t *new_var_add(char *name, obj_t *obj);
-obj_t *new_none_add(obj_t *obj);
 obj_t *new_ptr_add(obj_t *obj);
 obj_t *new_array_add(obj_t *obj);
+obj_t *new_qualifier_add(obj_t *obj);
 
 obj_t *new_base(char *base_type);
 

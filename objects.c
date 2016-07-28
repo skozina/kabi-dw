@@ -133,7 +133,7 @@ obj_t *new_##type() {					\
 #define _CREATE_NEW_ADD_FUNC(type, prefix)		\
 obj_t *prefix##_##type##_add(char *name, obj_t *obj) {	\
 	obj_t *new = new_obj(__type_##type, name);	\
-	add_member(new, obj);				\
+	new->ptr = obj;					\
 	return new;					\
 }
 #define CREATE_NEW_ADD_FUNC(type) _CREATE_NEW_ADD_FUNC(type, new)
@@ -146,23 +146,14 @@ obj_t *new_##type##_add(obj_t *obj) {			\
 CREATE_NEW_FUNC(struct)
 CREATE_NEW_FUNC(union)
 CREATE_NEW_FUNC(enum)
-CREATE_NEW_FUNC(func)
-CREATE_NEW_FUNC(typedef)
-CREATE_NEW_FUNC(var)
 CREATE_NEW_FUNC_NONAME(none)
-CREATE_NEW_FUNC_NONAME(ptr)
 CREATE_NEW_FUNC_NONAME(array)
-CREATE_NEW_FUNC_NONAME(qualifier)
-
-CREATE_NEW_ADD_FUNC(struct)
-CREATE_NEW_ADD_FUNC(union)
-CREATE_NEW_ADD_FUNC(enum)
 CREATE_NEW_ADD_FUNC(func)
 CREATE_NEW_ADD_FUNC(typedef)
 CREATE_NEW_ADD_FUNC(var)
-CREATE_NEW_ADD_FUNC_NONAME(none)
 CREATE_NEW_ADD_FUNC_NONAME(ptr)
 CREATE_NEW_ADD_FUNC_NONAME(array)
+CREATE_NEW_ADD_FUNC_NONAME(qualifier)
 
 obj_t *new_base(char *base_type) {
 	obj_t *new = new_obj(__type_base, NULL);
