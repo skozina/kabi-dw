@@ -173,7 +173,7 @@ bool print_node_pre(obj_t *node, int depth, bool is_newline){
 	case __type_struct:
 	case __type_union:
 	case __type_enum:
-		if (strcmp(node->name,"(NULL)"))
+		if (node->name)
 			printf("%s %s {\n",
 			       typetostr(node->type), node->name);
 		else
@@ -190,6 +190,11 @@ bool print_node_pre(obj_t *node, int depth, bool is_newline){
 		break;
 	case __type_typedef:
 		printf("typedef %s\n", node->name);
+		break;
+	case __type_var:
+		if (node->name)
+			printf("%s ", node->name);
+		ret = false;
 		break;
 	case __type_array:
 		printf("[%lu]", node->index);

@@ -50,7 +50,7 @@ HEX		[a-fA-F0-9]
 			  debug("Identifier: %s\n", yylval.str);
 			  return(IDENTIFIER);
 			}
-"(NULL)"	{ yylval.str = "";
+"(NULL)"	{ yylval.str = NULL;
 		  debug("Identifier: (NULL)\n");
 		  return(IDENTIFIER);
 		}
