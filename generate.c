@@ -275,7 +275,6 @@ static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
     Dwarf_Die *die, generate_config_t *conf) {
 	Dwarf_Die type_die;
 	Dwarf_Attribute attr;
-	bool push = false;
 
 	if (!dwarf_hasattr(die, DW_AT_type)) {
 		fprintf(fout, "\"void\"\n");
@@ -288,13 +287,7 @@ static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 		    dwarf_diename(die));
 
 	/* Print the type of the die */
-	if (dwarf_hasattr(&type_die, DW_AT_name)) {
-		stack_push(conf->stack, strdup(dwarf_diename(&type_die)));
-		push = true;
-	}
 	print_die(dbg, fout, cu_die, &type_die, conf);
-	if (push)
-		free(stack_pop(conf->stack));
 }
 
 static void print_die_struct_member(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
@@ -539,7 +532,8 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		dec_line = get_line(cu_die, die);
 		fprintf(fout, "File %s:%lu\n", dec_file, dec_line);
 
-		/* And the current stack of symbols */
+		/* Update the current stack of symbols and print it */
+		stack_push(conf->stack, strdup(file));
 		walk_stack(conf->stack, print_stack_cb, fout);
 	} else {
 		fout = parent_file;
@@ -614,8 +608,10 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	}
 	}
 
-	if (file != NULL)
+	if (file != NULL) {
+		free(stack_pop(conf->stack));
 		fclose(fout);
+	}
 
 done:
 	/* Put the link to the new file in the old file */
@@ -720,10 +716,8 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 				cu_printed = true;
 			}
 
-			/* Grab a fresh stack with a single symbol */
+			/* Grab a fresh stack of symbols */
 			conf->stack = stack_init();
-			stack_push(conf->stack,
-			    strdup(dwarf_diename(&child_die)));
 
 			/* Print both the CU DIE and symbol DIE */
 			print_die(dbg, NULL, cu_die, &child_die, conf);
