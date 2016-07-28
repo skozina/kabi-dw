@@ -286,7 +286,10 @@ static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 		fail("dwarf_formref_die() failed for %s\n",
 		    dwarf_diename(die));
 
+	/* Print the type of the die */
+	stack_push(conf->stack, strdup(dwarf_diename(&type_die)));
 	print_die(dbg, fout, cu_die, &type_die, conf);
+	free(stack_pop(conf->stack));
 }
 
 static void print_die_struct_member(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
@@ -433,6 +436,7 @@ static void print_die_subprogram(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 	fprintf(fout, "func %s (\n", get_die_name(die));
 	print_subprogram_arguments(dbg, fout, cu_die, die, conf);
 	fprintf(fout, ")\n");
+
 	/* Print return value */
 	print_die_type(dbg, fout, cu_die, die, conf);
 }
@@ -467,6 +471,13 @@ static void print_die_array_type(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
 			fprintf(fout, "[0]");
 		}
 	} while (dwarf_siblingof(die, die) == 0);
+}
+
+static void print_stack_cb(void *data, void *arg) {
+	char *symbol = (char *)data;
+	FILE *fp = (FILE *)arg;
+
+	fprintf(fp, "-> %s\n", symbol);
 }
 
 static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
@@ -522,6 +533,9 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		dec_file = get_file(cu_die, die);
 		dec_line = get_line(cu_die, die);
 		fprintf(fout, "File %s:%lu\n", dec_file, dec_line);
+
+		/* And the current stack of symbols */
+		walk_stack(conf->stack, print_stack_cb, fout);
 	} else {
 		fout = parent_file;
 	}
@@ -693,16 +707,29 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 	do {
 		int index = get_symbol_index(&child_die, conf);
 		if (index != -1) {
+			void *data;
+
 			if (!cu_printed && conf->verbose) {
 				printf("Processing CU %s\n",
 				    dwarf_diename(cu_die));
 				cu_printed = true;
 			}
 
+			/* Grab a fresh stack with a single symbol */
+			conf->stack = stack_init();
+			stack_push(conf->stack,
+			    strdup(dwarf_diename(&child_die)));
+
 			/* Print both the CU DIE and symbol DIE */
 			print_die(dbg, NULL, cu_die, &child_die, conf);
 			if (conf->symbols != NULL)
 				conf->symbols_found[index] = true;
+
+			/* And clear the stack again */
+			while ((data = stack_pop(conf->stack)) != NULL)
+				free(data);
+			stack_destroy(conf->stack);
+			conf->stack = NULL;
 		}
 	} while (dwarf_siblingof(&child_die, &child_die) == 0);
 }
@@ -798,6 +825,7 @@ static bool process_symbol_file(char *path, void *arg) {
 	free_ksymtab(conf->ksymtab, conf->ksymtab_len);
 	conf->ksymtab = NULL;
 	conf->ksymtab_len = 0;
+
 	if (all_done(conf))
 		return (false);
 	return (true);

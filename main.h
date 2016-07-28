@@ -18,6 +18,8 @@
 #ifndef MAIN_H_
 #define	MAIN_H_
 
+#include "stack.h"
+
 #define	DEFAULT_OUTPUT_DIR	"./output"
 #define	MODULE_DIR		"/usr/lib/modules"
 #define	DEBUG_MODULE_DIR	"/usr/lib/debug/lib/modules"
@@ -47,6 +49,7 @@ typedef struct {
 	char *module; /* current kernel module to process */
 	char **ksymtab; /* ksymtab of the current kernel module */
 	size_t ksymtab_len;
+	stack_t *stack; /* Current stack of symbol we're parsing */
 } generate_config_t;
 
 typedef struct {
