@@ -275,6 +275,7 @@ static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
     Dwarf_Die *die, generate_config_t *conf) {
 	Dwarf_Die type_die;
 	Dwarf_Attribute attr;
+	bool push = false;
 
 	if (!dwarf_hasattr(die, DW_AT_type)) {
 		fprintf(fout, "\"void\"\n");
@@ -287,9 +288,13 @@ static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 		    dwarf_diename(die));
 
 	/* Print the type of the die */
-	stack_push(conf->stack, strdup(dwarf_diename(&type_die)));
+	if (dwarf_hasattr(&type_die, DW_AT_name)) {
+		stack_push(conf->stack, strdup(dwarf_diename(&type_die)));
+		push = true;
+	}
 	print_die(dbg, fout, cu_die, &type_die, conf);
-	free(stack_pop(conf->stack));
+	if (push)
+		free(stack_pop(conf->stack));
 }
 
 static void print_die_struct_member(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
