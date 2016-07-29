@@ -49,7 +49,7 @@ void usage(void) {
 	printf("Usage:\n"
 	    "\t %s generate [-v] [-s symbol_file] [-o kabi_dir] kernel_dir\n"
 	    "\t %s check [-v] kabi_dir_old kabi_dir_new\n"
-	    "\t %s parse kabi_file\n",
+	    "\t %s parse kabi_file [kabi_file]\n",
 	       progname, progname, progname);
 	exit(1);
 }

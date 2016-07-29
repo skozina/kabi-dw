@@ -334,12 +334,25 @@ reference_file:
 
 extern void usage(void);
 
-int parse(int argc, char **argv)
-{
-	int ret;
-	char *filename;
+obj_t *_parse(char *filename) {
 	FILE *kabi_file;
-	obj_t *root;
+	obj_t *root = NULL;
+
+	kabi_file = fopen(filename, "r");
+	if (kabi_file == NULL) {
+		fprintf(stderr, "Failed to open kABI file: %s\n",
+			filename);
+		return NULL;
+	}
+
+	yyin = kabi_file;
+	yyparse(&root);
+
+	return root;
+}
+
+int parse(int argc, char **argv) {
+	obj_t *root, *root2;
 
 #ifdef DEBUG
 	yydebug = 1;
@@ -347,29 +360,32 @@ int parse(int argc, char **argv)
 	yydebug = 0;
 #endif
 
-	if (argc != 1) {
+	if (argc < 1 || argc > 2) {
 		usage();
 	}
-	filename = argv[0];
-	kabi_file = fopen(filename, "r");
-	if (kabi_file == NULL) {
-		fprintf(stderr, "Failed to open kABI file: %s\n",
-			filename);
-		return 1;
-	}
 
-	yyin = kabi_file;
-	ret = yyparse(&root);
-	if (ret)
-	    return ret;
-
+	root = _parse(argv[0]);
 	if (!root) {
-		fprintf(stderr, "No root\n");
-		exit(1);
+	    fprintf(stderr, "No object build from %s\n", argv[0]);
+	    return 1;
 	}
 	print_tree(root);
 	if (yydebug)
 	    debug_tree(root);
+
+	if (argc == 2) {
+		root2 = _parse(argv[1]);
+		if (!root2) {
+		    fprintf(stderr, "No object build from %s\n", argv[1]);
+		    return 1;
+		}
+		print_tree(root2);
+		if (yydebug)
+		    debug_tree(root2);
+
+		compare_tree(root, root2);
+		free_obj(root2);
+	}
 	free_obj(root);
 
 	return 0;
