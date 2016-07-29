@@ -475,7 +475,7 @@ static void print_stack_cb(void *data, void *arg) {
 	char *symbol = (char *)data;
 	FILE *fp = (FILE *)arg;
 
-	fprintf(fp, "-> %s\n", symbol);
+	fprintf(fp, "-> \"%s\"\n", symbol);
 }
 
 static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
@@ -532,9 +532,9 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		dec_line = get_line(cu_die, die);
 		fprintf(fout, "File %s:%lu\n", dec_file, dec_line);
 
-		/* Update the current stack of symbols and print it */
-		stack_push(conf->stack, strdup(file));
+		/* Print the stack and add then add the current file to it */
 		walk_stack(conf->stack, print_stack_cb, fout);
+		stack_push(conf->stack, strdup(file));
 	} else {
 		fout = parent_file;
 	}
