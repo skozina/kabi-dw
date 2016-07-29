@@ -19,8 +19,6 @@
 #include "parser.h"
 #include <limits.h>
 
-extern obj_t *root;
-
 #define abort(...)				\
 {						\
 	fprintf(stderr, __VA_ARGS__);		\
@@ -55,12 +53,14 @@ extern obj_t *root;
 %type <obj> declaration_var declaration_typedef declaration kabi_dw_file
 %type <list> elt_list arg_list enum_list struct_list
 
+%parse-param {obj_t **root}
+
 %%
 
 kabi_dw_file:
 	cu_file NEWLINE source_file NEWLINE declaration NEWLINE
 	{
-	    $$ = root = $declaration;
+	    $$ = *root = $declaration;
 	}
 	;
 
@@ -339,6 +339,7 @@ int parse(int argc, char **argv)
 	int ret;
 	char *filename;
 	FILE *kabi_file;
+	obj_t *root;
 
 #ifdef DEBUG
 	yydebug = 1;
@@ -358,17 +359,23 @@ int parse(int argc, char **argv)
 	}
 
 	yyin = kabi_file;
-	ret = yyparse();
+	ret = yyparse(&root);
 	if (ret)
 	    return ret;
 
-	walk_graph();
+	if (!root) {
+		fprintf(stderr, "No root\n");
+		exit(1);
+	}
+	print_tree(root);
+	if (yydebug)
+	    debug_tree(root);
 	free_obj(root);
 
 	return 0;
 }
 
-int yyerror(char *s)
+int yyerror(obj_t **root, char *s)
 {
 	fprintf(stderr, "error: %s\n", s);
 	return 0;

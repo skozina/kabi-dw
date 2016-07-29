@@ -36,5 +36,5 @@ char *strdup(const char *s);
 int fileno(FILE *stream);
 
 int yylex();
-int yyerror(char *s);
+int yyerror(obj_t **root, char *s);
 FILE *yyin;
