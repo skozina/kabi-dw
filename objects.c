@@ -68,6 +68,24 @@ void list_add(obj_list_head_t *head, obj_t *obj) {
 	head->last = list;
 }
 
+bool list_remove(obj_list_head_t *head, obj_t *obj) {
+	obj_list_t *l = head->first, *previous = NULL;
+
+	while (l) {
+		if (l->member == obj) {
+			if (previous)
+				previous->next = l->next;
+			if (l == head->first)
+				head->first = l->next;
+			if (l == head->last)
+				head->last = previous;
+			return true;
+		}
+		l = l->next;
+	}
+	return false;
+}
+
 void add_member(obj_t *parent, obj_t *member) {
 	obj_list_head_t *head = parent->member_list;
 
@@ -89,10 +107,10 @@ obj_t *new_obj(obj_types type, char *name) {
 	return new;
 }
 
-void free_obj(obj_t *o) {
+static void _free_obj(obj_t *o, obj_t *skip) {
 	obj_list_t *list = NULL, *next;
 
-	if (!o)
+	if (!o || (o == skip))
 		return;
 	if(o->name)
 		free(o->name);
@@ -105,16 +123,20 @@ void free_obj(obj_t *o) {
 	}
 
 	while ( list ) {
-		free_obj(list->member);
+		_free_obj(list->member, skip);
 		next = list->next;
 		free(list);
 		list = next;
 	}
 
 	if(o->ptr)
-		free_obj(o->ptr);
+		_free_obj(o->ptr, skip);
 
 	free(o);
+}
+
+void free_obj(obj_t *o) {
+	_free_obj(o, NULL);
 }
 
 #define _CREATE_NEW_FUNC(type, prefix)			\
@@ -164,21 +186,26 @@ obj_t *new_base(char *base_type) {
 	return new;
 }
 
-const char *obj_type_name[] = {"none",
-			       "struct",
-			       "union",
-			       "enum",
-			       "func",
-			       "ptr",
-			       "typedef",
-			       "array",
-			       "var",
-			       "struct member",
-			       "type qualifier",
-			       "base",
-			       "constant"};
+const char *obj_type_name[NR_OBJ_TYPES+1] =
+	{"none",
+	 "struct",
+	 "union",
+	 "enum",
+	 "func",
+	 "ptr",
+	 "typedef",
+	 "array",
+	 "var",
+	 "struct member",
+	 "type qualifier",
+	 "base",
+	 "constant",
+	 "unknown type"
+	};
 
 static const char *typetostr(obj_types t) {
+	if (t >= NR_OBJ_TYPES)
+		t = NR_OBJ_TYPES;
 	return obj_type_name[t];
 }
 
@@ -268,18 +295,18 @@ static int print_node_pre(obj_t *node, void *args){
 
 out_newline:
 	pna->newline = true;
-	return 0;
+	return CB_CONT;
 
 out_sameline:
 	pna->newline = false;
-	return 0;
+	return CB_CONT;
 }
 
 static int print_node_in(obj_t *node, void *args){
 	pn_args_t *pna = (pn_args_t *) args;
 
 	if (!node)
-		return 0;
+		return CB_CONT;
 
 	switch(node->type) {
 	case __type_struct:
@@ -302,7 +329,7 @@ static int print_node_in(obj_t *node, void *args){
 		;
 	}
 
-	return 0;
+	return CB_CONT;
 }
 
 void print_tree(obj_t *root) {
@@ -313,7 +340,7 @@ void print_tree(obj_t *root) {
 
 int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post, void *args) {
 	obj_list_t *list = NULL;
-	int ret = 0;
+	int ret = CB_CONT;
 
 	if (cb_pre && (ret = cb_pre(o, args)))
 		return ret;
@@ -323,16 +350,23 @@ int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post, void *args) {
 
 	while ( list ) {
 		ret = walk_tree3(list->member, cb_pre, cb_in, cb_post, args);
-		if (ret)
+		if (ret == CB_FAIL)
 			return ret;
+		else
+			ret = CB_CONT;
 		list = list->next;
 	}
 
 	if (cb_in && (ret = cb_in(o, args)))
 		return ret;
 
-	if (o->ptr)
+	if (o->ptr) {
 		ret = walk_tree3(o->ptr, cb_pre, cb_in, cb_post, args);
+		if (ret == CB_FAIL)
+			return ret;
+		else
+			ret = CB_CONT;
+	}
 
 	if (cb_post && (ret = cb_post(o, args)))
 		return ret;
@@ -344,10 +378,17 @@ int walk_tree(obj_t *root, cb_t cb, void *args) {
 	return walk_tree3(root, cb, NULL, NULL, args);
 }
 
+static void _show_node(FILE *f, obj_t *o, int margin) {
+	if (o)
+		fprintf(f, "\%*s<%s, \"%s\", \"%s\", %p %lu %i %i>\n",
+			margin, "", typetostr(o->type), o->name, o->base_type,
+			o->ptr, o->offset, o->first_bit, o->last_bit);
+	else
+		fprintf(f, "\%*s<(nil)>\n", margin, "");
+}
+
 static void show_node(obj_t *o, int margin) {
-	printf("\%*s<%s, \"%s\", \"%s\", %p %lu %i %i>\n",
-	       margin, "", typetostr(o->type), o->name, o->base_type,
-	       o->ptr, o->offset, o->first_bit, o->last_bit);
+	_show_node(stdout, o, margin);
 }
 
 static int debug_node(obj_t *node, void *args) {
@@ -356,7 +397,7 @@ static int debug_node(obj_t *node, void *args) {
 	show_node(node, *depth * 4);
 	(*depth)++;
 
-	return 0;
+	return CB_CONT;
 }
 
 static int dec_depth(obj_t *node, void *args) {
@@ -364,7 +405,7 @@ static int dec_depth(obj_t *node, void *args) {
 
 	(*depth)--;
 
-	return 0;
+	return CB_CONT;
 }
 
 int debug_tree(obj_t *root) {
@@ -447,4 +488,71 @@ static int cmp_node(obj_t *o1, obj_t *o2, void *args) {
 
 int compare_tree(obj_t *o1, obj_t *o2) {
 	return compare_tree_rec(o1, o2, cmp_node, NULL);
+}
+
+static int hide_kabi_cb(obj_t *o, void *args) {
+	obj_t *kabi_struct, *new, **parent = (obj_t **)args;
+	obj_list_head_t *lh;
+	obj_list_t *l;
+
+	if (o->name && !strncmp(o->name, "__UNIQUE_ID_rh_kabi_hide", 24))
+		fail("Missed a kabi unique ID\n");
+
+	if ((o->type != __type_union) || o->name ||
+	    !(lh = o->member_list) || list_empty(lh) ||
+	    !(l = lh->first) || !(new = l->member) ||
+	    !(l = l->next) || !(kabi_struct = l->member) ||
+	    (kabi_struct->type != __type_var) ||
+	    !kabi_struct->name ||
+	    strncmp(kabi_struct->name, "__UNIQUE_ID_rh_kabi_hide", 24)) {
+		*parent = o;
+		return CB_CONT;
+	}
+
+	/*
+	 * It is a rh_kabi_hide union
+	 * old is the first member of kabi_struct
+	 *
+	 * Need to replace that:
+	 * <struct member, "(null)", "(null)", 0x1ea9840 16 0 0> (parent)
+	 *    <union, "(null)", "(null)", (nil) 0 0 0>		 (o)
+	 *       <var, "new_field", "(null)", 0x1ea9540 0 0 0>	 (new)
+	 *          <base, "(null)", "int", (nil) 0 0 0>
+	 *       <var, "__UNIQUE_ID_rh_kabi_hide55", "(null)", 0x1ea9700 0 0 0>
+	 *          <struct, "(null)", "(null)", (nil) 0 0 0>
+	 *             <struct member, "old_field", "(null)", 0x1ea9640 0 0 0>
+	 *                <base, "(null)", "int", (nil) 0 0 0>
+	 *       <var, "(null)", "(null)", 0x1ea97a0 0 0 0>
+	 *          <union, "(null)", "(null)", (nil) 0 0 0>
+	 *
+	 * by that:
+	 * <struct member, "new_field", "(null)", 0x1ea9540 16 0 0>
+	 *    <base, "(null)", "int", (nil) 0 0 0>
+	 *
+	 * Parent is always an unary node, struct_member or var
+	 */
+
+	if (!*parent ||
+	    !( ((*parent)->type == __type_var) ||
+	       ((*parent)->type == __type_struct_member) ) ||
+	    ((*parent)->ptr != o) || (*parent)->name) {
+		_show_node(stderr, *parent, 0);
+		fail("Unexpected parent\n");
+	}
+	if (new->type != __type_var) {
+		_show_node(stderr, new, 0);
+		fail("Unexpected new\n");
+	}
+
+	(*parent)->name = new->name;
+	(*parent)->ptr = new->ptr;
+	_free_obj(o, new);
+	free(new);
+
+	return CB_SKIP;
+}
+
+int hide_kabi(obj_t *root) {
+	void *parent;
+	return walk_tree(root, hide_kabi_cb, &parent);
 }

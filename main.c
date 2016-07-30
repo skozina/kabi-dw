@@ -225,7 +225,6 @@ int main(int argc, char **argv) {
 		argv++; argc--;
 		check(argc, argv);
 	} else if (strcmp(argv[0], "parse") == 0) {
-		argv++; argc--;
 		ret = parse(argc, argv);
 	} else {
 		usage();

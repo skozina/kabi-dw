@@ -31,11 +31,12 @@ typedef enum {
 	__type_ptr,
 	__type_typedef, /* do we keep that, or should it be always expanded */
 	__type_array,
-	__type_var,	/* a variable, member of an union or a function argument */
+	__type_var, /* a variable, member of an union or a function argument */
 	__type_struct_member,
 	__type_qualifier, /* a type qulifier such as "const" or "volatile" */
 	__type_base,
-	__type_constant	/* An element of an enumeration */
+	__type_constant, /* An element of an enumeration */
+	NR_OBJ_TYPES
 } obj_types;
 
 struct obj;
@@ -83,6 +84,49 @@ typedef struct obj {
 	};
 } obj_t;
 
+static inline bool is_terminal(obj_t *o) {
+	switch(o->type) {
+	case __type_none:
+	case __type_base:
+	case __type_constant:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static inline bool is_unary(obj_t *o) {
+	switch(o->type) {
+	case __type_ptr:
+	case __type_typedef:
+	case __type_array:
+	case __type_var:
+	case __type_struct_member:
+	case __type_qualifier:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static inline bool is_n_ary(obj_t *o) {
+	switch(o->type) {
+	case __type_struct:
+	case __type_union:
+	case __type_enum:
+	case __type_func:
+		return true;
+	default:
+		return false;
+	}
+}
+
+typedef enum {
+	CB_CONT = 0,	/* Continue tree walk */
+	CB_SKIP,	/* Skip the children of this node */
+	CB_FAIL,	/* Failed: stop the walk */
+} cb_ret_t;
+
 typedef int cb_t(obj_t *o, void *args);
 typedef int cb2_t(obj_t *o1, obj_t *o2, void *args);
 
@@ -113,5 +157,6 @@ int debug_tree(obj_t *root);
 int walk_tree(obj_t *root, cb_t cb, void *args);
 int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post, void *args);
 int compare_tree(obj_t *o1, obj_t *o2);
+int hide_kabi(obj_t *root);
 
 #endif

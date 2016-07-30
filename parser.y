@@ -19,6 +19,8 @@
 #include "parser.h"
 #include <limits.h>
 
+#include "utils.h"
+
 #define abort(...)				\
 {						\
 	fprintf(stderr, __VA_ARGS__);		\
@@ -334,25 +336,52 @@ reference_file:
 
 extern void usage(void);
 
-obj_t *_parse(char *filename) {
-	FILE *kabi_file;
+struct {
+	bool debug;
+	bool hide_kabi;
+	bool print;
+	bool compare;
+	FILE *file1;
+	FILE *file2;
+} parse_config = {false, false, false, false, NULL, NULL};
+
+obj_t *_parse(FILE *file) {
 	obj_t *root = NULL;
 
-	kabi_file = fopen(filename, "r");
-	if (kabi_file == NULL) {
-		fprintf(stderr, "Failed to open kABI file: %s\n",
-			filename);
-		return NULL;
-	}
-
-	yyin = kabi_file;
+	yyin = file;
 	yyparse(&root);
+	if (!root)
+		fail("No object build\n");
+
+	if (parse_config.hide_kabi)
+		hide_kabi(root);
+	if (parse_config.debug)
+		debug_tree(root);
+	if (parse_config.print)
+		print_tree(root);
 
 	return root;
 }
 
+void parse_usage() {
+	printf("Usage:\n"
+	       "\tparse [-d][-h][-p] kabi_file [-c kabi_file]\n");
+	exit(1);
+}
+
+FILE *fopen_safe(char *filename) {
+	FILE *file;
+
+	file = fopen(filename, "r");
+	if (!file)
+		fail("Failed to open kABI file: %s\n", filename);
+
+	return file;
+}
+
 int parse(int argc, char **argv) {
 	obj_t *root, *root2;
+	int opt;
 
 #ifdef DEBUG
 	yydebug = 1;
@@ -360,29 +389,47 @@ int parse(int argc, char **argv) {
 	yydebug = 0;
 #endif
 
-	if (argc < 1 || argc > 2) {
-		usage();
-	}
-
-	root = _parse(argv[0]);
-	if (!root) {
-	    fprintf(stderr, "No object build from %s\n", argv[0]);
-	    return 1;
-	}
-	print_tree(root);
-	if (yydebug)
-	    debug_tree(root);
-
-	if (argc == 2) {
-		root2 = _parse(argv[1]);
-		if (!root2) {
-		    fprintf(stderr, "No object build from %s\n", argv[1]);
-		    return 1;
+	while ((opt = getopt(argc, argv, "cdhp")) != -1) {
+		switch (opt) {
+		case 'c':
+			parse_config.compare = true;
+			break;
+		case 'd':
+			parse_config.debug = true;
+			break;
+		case 'h':
+			parse_config.hide_kabi = true;
+			break;
+		case 'p':
+			parse_config.print = true;
+			break;
+		default: /* '?' */
+			fail("Unknown parse option -%c\n", (char) opt);
 		}
-		print_tree(root2);
-		if (yydebug)
-		    debug_tree(root2);
+	}
 
+	if (optind >= argc) {
+		parse_usage();
+	}
+
+	parse_config.file1 = fopen_safe(argv[optind]);
+	optind++;
+
+	if (parse_config.compare) {
+		if (optind >= argc)
+			parse_usage();
+		parse_config.file2 = fopen_safe(argv[optind]);
+		optind++;
+	}
+
+	if ( optind != argc) {
+		parse_usage();
+	}
+
+	root = _parse(parse_config.file1);
+
+	if (parse_config.compare) {
+		root2 = _parse(parse_config.file2);
 		compare_tree(root, root2);
 		free_obj(root2);
 	}
