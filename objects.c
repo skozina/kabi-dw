@@ -420,47 +420,18 @@ static void show_two_nodes(const char *s, obj_t *o1, obj_t *o2) {
 	show_node(o2, 8);
 }
 
-static void show_node_list(const char *s, obj_list_t *list) {
+static void _show_node_list(const char *s, obj_list_t *list, obj_list_t *last) {
 	obj_list_t *l = list;
 
 	printf("%s:\n", s);
-	while (l) {
+	while (l && l != last) {
 		show_node(l->member, 8);
 		l = l->next;
 	}
 }
 
-static int compare_tree_rec(obj_t *o1, obj_t *o2, cb2_t cb, void *args) {
-	obj_list_t *list1 = NULL, *list2 = NULL;
-	int ret = 0;
-
-	if (cb && (ret = cb(o1, o2, args)))
-		return ret;
-
-	if (o1->member_list)
-		list1 = o1->member_list->first;
-	if (o2->member_list)
-		list2 = o2->member_list->first;
-
-	while ( list1 && list2 ) {
-		ret = compare_tree_rec(list1->member, list2->member, cb, args);
-
-		list1 = list1->next;
-		list2 = list2->next;
-		if (!list1 && list2) {
-			show_node_list("Nodes added", list2);
-			return 1;
-		}
-		if (list1 && !list2) {
-			show_node_list("Nodes removed", list1);
-			return 1;
-		}
-	}
-
-	if (o1->ptr && o2->ptr)
-		ret = compare_tree_rec(o1->ptr, o2->ptr, cb, args);
-
-	return ret;
+static void show_node_list(const char *s, obj_list_t *list) {
+	_show_node_list(s, list, NULL);
 }
 
 static int cmp_str(char *s1, char *s2) {
@@ -471,23 +442,67 @@ static int cmp_str(char *s1, char *s2) {
 	return 0;
 }
 
-static int cmp_node(obj_t *o1, obj_t *o2, void *args) {
-	if ((o1->type != o2->type) ||
-	    cmp_str(o1->name, o2->name) ||
-	    cmp_str(o1->base_type, o2->base_type) ||
-	    (o1->offset != o2->offset) ||
-	    (o1->first_bit != o2->first_bit) ||
-	    (o1->last_bit != o2->last_bit) ||
-	    ((o1->ptr == NULL) != (o2->ptr == NULL))) {
-		show_two_nodes("Nodes differ", o1, o2);
-		return 1;
-	}
-
-	return 0;
+static bool nodes_differ(obj_t *o1, obj_t *o2) {
+	return (o1->type != o2->type) ||
+		cmp_str(o1->name, o2->name) ||
+		cmp_str(o1->base_type, o2->base_type) ||
+		(o1->offset != o2->offset) ||
+		(o1->first_bit != o2->first_bit) ||
+		(o1->last_bit != o2->last_bit) ||
+		((o1->ptr == NULL) != (o2->ptr == NULL));
 }
 
-int compare_tree(obj_t *o1, obj_t *o2) {
-	return compare_tree_rec(o1, o2, cmp_node, NULL);
+obj_list_t *find_object(obj_t *o, obj_list_t *l) {
+	obj_list_t *list = l;
+
+	while (list) {
+		if (!nodes_differ(o, list->member))
+			return list;
+		list = list->next;
+	}
+	return NULL;
+}
+
+void compare_tree(obj_t *o1, obj_t *o2) {
+	obj_list_t *list1 = NULL, *list2 = NULL, *next;
+
+	if (nodes_differ(o1, o2))
+		show_two_nodes("Nodes differ", o1, o2);
+
+	if (o1->member_list)
+		list1 = o1->member_list->first;
+	if (o2->member_list)
+		list2 = o2->member_list->first;
+
+	while ( list1 && list2 ) {
+		if (nodes_differ(list1->member, list2->member)) {
+			if ((next = find_object(list1->member, list2))) {
+				/* Insertion */
+				_show_node_list("Nodes inserted", list2, next);
+				list2 = next;
+			} else if ((next = find_object(list2->member, list1))) {
+				/* Removal */
+				_show_node_list("Nodes removed", list1, next);
+				list1 = next;
+			}
+		}
+
+		compare_tree(list1->member, list2->member);
+
+		list1 = list1->next;
+		list2 = list2->next;
+		if (!list1 && list2) {
+			show_node_list("Nodes added", list2);
+			return;
+		}
+		if (list1 && !list2) {
+			show_node_list("Nodes removed", list1);
+			return;
+		}
+	}
+
+	if (o1->ptr && o2->ptr)
+		compare_tree(o1->ptr, o2->ptr);
 }
 
 static int hide_kabi_cb(obj_t *o, void *args) {
