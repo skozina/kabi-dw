@@ -327,7 +327,7 @@ reference_file:
 	'@' STRING
 	{
 	    /* TODO: need to parse that file */
-	    $$ = new_none();
+	    $$ = new_reffile();
 	    $$->base_type = $STRING;
 	    }
 	;

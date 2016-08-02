@@ -19,14 +19,16 @@
  * Internal representation of symbols
  */
 
+#define _GNU_SOURCE /* We use GNU basename() that doesn't modify the arg */
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <string.h>
 #include <strings.h>
 
 #include "objects.h"
 #include "utils.h"
+#include "main.h"
 
 obj_list_t *new_list(obj_t *obj) {
 	obj_list_t *list = malloc(sizeof(obj_list_t));
@@ -168,7 +170,7 @@ CREATE_NEW_FUNC(struct)
 CREATE_NEW_FUNC(union)
 CREATE_NEW_FUNC(enum)
 CREATE_NEW_FUNC(constant)
-CREATE_NEW_FUNC_NONAME(none)
+CREATE_NEW_FUNC_NONAME(reffile)
 CREATE_NEW_FUNC_NONAME(array)
 CREATE_NEW_ADD_FUNC(func)
 CREATE_NEW_ADD_FUNC(typedef)
@@ -187,7 +189,7 @@ obj_t *new_base(char *base_type) {
 }
 
 const char *obj_type_name[NR_OBJ_TYPES+1] =
-	{"none",
+	{"reference file",
 	 "struct",
 	 "union",
 	 "enum",
@@ -207,6 +209,33 @@ static const char *typetostr(obj_types t) {
 	if (t >= NR_OBJ_TYPES)
 		t = NR_OBJ_TYPES;
 	return obj_type_name[t];
+}
+
+/* Removes the two dashes at the end of the prefix */
+#define IS_PREFIX(s, prefix) !strncmp(s, prefix, strlen(prefix) - 2)
+
+char *filenametotype(char *filename) {
+	char *base = basename(filename);
+	char *prefix= NULL, *name = NULL, *type = NULL;
+
+	if ( sscanf(base, "%m[a-z]--%m[^.].txt", &prefix, &name) != 2 )
+		fail("Unexpected file name: %s\n", filename);
+
+	if (IS_PREFIX(prefix, TYPEDEF_FILE)||
+	    IS_PREFIX(prefix, ENUM_FILE)) {
+		type = name;
+	} else if (IS_PREFIX(prefix, STRUCT_FILE)||
+		   IS_PREFIX(prefix, UNION_FILE)) {
+		type = malloc(strlen(prefix)+strlen(name)+2);
+		sprintf(type, "%s %s", prefix, name);
+	} else
+		fail("Unexpected file prefix: %s\n", prefix);
+
+	free(prefix);
+	if (name != type)
+		free(name);
+
+	return type;
 }
 
 typedef struct print_node_args {
@@ -287,6 +316,13 @@ static int print_node_pre(obj_t *node, void *args){
 	case __type_constant:
 		printf("%s = %lx\n", node->name, node->constant);
 		break;
+	case __type_reffile:
+	{
+		char *type = filenametotype(node->base_type);
+		printf("%s\n", type);
+		free(type);
+		break;
+	}
 	default:
 		printf("<%s, \"%s\", \"%s\", %p %lu>\n",
 		       typetostr(node->type), node->name,

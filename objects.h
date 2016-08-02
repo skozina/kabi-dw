@@ -23,7 +23,7 @@
 #define _OBJECTS_H
 
 typedef enum {
-	__type_none,
+	__type_reffile,
 	__type_struct,
 	__type_union,
 	__type_enum,
@@ -86,7 +86,7 @@ typedef struct obj {
 
 static inline bool is_terminal(obj_t *o) {
 	switch(o->type) {
-	case __type_none:
+	case __type_reffile:
 	case __type_base:
 	case __type_constant:
 		return true;
@@ -140,7 +140,7 @@ obj_t *new_struct(char *name);
 obj_t *new_union(char *name);
 obj_t *new_enum(char *name);
 obj_t *new_constant(char *name);
-obj_t *new_none();
+obj_t *new_reffile();
 obj_t *new_array();
 obj_t *new_func_add(char *name, obj_t *obj);
 obj_t *new_typedef_add(char *name, obj_t *obj);
