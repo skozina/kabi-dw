@@ -41,6 +41,8 @@ HEX		[a-fA-F0-9]
 
 "..."		{ return(ELLIPSIS); }
 
+"->"		{ return(STACK); }
+
 {FILECHAR}+"."[ch]|"<built-in>"	{ yylval.str = strdup(yytext);
 				  debug("Source file: %s\n", yylval.str);
 				  return(SRCFILE);

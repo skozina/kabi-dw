@@ -47,6 +47,7 @@
 %token TYPEDEF
 %token CONST VOLATILE
 %token STRUCT UNION ENUM ELLIPSIS
+%token STACK
 
 %type <str> type_qualifier
 %type <obj> typed_type base_type reference_file array_type
@@ -60,14 +61,14 @@
 %%
 
 kabi_dw_file:
-	cu_file NEWLINE source_file NEWLINE declaration NEWLINE
+	cu_file source_file stack_list declaration NEWLINE
 	{
 	    $$ = *root = $declaration;
 	}
 	;
 
 cu_file:
-	IDENTIFIER STRING
+	IDENTIFIER STRING NEWLINE
 	{
 	    if (strcmp($IDENTIFIER,"CU"))
 		abort("Wrong CU keyword: \"%s\"\n", $IDENTIFIER);
@@ -77,12 +78,24 @@ cu_file:
 	;
 
 source_file:
-	IDENTIFIER SRCFILE ':' CONSTANT
+	IDENTIFIER SRCFILE ':' CONSTANT NEWLINE
 	{
 	    if (strcmp($IDENTIFIER,"File"))
 		abort("Wrong file keyword: \"%s\"\n", $IDENTIFIER);
 	    free($IDENTIFIER);
 	    free($SRCFILE);
+	}
+	;
+
+stack_list:
+	%empty
+	| stack_list stack_elt NEWLINE
+	;
+
+stack_elt:
+	STACK STRING
+	{
+		free($STRING);
 	}
 	;
 
