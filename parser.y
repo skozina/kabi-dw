@@ -281,15 +281,9 @@ ptr_type:
 	;
 
 array_type:
-	'[' CONSTANT ']' STRING
+        '['CONSTANT ']' type
 	{
-	    $$ = new_array();
-	    $$->index = $CONSTANT;
-	    $$->base_type = $STRING;
-	}
-	| '[' CONSTANT ']' array_type
-	{
-	    $$ = new_array_add($4);
+	    $$ = new_array_add($type);
 	    $$->index = $CONSTANT;
 	}
 	;

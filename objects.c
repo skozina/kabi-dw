@@ -171,7 +171,6 @@ CREATE_NEW_FUNC(union)
 CREATE_NEW_FUNC(enum)
 CREATE_NEW_FUNC(constant)
 CREATE_NEW_FUNC_NONAME(reffile)
-CREATE_NEW_FUNC_NONAME(array)
 CREATE_NEW_ADD_FUNC(func)
 CREATE_NEW_ADD_FUNC(typedef)
 CREATE_NEW_ADD_FUNC(var)
@@ -299,11 +298,7 @@ static int print_node_pre(obj_t *node, void *args){
 		goto out_sameline;
 	case __type_array:
 		printf("[%lu]", node->index);
-		if (node->base_type)
-			printf("%s\n", node->base_type);
-		else
-			goto out_sameline;
-		break;
+		goto out_sameline;
 	case __type_qualifier:
 		printf("%s ", node->base_type);
 		goto out_sameline;

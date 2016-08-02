@@ -54,7 +54,7 @@ typedef struct obj_list_head {
  *
  * type:	type of the symbol (such as struct, function, pointer, base type...)
  * name:	name of the symbol
- * base_type:	(base type, array) the type of the symbol,
+ * base_type:	(base type) the type of the symbol,
  *		(qualifier) the type qualifier (const or volatile)
  * member_list: (struct, union, enum) list of members
  *              (function) list of arguments
@@ -141,7 +141,6 @@ obj_t *new_union(char *name);
 obj_t *new_enum(char *name);
 obj_t *new_constant(char *name);
 obj_t *new_reffile();
-obj_t *new_array();
 obj_t *new_func_add(char *name, obj_t *obj);
 obj_t *new_typedef_add(char *name, obj_t *obj);
 obj_t *new_var_add(char *name, obj_t *obj);
