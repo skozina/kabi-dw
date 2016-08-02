@@ -440,33 +440,34 @@ static void print_die_subprogram(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 static void print_die_array_type(Dwarf *dbg, FILE *fout, Dwarf_Die *die) {
 	Dwarf_Attribute attr;
 	Dwarf_Word value;
+	Dwarf_Die child;
 
 	/* There should be one child of DW_TAG_subrange_type */
 	if (!dwarf_haschildren(die))
 		fail("Array type missing children!\n");
 
 	/* Grab the child */
-	dwarf_child(die, die);
+	dwarf_child(die, &child);
 
 	do {
-		unsigned int tag = dwarf_tag(die);
+		unsigned int tag = dwarf_tag(&child);
 		if (tag != DW_TAG_subrange_type)
 			fail("Unexpected tag for array type children: %s\n",
 			    dwarf_tag_string(tag));
 
-		if (dwarf_hasattr(die, DW_AT_upper_bound)) {
-			(void) dwarf_attr(die, DW_AT_upper_bound, &attr);
+		if (dwarf_hasattr(&child, DW_AT_upper_bound)) {
+			(void) dwarf_attr(&child, DW_AT_upper_bound, &attr);
 			(void) dwarf_formudata(&attr, &value);
 			/* Get the UPPER bound, so add 1 */
 			fprintf(fout, "[%lu]", value + 1);
-		} else if (dwarf_hasattr(die, DW_AT_count)) {
-			(void) dwarf_attr(die, DW_AT_count, &attr);
+		} else if (dwarf_hasattr(&child, DW_AT_count)) {
+			(void) dwarf_attr(&child, DW_AT_count, &attr);
 			(void) dwarf_formudata(&attr, &value);
 			fprintf(fout, "[%lu]", value);
 		} else {
 			fprintf(fout, "[0]");
 		}
-	} while (dwarf_siblingof(die, die) == 0);
+	} while (dwarf_siblingof(&child, &child) == 0);
 }
 
 static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
