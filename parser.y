@@ -411,7 +411,8 @@ int parse(int argc, char **argv) {
 			parse_config.print = true;
 			break;
 		default: /* '?' */
-			fail("Unknown parse option -%c\n", (char) opt);
+			printf("Unknown parse option -%c\n", (char) opt);
+			parse_usage();
 		}
 	}
 
