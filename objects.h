@@ -155,7 +155,7 @@ void print_tree(obj_t *root);
 int debug_tree(obj_t *root);
 int walk_tree(obj_t *root, cb_t cb, void *args);
 int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post, void *args);
-void compare_tree(obj_t *o1, obj_t *o2);
+int compare_tree(obj_t *o1, obj_t *o2);
 int hide_kabi(obj_t *root);
 
 #endif

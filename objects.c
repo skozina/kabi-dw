@@ -240,6 +240,7 @@ char *filenametotype(char *filename) {
 typedef struct print_node_args {
 	int depth;
 	bool newline;
+	const char *prefix;
 } pn_args_t;
 
 static int print_node_pre(obj_t *node, void *args){
@@ -247,6 +248,8 @@ static int print_node_pre(obj_t *node, void *args){
 	char offstr[16];
 
 	if (pna->newline) {
+		if (pna->prefix)
+			printf("%s", pna->prefix);
 		if (node->type == __type_struct_member) {
 			if (node->last_bit)
 				snprintf(offstr, 16, "0x%lx:%2i-%-2i ",
@@ -343,18 +346,19 @@ static int print_node_in(obj_t *node, void *args){
 	case __type_struct:
 	case __type_union:
 	case __type_enum:
-		if (pna->depth == 0)
-			fail("depth undeflow\n");
-		pna->depth--;
-		printf("%*s}\n", pna->depth * 4, "");
-		pna->newline = true;
-		break;
 	case __type_func:
 		if (pna->depth == 0)
 			fail("depth undeflow\n");
 		pna->depth--;
-		printf("%*s) ", pna->depth * 4, "");
-		pna->newline = false;
+		if (pna->prefix)
+			printf("%s", pna->prefix);
+		if (node->type == __type_func) {
+			printf("%*s) ", pna->depth * 4, "");
+			pna->newline = false;
+		} else {
+			printf("%*s}\n", pna->depth * 4, "");
+			pna->newline = true;
+		}
 		break;
 	default:
 		;
@@ -363,11 +367,14 @@ static int print_node_in(obj_t *node, void *args){
 	return CB_CONT;
 }
 
-void print_tree(obj_t *root) {
-	pn_args_t pna = {0, false};
+void _print_tree(obj_t *root, int depth, bool newline, const char *prefix) {
+	pn_args_t pna = {depth, newline, prefix};
 	walk_tree3(root, print_node_pre, print_node_in, NULL, &pna);
 }
 
+void print_tree(obj_t *root) {
+	_print_tree(root, 0, false, NULL);
+}
 
 int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post, void *args) {
 	obj_list_t *list = NULL;
@@ -447,8 +454,8 @@ int debug_tree(obj_t *root) {
 
 static void show_two_nodes(const char *s, obj_t *o1, obj_t *o2) {
 	printf("%s:\n", s);
-	show_node(o1, 8);
-	show_node(o2, 8);
+	_print_tree(o1, 2, true, "< ");
+	_print_tree(o2, 2, true, "> ");
 }
 
 static void _show_node_list(const char *s, obj_list_t *list, obj_list_t *last) {
@@ -456,7 +463,7 @@ static void _show_node_list(const char *s, obj_list_t *list, obj_list_t *last) {
 
 	printf("%s:\n", s);
 	while (l && l != last) {
-		show_node(l->member, 8);
+		_print_tree(l->member, 2, true, NULL);
 		l = l->next;
 	}
 }
@@ -494,11 +501,36 @@ obj_list_t *find_object(obj_t *o, obj_list_t *l) {
 	return NULL;
 }
 
-void compare_tree(obj_t *o1, obj_t *o2) {
-	obj_list_t *list1 = NULL, *list2 = NULL, *next;
+/*
+ * We want to show practical output to the user.  For instance if a
+ * struct member type change, we want to show which struct member
+ * changed type, not that somewhere a "signed int" has been changed
+ * into a "unsigned bin".
+ *
+ * For now, we consider that a useful output should start at a named
+ * object.
+*/
+bool worthy_of_print(obj_t *o) {
+	return o->name != NULL;
+}
 
-	if (nodes_differ(o1, o2))
-		show_two_nodes("Nodes differ", o1, o2);
+enum {
+	COMP_SAME = 0,
+	COMP_DIFF,
+	COMP_NEED_PRINT,
+};
+
+int compare_tree(obj_t *o1, obj_t *o2) {
+	obj_list_t *list1 = NULL, *list2 = NULL, *next;
+	int ret, tmp;
+
+	if (nodes_differ(o1, o2)) {
+		if (worthy_of_print(o1)) {
+			show_two_nodes("Nodes differ", o1, o2);
+			return COMP_DIFF;
+		} else
+			return COMP_NEED_PRINT;
+	}
 
 	if (o1->member_list)
 		list1 = o1->member_list->first;
@@ -511,29 +543,43 @@ void compare_tree(obj_t *o1, obj_t *o2) {
 				/* Insertion */
 				_show_node_list("Nodes inserted", list2, next);
 				list2 = next;
+				ret = COMP_DIFF;
 			} else if ((next = find_object(list2->member, list1))) {
 				/* Removal */
 				_show_node_list("Nodes removed", list1, next);
 				list1 = next;
+				ret = COMP_DIFF;
 			}
 		}
 
-		compare_tree(list1->member, list2->member);
+		tmp = compare_tree(list1->member, list2->member);
+		if (tmp == COMP_NEED_PRINT)
+			show_two_nodes("Nodes differ",
+				       list1->member, list2->member);
+		if (tmp != COMP_SAME)
+			ret = COMP_DIFF;
 
 		list1 = list1->next;
 		list2 = list2->next;
 		if (!list1 && list2) {
 			show_node_list("Nodes added", list2);
-			return;
+			return COMP_DIFF;
 		}
 		if (list1 && !list2) {
 			show_node_list("Nodes removed", list1);
-			return;
+			return COMP_DIFF;
 		}
 	}
 
-	if (o1->ptr && o2->ptr)
-		compare_tree(o1->ptr, o2->ptr);
+	if (o1->ptr && o2->ptr) {
+		tmp = compare_tree(o1->ptr, o2->ptr);
+		if (tmp == COMP_NEED_PRINT)
+			show_two_nodes("Nodes differ", o1, o2);
+		if (tmp != COMP_SAME)
+			ret = COMP_DIFF;
+	}
+
+	return ret;
 }
 
 static int hide_kabi_cb(obj_t *o, void *args) {
