@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <strings.h>
+#include <limits.h>
 
 #include "objects.h"
 #include "utils.h"
@@ -237,10 +238,40 @@ char *filenametotype(char *filename) {
 	return type;
 }
 
+static int c_precedence(obj_t *o) {
+	switch (o->type) {
+	case __type_func:
+	case __type_array:
+		return 1;
+	case __type_ptr:
+		return 2;
+	default:
+		return INT_MAX;
+	}
+}
+
+static bool is_paren_needed(obj_t *node) {
+	obj_t *child = node->ptr;
+
+	while(child) {
+		if (c_precedence(child) < c_precedence(node))
+			return true;
+		child = child->ptr;
+	}
+	return false;
+}
+
 typedef struct print_node_args {
 	int depth;
 	bool newline;
 	const char *prefix;
+	char *elt_name; /* Name of a struct field or a var */
+	/*
+	 * Number of indirection that need to be handled.
+	 * It also indicates that parentheses are needed since "*" has a
+	 * lower precedence than array "[]" or functions "()"
+	 */
+	int ptrs;
 } pn_args_t;
 
 static int print_node_pre(obj_t *node, void *args){
@@ -263,10 +294,8 @@ static int print_node_pre(obj_t *node, void *args){
 		printf("%-*s", pna->depth * 4, offstr);
 	}
 
-	if (!node) {
-		printf("(nil)\n");
-		goto out_newline;
-	}
+	if (!node)
+		fail("No node\n");
 
 	switch(node->type) {
 	case __type_struct:
@@ -278,61 +307,42 @@ static int print_node_pre(obj_t *node, void *args){
 		else
 			printf("%s {\n", typetostr(node->type));
 		pna->depth++;
-		break;
-	case __type_func:
-		printf("%s (\n", node->name);
-		pna->depth++;
-		break;
-	case __type_ptr:
-		if (node->name)
-			printf("%s ", node->name);
-		printf("*");
-		goto out_sameline;
-	case __type_typedef:
-		printf("typedef %s\n", node->name);
-		break;
-	case __type_var:
-		if (node->name)
-			printf("%s ", node->name);
-		goto out_sameline;
-	case __type_struct_member:
-		if (node->name)
-			printf("%s ", node->name);
-		goto out_sameline;
-	case __type_array:
-		printf("[%lu]", node->index);
-		goto out_sameline;
+		goto out_newline;
 	case __type_qualifier:
 		printf("%s ", node->base_type);
-		goto out_sameline;
+		break;
 	case __type_base:
-		printf("%s", node->base_type);
+		printf("%s ", node->base_type);
 		if (node->name)
-			printf(" %s", node->name);
-		printf("\n");
+			fail("Base type has name %s\n", node->name);
 		break;
 	case __type_constant:
 		printf("%s = %lx\n", node->name, node->constant);
-		break;
+		goto out_newline;
 	case __type_reffile:
 	{
 		char *type = filenametotype(node->base_type);
-		printf("%s\n", type);
+		printf("%s ", type);
 		free(type);
 		break;
 	}
+	case __type_var:
+	case __type_struct_member:
+		pna->elt_name = node->name;
+		break;
+	case __type_ptr:
+		if (is_paren_needed(node))
+			pna->ptrs++;
+		break;
 	default:
-		printf("<%s, \"%s\", \"%s\", %p %lu>\n",
-		       typetostr(node->type), node->name,
-		       node->base_type, node->ptr, node->constant);
+		;
 	}
+
+	pna->newline = false;
+	return CB_CONT;
 
 out_newline:
 	pna->newline = true;
-	return CB_CONT;
-
-out_sameline:
-	pna->newline = false;
 	return CB_CONT;
 }
 
@@ -340,31 +350,117 @@ static int print_node_in(obj_t *node, void *args){
 	pn_args_t *pna = (pn_args_t *) args;
 
 	if (!node)
-		return CB_CONT;
+		fail("No node\n");
 
 	switch(node->type) {
-	case __type_struct:
-	case __type_union:
-	case __type_enum:
 	case __type_func:
-		if (pna->depth == 0)
-			fail("depth undeflow\n");
-		pna->depth--;
-		if (pna->prefix)
-			printf("%s", pna->prefix);
-		if (node->type == __type_func) {
-			printf("%*s) ", pna->depth * 4, "");
-			pna->newline = false;
-		} else {
-			printf("%*s}\n", pna->depth * 4, "");
-			pna->newline = true;
+	{
+		char *s = NULL;
+		bool paren = pna->ptrs != 0;
+
+		if (node->name)
+			s = node->name;
+		else if (pna->elt_name) {
+			s = pna->elt_name;
+			pna->elt_name = NULL;
 		}
+		if (paren) {
+			putchar('(');
+			while (pna->ptrs) {
+				putchar('*');
+				pna->ptrs--;
+			}
+		}
+		if (s)
+			printf("%s", s);
+		if (paren)
+			printf(")");
+		puts(" (");
+		pna->depth++;
+		pna->newline = true;
 		break;
+	}
 	default:
 		;
 	}
 
 	return CB_CONT;
+}
+
+static int print_node_post(obj_t *node, void *args) {
+	pn_args_t *pna = (pn_args_t *) args;
+
+	if (!node)
+		fail("No node\n");
+
+	switch(node->type) {
+	case __type_struct:
+	case __type_union:
+	case __type_enum:
+		if (pna->depth == 0)
+			fail("depth underflow\n");
+		pna->depth--;
+		printf("%*s}", pna->depth * 4, "");
+		goto out_sameline;
+	case __type_func:
+		if (pna->depth == 0)
+			fail("depth underflow\n");
+		pna->depth--;
+		printf("%*s)", pna->depth * 4, "");
+		goto out_sameline;
+	case __type_ptr:
+		if (!is_paren_needed(node))
+			putchar('*');
+		goto out_sameline;
+	case __type_typedef:
+		printf("typedef %s\n", node->name);
+		break;
+	case __type_var:
+	case __type_struct_member:
+		if (pna->elt_name) {
+			fputs(pna->elt_name, stdout);
+			pna->elt_name = NULL;
+		}
+		if (pna->ptrs)
+			fail("Unmatched ptrs\n");
+		puts(";");
+		break;
+	case __type_array:
+	{
+		bool paren = pna->ptrs != 0;
+		if (paren) {
+			putchar('(');
+			while (pna->ptrs) {
+				putchar('*');
+				pna->ptrs--;
+			}
+		}
+
+		if (pna->elt_name) {
+			fputs(pna->elt_name, stdout);
+			pna->elt_name = NULL;
+		}
+		if (paren)
+			printf(")");
+
+		printf("[%lu]", node->index);
+		if (node->base_type)
+			puts(node->base_type);
+		else
+			goto out_sameline;
+		break;
+	}
+	default:
+		;
+	}
+
+	pna->newline = true;
+	return CB_CONT;
+
+out_sameline:
+	pna->newline = false;
+	return CB_CONT;
+
 }
 
 /* diff -u style */
@@ -373,14 +469,49 @@ static int print_node_in(obj_t *node, void *args){
 
 void _print_tree(obj_t *root, int depth, bool newline, const char *prefix) {
 	pn_args_t pna = {depth, newline, prefix};
-	walk_tree3(root, print_node_pre, print_node_in, NULL, &pna);
+	walk_tree3(root, print_node_pre, print_node_in, print_node_post,
+		   &pna, true);
 }
 
 void print_tree(obj_t *root) {
 	_print_tree(root, 0, false, NULL);
 }
 
-int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post, void *args) {
+static int walk_list(obj_list_t *list, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
+		     void *args, bool ptr_first) {
+	int ret = CB_CONT;
+
+	while ( list ) {
+		ret = walk_tree3(list->member, cb_pre, cb_in, cb_post,
+				 args, ptr_first);
+		if (ret == CB_FAIL)
+			return ret;
+		else
+			ret = CB_CONT;
+		list = list->next;
+	}
+
+	return ret;
+}
+
+static int walk_ptr(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
+		    void *args, bool ptr_first) {
+	int ret = CB_CONT;
+
+	if (o->ptr) {
+		ret = walk_tree3(o->ptr, cb_pre, cb_in, cb_post,
+				 args, ptr_first);
+		if (ret == CB_FAIL)
+			return ret;
+		else
+			ret = CB_CONT;
+	}
+
+	return ret;
+}
+
+int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
+	       void *args, bool ptr_first) {
 	obj_list_t *list = NULL;
 	int ret = CB_CONT;
 
@@ -390,25 +521,23 @@ int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post, void *args) {
 	if (o->member_list)
 		list = o->member_list->first;
 
-	while ( list ) {
-		ret = walk_tree3(list->member, cb_pre, cb_in, cb_post, args);
-		if (ret == CB_FAIL)
-			return ret;
-		else
-			ret = CB_CONT;
-		list = list->next;
-	}
+
+	if (ptr_first)
+		ret = walk_ptr(o, cb_pre, cb_in, cb_post, args, ptr_first);
+	else
+		ret = walk_list(list, cb_pre, cb_in, cb_post, args, ptr_first);
+	if (ret == CB_FAIL)
+		return ret;
 
 	if (cb_in && (ret = cb_in(o, args)))
 		return ret;
 
-	if (o->ptr) {
-		ret = walk_tree3(o->ptr, cb_pre, cb_in, cb_post, args);
-		if (ret == CB_FAIL)
-			return ret;
-		else
-			ret = CB_CONT;
-	}
+	if (ptr_first)
+		ret = walk_list(list, cb_pre, cb_in, cb_post, args, ptr_first);
+	else
+		ret = walk_ptr(o, cb_pre, cb_in, cb_post, args, ptr_first);
+	if (ret == CB_FAIL)
+		return ret;
 
 	if (cb_post && (ret = cb_post(o, args)))
 		return ret;
@@ -417,7 +546,7 @@ int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post, void *args) {
 }
 
 int walk_tree(obj_t *root, cb_t cb, void *args) {
-	return walk_tree3(root, cb, NULL, NULL, args);
+	return walk_tree3(root, cb, NULL, NULL, args, false);
 }
 
 static void _show_node(FILE *f, obj_t *o, int margin) {
@@ -453,7 +582,7 @@ static int dec_depth(obj_t *node, void *args) {
 int debug_tree(obj_t *root) {
 	int depth = 0;
 
-	return walk_tree3(root, debug_node, NULL, dec_depth, &depth);
+	return walk_tree3(root, debug_node, NULL, dec_depth, &depth, false);
 }
 
 static void show_two_nodes(const char *s, obj_t *o1, obj_t *o2) {
