@@ -274,13 +274,17 @@ typedef struct print_node_args {
 	int ptrs;
 } pn_args_t;
 
-static int print_node_pre(obj_t *node, void *args){
+static void print_margin(const char *prefix, const char *s, int depth) {
+	if (prefix)
+		printf("%s", prefix);
+	printf("%-*s", depth * C_INDENT_OFFSET, s);
+}
+
+static int print_node_pre(obj_t *node, void *args) {
 	pn_args_t *pna = (pn_args_t *) args;
 	char offstr[16];
 
 	if (pna->newline) {
-		if (pna->prefix)
-			printf("%s", pna->prefix);
 		if (node->type == __type_struct_member) {
 			if (node->last_bit)
 				snprintf(offstr, 16, "0x%lx:%2i-%-2i ",
@@ -291,7 +295,7 @@ static int print_node_pre(obj_t *node, void *args){
 				snprintf(offstr, 16, "0x%lx ", node->offset);
 		} else
 			offstr[0] = 0;
-		printf("%-*s", pna->depth * 4, offstr);
+		print_margin(pna->prefix, offstr, pna->depth);
 	}
 
 	if (!node)
@@ -317,7 +321,7 @@ static int print_node_pre(obj_t *node, void *args){
 			fail("Base type has name %s\n", node->name);
 		break;
 	case __type_constant:
-		printf("%s = %lx\n", node->name, node->constant);
+		printf("%s = %lx,\n", node->name, node->constant);
 		goto out_newline;
 	case __type_reffile:
 	{
@@ -397,23 +401,26 @@ static int print_node_post(obj_t *node, void *args) {
 	case __type_struct:
 	case __type_union:
 	case __type_enum:
-		if (pna->depth == 0)
-			fail("depth underflow\n");
-		pna->depth--;
-		printf("%*s}", pna->depth * 4, "");
-		goto out_sameline;
 	case __type_func:
 		if (pna->depth == 0)
 			fail("depth underflow\n");
 		pna->depth--;
-		printf("%*s)", pna->depth * 4, "");
+		print_margin(pna->prefix, "", pna->depth);
+		if (node->type == __type_func)
+			putchar(')');
+		else
+			putchar('}');
+		if (pna->depth == 0) {
+			puts(";");
+			break;
+		}
 		goto out_sameline;
 	case __type_ptr:
 		if (!is_paren_needed(node))
 			putchar('*');
 		goto out_sameline;
 	case __type_typedef:
-		printf("typedef %s\n", node->name);
+		printf("typedef %s;\n", node->name);
 		break;
 	case __type_var:
 	case __type_struct_member:
@@ -444,10 +451,7 @@ static int print_node_post(obj_t *node, void *args) {
 			printf(")");
 
 		printf("[%lu]", node->index);
-		if (node->base_type)
-			puts(node->base_type);
-		else
-			goto out_sameline;
+		goto out_sameline;
 		break;
 	}
 	default:
@@ -462,10 +466,6 @@ out_sameline:
 	return CB_CONT;
 
 }
-
-/* diff -u style */
-#define ADD_PREFIX "+ "
-#define DEL_PREFIX "- "
 
 void _print_tree(obj_t *root, int depth, bool newline, const char *prefix) {
 	pn_args_t pna = {depth, newline, prefix};
@@ -565,7 +565,7 @@ static void show_node(obj_t *o, int margin) {
 static int debug_node(obj_t *node, void *args) {
 	int *depth = (int *) args;
 
-	show_node(node, *depth * 4);
+	show_node(node, *depth * DBG_INDENT_OFFSET);
 	(*depth)++;
 
 	return CB_CONT;
@@ -587,8 +587,8 @@ int debug_tree(obj_t *root) {
 
 static void show_two_nodes(const char *s, obj_t *o1, obj_t *o2) {
 	printf("%s:\n", s);
-	_print_tree(o1, 2, true, "- ");
-	_print_tree(o2, 2, true, "+ ");
+	_print_tree(o1, 2, true, DEL_PREFIX);
+	_print_tree(o2, 2, true, ADD_PREFIX);
 }
 
 static void _show_node_list(const char *s, const char *prefix,

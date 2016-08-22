@@ -22,6 +22,14 @@
 #ifndef _OBJECTS_H
 #define _OBJECTS_H
 
+/* Indentation offset for c-style and tree debug outputs */
+#define C_INDENT_OFFSET   8
+#define DBG_INDENT_OFFSET 4
+
+/* diff -u style prefix for tree comparison */
+#define ADD_PREFIX "+"
+#define DEL_PREFIX "-"
+
 typedef enum {
 	__type_reffile,
 	__type_struct,
