@@ -233,7 +233,6 @@ func_type:
 	    if (strcmp($IDENTIFIER,"func"))
 		abort("Wrong func keyword: \"%s\"\n", $IDENTIFIER);
 	    free($IDENTIFIER);
-	    /* TODO: Need to parse other file */
 	    $$ = new_func_add(NULL, $reference_file);
 	}
 	;
@@ -241,16 +240,11 @@ func_type:
 arg_list:
 	%empty
 	{
-	    /* TODO: that's ugly. Is it correct? */
 	    $$ = NULL;
 	}
 	| elt_list NEWLINE
 	{
 	    $$ = $elt_list;
-	}
-	| variable_var_list NEWLINE
-	{
-	    $$ = new_list_head($variable_var_list);
 	}
 	| elt_list NEWLINE variable_var_list NEWLINE
 	{
@@ -263,7 +257,7 @@ variable_var_list:
 	IDENTIFIER ELLIPSIS
 	{
 	    /* TODO: there may be a better solution */
-	    $$ = new_base(strdup("..."));
+	    $$ = new_var_add(NULL, new_base(strdup("...")));
 	}
 	;
 
@@ -333,7 +327,6 @@ base_type:
 reference_file:
 	'@' STRING
 	{
-	    /* TODO: need to parse that file */
 	    $$ = new_reffile();
 	    $$->base_type = $STRING;
 	    }
