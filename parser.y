@@ -440,8 +440,10 @@ int parse(int argc, char **argv) {
 		root2 = _parse(parse_config.file2);
 		compare_tree(root, root2);
 		free_obj(root2);
+		fclose(parse_config.file2);
 	}
 	free_obj(root);
+	fclose(parse_config.file1);
 
 	return 0;
 }
