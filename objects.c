@@ -618,7 +618,10 @@ static int cmp_str(char *s1, char *s2) {
 static bool nodes_differ(obj_t *o1, obj_t *o2) {
 	return (o1->type != o2->type) ||
 		cmp_str(o1->name, o2->name) ||
-		cmp_str(o1->base_type, o2->base_type) ||
+		(o1->type == __type_reffile ?
+		 cmp_str(filenametotype(o1->base_type),
+			 filenametotype(o2->base_type)) :
+		 cmp_str(o1->base_type, o2->base_type)) ||
 		(o1->offset != o2->offset) ||
 		(o1->first_bit != o2->first_bit) ||
 		(o1->last_bit != o2->last_bit) ||
