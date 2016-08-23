@@ -15,4 +15,7 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+/* Return value when we detect a kABI change */
+#define EXIT_KABI_CHANGE 3
+
 int parse(int argc, char **argv);

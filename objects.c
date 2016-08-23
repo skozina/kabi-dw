@@ -652,12 +652,6 @@ bool worthy_of_print(obj_t *o) {
 	return o->name != NULL;
 }
 
-enum {
-	COMP_SAME = 0,
-	COMP_DIFF,
-	COMP_NEED_PRINT,
-};
-
 int compare_tree(obj_t *o1, obj_t *o2) {
 	obj_list_t *list1 = NULL, *list2 = NULL, *next;
 	int ret, tmp;

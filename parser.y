@@ -16,6 +16,7 @@
 */
 
 %{
+#include "parse.h"
 #include "parser.h"
 #include <limits.h>
 
@@ -381,7 +382,7 @@ FILE *fopen_safe(char *filename) {
 
 int parse(int argc, char **argv) {
 	obj_t *root, *root2;
-	int opt;
+	int opt, ret = 0;
 
 #ifdef DEBUG
 	yydebug = 1;
@@ -430,15 +431,21 @@ int parse(int argc, char **argv) {
 	root = _parse(parse_config.file1);
 
 	if (parse_config.compare) {
+		int tmp;
+
 		root2 = _parse(parse_config.file2);
-		compare_tree(root, root2);
+		tmp = compare_tree(root, root2);
+		if (tmp == COMP_NEED_PRINT)
+			fail("compare_tree still need to print\n");
+		if (tmp == COMP_DIFF)
+			ret = EXIT_KABI_CHANGE;
 		free_obj(root2);
 		fclose(parse_config.file2);
 	}
 	free_obj(root);
 	fclose(parse_config.file1);
 
-	return 0;
+	return ret;
 }
 
 int yyerror(obj_t **root, char *s)

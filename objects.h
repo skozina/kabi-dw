@@ -136,7 +136,6 @@ typedef enum {
 } cb_ret_t;
 
 typedef int cb_t(obj_t *o, void *args);
-typedef int cb2_t(obj_t *o1, obj_t *o2, void *args);
 
 obj_list_t *new_list(obj_t *obj);
 obj_list_head_t *new_list_head(obj_t *obj);
@@ -164,6 +163,12 @@ int debug_tree(obj_t *root);
 int walk_tree(obj_t *root, cb_t cb, void *args);
 int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 	       void *args, bool ptr_first);
+
+enum {
+	COMP_SAME = 0,
+	COMP_DIFF,
+	COMP_NEED_PRINT,
+};
 int compare_tree(obj_t *o1, obj_t *o2);
 int hide_kabi(obj_t *root);
 
