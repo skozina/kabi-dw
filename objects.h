@@ -92,6 +92,18 @@ typedef struct obj {
 	};
 } obj_t;
 
+static inline bool has_offset(obj_t *o) {
+	return o->type == __type_struct_member;
+}
+
+static inline bool has_constant(obj_t *o) {
+	return o->type == __type_constant;
+}
+
+static inline bool has_index(obj_t *o) {
+	return o->type == __type_array;
+}
+
 static inline bool is_terminal(obj_t *o) {
 	switch(o->type) {
 	case __type_reffile:

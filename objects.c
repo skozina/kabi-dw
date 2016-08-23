@@ -587,8 +587,8 @@ int debug_tree(obj_t *root) {
 
 static void show_two_nodes(const char *s, obj_t *o1, obj_t *o2) {
 	printf("%s:\n", s);
-	_print_tree(o1, 2, true, DEL_PREFIX);
-	_print_tree(o2, 2, true, ADD_PREFIX);
+	_print_tree(o1, 0, true, DEL_PREFIX);
+	_print_tree(o2, 0, true, ADD_PREFIX);
 }
 
 static void _show_node_list(const char *s, const char *prefix,
@@ -597,7 +597,7 @@ static void _show_node_list(const char *s, const char *prefix,
 
 	printf("%s:\n", s);
 	while (l && l != last) {
-		_print_tree(l->member, 2, true, prefix);
+		_print_tree(l->member, 0, true, prefix);
 		l = l->next;
 	}
 }
@@ -615,24 +615,37 @@ static int cmp_str(char *s1, char *s2) {
 	return 0;
 }
 
-static bool nodes_differ(obj_t *o1, obj_t *o2) {
-	return (o1->type != o2->type) ||
-		cmp_str(o1->name, o2->name) ||
-		(o1->type == __type_reffile ?
-		 cmp_str(filenametotype(o1->base_type),
-			 filenametotype(o2->base_type)) :
-		 cmp_str(o1->base_type, o2->base_type)) ||
-		(o1->offset != o2->offset) ||
-		(o1->first_bit != o2->first_bit) ||
-		(o1->last_bit != o2->last_bit) ||
-		((o1->ptr == NULL) != (o2->ptr == NULL));
+typedef enum {
+	CMP_SAME = 0,
+	CMP_OFFSET,	/* Only the offset has changed */
+	CMP_DIFF,	/* Nodes are differents */
+} cmp_ret_t;
+
+static int cmp_nodes(obj_t *o1, obj_t *o2) {
+	if ((o1->type != o2->type) ||
+	    cmp_str(o1->name, o2->name) ||
+	    (o1->type == __type_reffile ?
+	     cmp_str(filenametotype(o1->base_type),
+		     filenametotype(o2->base_type)) :
+	     cmp_str(o1->base_type, o2->base_type)) ||
+	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
+	    (has_constant(o1) && (o1->constant != o2->constant)) ||
+	    (has_index(o1) && (o1->index != o2->index)))
+		return CMP_DIFF;
+
+	if ((o1->offset != o2->offset) ||
+	    (o1->first_bit != o2->first_bit) ||
+	    (o1->last_bit != o2->last_bit))
+		return CMP_OFFSET;
+
+	return CMP_SAME;
 }
 
 obj_list_t *find_object(obj_t *o, obj_list_t *l) {
 	obj_list_t *list = l;
 
 	while (list) {
-		if (!nodes_differ(o, list->member))
+		if (cmp_nodes(o, list->member) == CMP_SAME)
 			return list;
 		list = list->next;
 	}
@@ -646,22 +659,32 @@ obj_list_t *find_object(obj_t *o, obj_list_t *l) {
  * into a "unsigned bin".
  *
  * For now, we consider that a useful output should start at a named
- * object.
+ * object or at a struct field or var (the field/var itself may be
+ * unamed, typically when it's an union or struct of alternative
+ * elements but it most likely contains named element).
 */
 bool worthy_of_print(obj_t *o) {
-	return o->name != NULL;
+	return (o->name != NULL) ||
+		(o->type == __type_struct_member) ||
+		(o->type == __type_var) ;
 }
 
-int compare_tree(obj_t *o1, obj_t *o2) {
+int _compare_tree(obj_t *o1, obj_t *o2) {
 	obj_list_t *list1 = NULL, *list2 = NULL, *next;
 	int ret, tmp;
 
-	if (nodes_differ(o1, o2)) {
+	tmp = cmp_nodes(o1, o2);
+	if (tmp) {
 		if (worthy_of_print(o1)) {
-			show_two_nodes("Replaced", o1, o2);
+			const char *s =
+				(tmp == CMP_OFFSET) ? "Shifted" : "Replaced";
+			show_two_nodes(s, o1, o2);
 			return COMP_DIFF;
-		} else
+		} else {
+			if (tmp == CMP_OFFSET)
+				fail("CMP_OFFSET unexpected here\n");
 			return COMP_NEED_PRINT;
+		}
 	}
 
 	if (o1->member_list)
@@ -670,7 +693,7 @@ int compare_tree(obj_t *o1, obj_t *o2) {
 		list2 = o2->member_list->first;
 
 	while ( list1 && list2 ) {
-		if (nodes_differ(list1->member, list2->member)) {
+		if (cmp_nodes(list1->member, list2->member) == CMP_DIFF) {
 			if ((next = find_object(list1->member, list2))) {
 				/* Insertion */
 				_show_node_list("Inserted", ADD_PREFIX,
@@ -686,10 +709,13 @@ int compare_tree(obj_t *o1, obj_t *o2) {
 			}
 		}
 
-		tmp = compare_tree(list1->member, list2->member);
-		if (tmp == COMP_NEED_PRINT)
+		tmp = _compare_tree(list1->member, list2->member);
+		if (tmp == COMP_NEED_PRINT) {
+			if (!worthy_of_print(list1->member))
+				fail("Unworthy objects are unexpected here\n");
 			show_two_nodes("Replaced",
 				       list1->member, list2->member);
+		}
 		if (tmp != COMP_SAME)
 			ret = COMP_DIFF;
 
@@ -706,14 +732,28 @@ int compare_tree(obj_t *o1, obj_t *o2) {
 	}
 
 	if (o1->ptr && o2->ptr) {
-		tmp = compare_tree(o1->ptr, o2->ptr);
-		if (tmp == COMP_NEED_PRINT)
-			show_two_nodes("Replaced", o1, o2);
+		tmp = _compare_tree(o1->ptr, o2->ptr);
+		if (tmp == COMP_NEED_PRINT) {
+			if (worthy_of_print(o1->ptr))
+				show_two_nodes("Replaced", o1, o2);
+		}
 		if (tmp != COMP_SAME)
-			ret = COMP_DIFF;
+			ret = tmp;
 	}
 
 	return ret;
+}
+
+int compare_tree(obj_t *o1, obj_t *o2) {
+	int ret = _compare_tree(o1, o2);
+
+	if (ret == COMP_NEED_PRINT)
+		show_two_nodes("Replaced", o1, o2);
+
+	if (ret != COMP_SAME)
+		return COMP_DIFF;
+
+	return COMP_SAME;
 }
 
 static int hide_kabi_cb(obj_t *o, void *args) {
