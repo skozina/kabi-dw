@@ -265,7 +265,6 @@ typedef struct print_node_args {
 	int depth;
 	bool newline;
 	const char *prefix;
-	char *elt_name; /* Name of a struct field or a var */
 	/*
 	 * Number of indirection that need to be handled.
 	 * It also indicates that parentheses are needed since "*" has a
@@ -330,10 +329,6 @@ static int print_node_pre(obj_t *node, void *args) {
 		free(type);
 		break;
 	}
-	case __type_var:
-	case __type_struct_member:
-		pna->elt_name = node->name;
-		break;
 	case __type_ptr:
 		if (is_paren_needed(node))
 			pna->ptrs++;
@@ -364,10 +359,6 @@ static int print_node_in(obj_t *node, void *args){
 
 		if (node->name)
 			s = node->name;
-		else if (pna->elt_name) {
-			s = pna->elt_name;
-			pna->elt_name = NULL;
-		}
 		if (paren) {
 			putchar('(');
 			while (pna->ptrs) {
@@ -424,10 +415,8 @@ static int print_node_post(obj_t *node, void *args) {
 		break;
 	case __type_var:
 	case __type_struct_member:
-		if (pna->elt_name) {
-			fputs(pna->elt_name, stdout);
-			pna->elt_name = NULL;
-		}
+		if (node->name)
+			fputs(node->name, stdout);
 		if (pna->ptrs)
 			fail("Unmatched ptrs\n");
 		puts(";");
@@ -443,10 +432,6 @@ static int print_node_post(obj_t *node, void *args) {
 			}
 		}
 
-		if (pna->elt_name) {
-			fputs(pna->elt_name, stdout);
-			pna->elt_name = NULL;
-		}
 		if (paren)
 			printf(")");
 
