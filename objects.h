@@ -55,6 +55,7 @@ typedef struct obj_list {
 
 typedef struct obj_list_head {
 	obj_list_t *first, *last;
+	struct obj *object;
 } obj_list_head_t;
 
 /*
@@ -77,11 +78,11 @@ typedef struct obj_list_head {
  *			Only valid if last != 0
  */
 typedef struct obj {
-	obj_types type;
+	obj_types type;	
 	char *name;
 	char *base_type;
 	obj_list_head_t *member_list;
-	struct obj *ptr;
+	struct obj *ptr, *parent;
 	union {
 		unsigned long constant;
 		unsigned long index;
@@ -152,7 +153,6 @@ typedef int cb_t(obj_t *o, void *args);
 obj_list_t *new_list(obj_t *obj);
 obj_list_head_t *new_list_head(obj_t *obj);
 void list_add(obj_list_head_t *head, obj_t *obj);
-void add_member(obj_t *symbol, obj_t *member);
 void free_obj(obj_t *o);
 
 obj_t *new_struct(char *name);
@@ -172,6 +172,7 @@ obj_t *new_base(char *base_type);
 
 void print_tree(obj_t *root);
 int debug_tree(obj_t *root);
+void fill_parent(obj_t *root);
 int walk_tree(obj_t *root, cb_t cb, void *args);
 int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 	       void *args, bool ptr_first);

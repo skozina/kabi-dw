@@ -65,6 +65,7 @@ kabi_dw_file:
 	cu_file source_file stack_list declaration NEWLINE
 	{
 	    $$ = *root = $declaration;
+	    fill_parent(*root);
 	}
 	;
 
@@ -189,6 +190,7 @@ union_type:
 	{
 	    $$ = new_union($IDENTIFIER);
 	    $$->member_list = $elt_list;
+	    $elt_list->object = $$;
 	}
 	;
 
@@ -197,6 +199,7 @@ enum_type:
 	{
 	    $$ = new_enum($IDENTIFIER);
 	    $$->member_list = $enum_list;
+	    $enum_list->object = $$;
 	}
 	;
 
@@ -228,6 +231,8 @@ func_type:
 	    free($1);
 	    $$ = new_func_add($2, $type);
 	    $$->member_list = $arg_list;
+	    if ($arg_list)
+		    $arg_list->object = $$;
 	}
 	| IDENTIFIER reference_file /* protype define as typedef */
 	{

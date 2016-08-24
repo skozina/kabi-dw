@@ -89,16 +89,6 @@ bool list_remove(obj_list_head_t *head, obj_t *obj) {
 	return false;
 }
 
-void add_member(obj_t *parent, obj_t *member) {
-	obj_list_head_t *head = parent->member_list;
-
-	if (!head) {
-		head = malloc(sizeof(obj_list_head_t));
-		parent->member_list = head;
-	}
-
-	list_add(head, member);
-}
 
 obj_t *new_obj(obj_types type, char *name) {
 	obj_t *new = malloc(sizeof(obj_t));
@@ -462,6 +452,21 @@ void print_tree(obj_t *root) {
 	_print_tree(root, 0, false, NULL);
 }
 
+
+static int fill_parent_cb(obj_t *o, void *args) {
+	obj_t **parent = (obj_t **) args;
+
+	o->parent = *parent;
+	*parent = o;
+
+	return 0;
+}
+
+void fill_parent(obj_t *root) {
+	obj_t *parent = NULL;
+	walk_tree(root, fill_parent_cb, &parent);
+}
+
 static int walk_list(obj_list_t *list, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 		     void *args, bool ptr_first) {
 	int ret = CB_CONT;
@@ -536,9 +541,11 @@ int walk_tree(obj_t *root, cb_t cb, void *args) {
 
 static void _show_node(FILE *f, obj_t *o, int margin) {
 	if (o)
-		fprintf(f, "\%*s<%s, \"%s\", \"%s\", %p %lu %i %i>\n",
+		fprintf(f,
+			"\%*s<%s, \"%s\", \"%s\", %p, %p, %p, %lu, %i, %i>\n",
 			margin, "", typetostr(o->type), o->name, o->base_type,
-			o->ptr, o->offset, o->first_bit, o->last_bit);
+			o, o->parent, o->ptr,
+			o->offset, o->first_bit, o->last_bit);
 	else
 		fprintf(f, "\%*s<(nil)>\n", margin, "");
 }
