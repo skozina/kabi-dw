@@ -756,6 +756,25 @@ int compare_tree(obj_t *o1, obj_t *o2) {
 	return COMP_SAME;
 }
 
+/*
+ * Hide some RH_KABI magic
+ *
+ * RH_KABI_REPLACE the old field by a complex construction of union
+ * and struct used to check that the new field didn't change the
+ * alignement. It is of the form:
+ * union {
+ *	_new;
+ *	struct {
+ *		_orig;
+ *	} __UNIQUE_ID_rh_kabi_hideXX
+ *	union {};
+ * }
+ *
+ * RH_KABI_USE2(_P) replace a single field by two field that fits in
+ * the same space. It puts the two new field into an unnamed
+ * struct. We don't hide that as we have no way to know if that struct
+ * is an artifact from RH_KABI_USE2 or was added deliberately.
+ */
 static int hide_kabi_cb(obj_t *o, void *args) {
 	obj_t *kabi_struct, *new, **parent = (obj_t **)args;
 	obj_list_head_t *lh;
