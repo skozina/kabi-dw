@@ -585,13 +585,13 @@ int debug_tree(obj_t *root) {
 	return walk_tree3(root, debug_node, NULL, dec_depth, &depth, false);
 }
 
-static void show_two_nodes(const char *s, obj_t *o1, obj_t *o2) {
+static void print_two_nodes(const char *s, obj_t *o1, obj_t *o2) {
 	printf("%s:\n", s);
 	_print_tree(o1, 0, true, DEL_PREFIX);
 	_print_tree(o2, 0, true, ADD_PREFIX);
 }
 
-static void _show_node_list(const char *s, const char *prefix,
+static void _print_node_list(const char *s, const char *prefix,
 			    obj_list_t *list, obj_list_t *last) {
 	obj_list_t *l = list;
 
@@ -602,9 +602,9 @@ static void _show_node_list(const char *s, const char *prefix,
 	}
 }
 
-static void show_node_list(const char *s, const char *prefix,
+static void print_node_list(const char *s, const char *prefix,
 			   obj_list_t *list) {
-	_show_node_list(s, prefix, list, NULL);
+	_print_node_list(s, prefix, list, NULL);
 }
 
 static int cmp_str(char *s1, char *s2) {
@@ -678,7 +678,7 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 		if (worthy_of_print(o1)) {
 			const char *s =
 				(tmp == CMP_OFFSET) ? "Shifted" : "Replaced";
-			show_two_nodes(s, o1, o2);
+			print_two_nodes(s, o1, o2);
 			return COMP_DIFF;
 		} else {
 			if (tmp == CMP_OFFSET)
@@ -696,13 +696,13 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 		if (cmp_nodes(list1->member, list2->member) == CMP_DIFF) {
 			if ((next = find_object(list1->member, list2))) {
 				/* Insertion */
-				_show_node_list("Inserted", ADD_PREFIX,
+				_print_node_list("Inserted", ADD_PREFIX,
 						list2, next);
 				list2 = next;
 				ret = COMP_DIFF;
 			} else if ((next = find_object(list2->member, list1))) {
 				/* Removal */
-				_show_node_list("Deleted", DEL_PREFIX,
+				_print_node_list("Deleted", DEL_PREFIX,
 						list1, next);
 				list1 = next;
 				ret = COMP_DIFF;
@@ -713,7 +713,7 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 		if (tmp == COMP_NEED_PRINT) {
 			if (!worthy_of_print(list1->member))
 				fail("Unworthy objects are unexpected here\n");
-			show_two_nodes("Replaced",
+			print_two_nodes("Replaced",
 				       list1->member, list2->member);
 		}
 		if (tmp != COMP_SAME)
@@ -722,11 +722,11 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 		list1 = list1->next;
 		list2 = list2->next;
 		if (!list1 && list2) {
-			show_node_list("Added", ADD_PREFIX, list2);
+			print_node_list("Added", ADD_PREFIX, list2);
 			return COMP_DIFF;
 		}
 		if (list1 && !list2) {
-			show_node_list("Removed", DEL_PREFIX, list1);
+			print_node_list("Removed", DEL_PREFIX, list1);
 			return COMP_DIFF;
 		}
 	}
@@ -735,7 +735,7 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 		tmp = _compare_tree(o1->ptr, o2->ptr);
 		if (tmp == COMP_NEED_PRINT) {
 			if (worthy_of_print(o1->ptr))
-				show_two_nodes("Replaced", o1, o2);
+				print_two_nodes("Replaced", o1, o2);
 		}
 		if (tmp != COMP_SAME)
 			ret = tmp;
@@ -748,7 +748,7 @@ int compare_tree(obj_t *o1, obj_t *o2) {
 	int ret = _compare_tree(o1, o2);
 
 	if (ret == COMP_NEED_PRINT)
-		show_two_nodes("Replaced", o1, o2);
+		print_two_nodes("Replaced", o1, o2);
 
 	if (ret != COMP_SAME)
 		return COMP_DIFF;
