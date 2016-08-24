@@ -61,7 +61,8 @@ typedef struct obj_list_head {
 /*
  * Structure representing symbols
  *
- * type:	type of the symbol (such as struct, function, pointer, base type...)
+ * type:	type of the symbol (such as struct, function, pointer, base
+ *		type...)
  * name:	name of the symbol
  * base_type:	(base type) the type of the symbol,
  *		(qualifier) the type qualifier (const or volatile)
@@ -76,6 +77,8 @@ typedef struct obj_list_head {
  * offset:	(var) offset of a struct member
  * first_bit, last_bit: (var) bit range within the offset.
  *			Only valid if last != 0
+ * dont_print	(var, struct_member) don't print the name, it has already
+ *		been printed by the array or func code. Only used in print_tree
  */
 typedef struct obj {
 	obj_types type;	
@@ -91,6 +94,7 @@ typedef struct obj {
 			unsigned char first_bit, last_bit;
 		};
 	};
+	bool dont_print;
 } obj_t;
 
 static inline bool has_offset(obj_t *o) {

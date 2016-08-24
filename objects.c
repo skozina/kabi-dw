@@ -251,6 +251,28 @@ static bool is_paren_needed(obj_t *node) {
 	return false;
 }
 
+/*
+ * Find the ancestor name to be print in func or array code.
+ * Tag the node so struct_member and var code doesn't print it again.
+ */
+static char *find_ancestor_name(obj_t *o) {
+	obj_t *parent = o->parent;
+
+	while (parent) {
+		if ((parent->type == __type_var) ||
+		    (parent->type == __type_struct_member)) {
+			if (parent->dont_print)
+				return NULL;
+			parent->dont_print = true;
+			return parent->name;
+			break;
+		}
+		parent = parent->parent;
+	}
+
+	return NULL;
+}
+
 typedef struct print_node_args {
 	int depth;
 	bool newline;
@@ -349,6 +371,8 @@ static int print_node_in(obj_t *node, void *args){
 
 		if (node->name)
 			s = node->name;
+		else
+			s = find_ancestor_name(node);
 		if (paren) {
 			putchar('(');
 			while (pna->ptrs) {
@@ -405,7 +429,10 @@ static int print_node_post(obj_t *node, void *args) {
 		break;
 	case __type_var:
 	case __type_struct_member:
-		if (node->name)
+		if (node->dont_print)
+			/* Untag the node */
+			node->dont_print = false;
+		else if (node->name)
 			fputs(node->name, stdout);
 		if (pna->ptrs)
 			fail("Unmatched ptrs\n");
@@ -414,6 +441,8 @@ static int print_node_post(obj_t *node, void *args) {
 	case __type_array:
 	{
 		bool paren = pna->ptrs != 0;
+		char *s;
+
 		if (paren) {
 			putchar('(');
 			while (pna->ptrs) {
@@ -421,7 +450,9 @@ static int print_node_post(obj_t *node, void *args) {
 				pna->ptrs--;
 			}
 		}
-
+		if ((node->ptr->type != __type_array) &&
+		    (s = find_ancestor_name(node)))
+			fputs(s, stdout);
 		if (paren)
 			printf(")");
 
