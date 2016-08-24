@@ -382,7 +382,15 @@ FILE *fopen_safe(char *filename) {
 
 int parse(int argc, char **argv) {
 	obj_t *root, *root2;
-	int opt, ret = 0;
+	int opt, opt_index, ret = 0;
+	struct option loptions[] = {
+		{"compare", no_argument, 0, 'c'},
+		{"debug", no_argument, 0, 'd'},
+		{"hidekabi", no_argument, 0, 'k'},
+		{"print", no_argument, 0, 'p'},
+		{"show", no_argument, 0, 'p'},
+		{0, 0, 0, 0}
+	};
 
 #ifdef DEBUG
 	yydebug = 1;
@@ -390,7 +398,8 @@ int parse(int argc, char **argv) {
 	yydebug = 0;
 #endif
 
-	while ((opt = getopt(argc, argv, "cdhp")) != -1) {
+	while ((opt = getopt_long(argc, argv, "cdhp",
+				  loptions, &opt_index)) != -1) {
 		switch (opt) {
 		case 'c':
 			parse_config.compare = true;
