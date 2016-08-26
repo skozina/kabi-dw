@@ -22,6 +22,12 @@
 #ifndef _OBJECTS_H
 #define _OBJECTS_H
 
+#ifdef DEBUG
+#define debug(args...) do { printf(args); } while(0)
+#else
+#define debug(args...)
+#endif
+
 /* Indentation offset for c-style and tree debug outputs */
 #define C_INDENT_OFFSET   8
 #define DBG_INDENT_OFFSET 4
@@ -94,6 +100,7 @@ typedef struct obj {
 			unsigned char first_bit, last_bit;
 		};
 	};
+	int close_paren;
 	bool dont_print;
 } obj_t;
 
@@ -107,6 +114,10 @@ static inline bool has_constant(obj_t *o) {
 
 static inline bool has_index(obj_t *o) {
 	return o->type == __type_array;
+}
+
+static inline bool is_bitfield(obj_t *o) {
+	return o->first_bit != 0;
 }
 
 static inline bool is_terminal(obj_t *o) {

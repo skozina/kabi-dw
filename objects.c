@@ -26,6 +26,7 @@
 #include <stdbool.h>
 #include <strings.h>
 #include <limits.h>
+#include <errno.h>
 
 #include "objects.h"
 #include "utils.h"
@@ -244,33 +245,13 @@ static bool is_paren_needed(obj_t *node) {
 	obj_t *child = node->ptr;
 
 	while(child) {
-		if (c_precedence(child) < c_precedence(node))
+		if (c_precedence(child) < c_precedence(node)) {
+			child->close_paren++;
 			return true;
+		}
 		child = child->ptr;
 	}
 	return false;
-}
-
-/*
- * Find the ancestor name to be print in func or array code.
- * Tag the node so struct_member and var code doesn't print it again.
- */
-static char *find_ancestor_name(obj_t *o) {
-	obj_t *parent = o->parent;
-
-	while (parent) {
-		if ((parent->type == __type_var) ||
-		    (parent->type == __type_struct_member)) {
-			if (parent->dont_print)
-				return NULL;
-			parent->dont_print = true;
-			return parent->name;
-			break;
-		}
-		parent = parent->parent;
-	}
-
-	return NULL;
 }
 
 typedef struct print_node_args {
@@ -285,204 +266,368 @@ typedef struct print_node_args {
 	int ptrs;
 } pn_args_t;
 
-static void print_margin(const char *prefix, const char *s, int depth) {
+static char *print_margin_offset(const char *prefix, const char *s, int depth) {
+	size_t len = snprintf(NULL, 0, "%-*s", depth * C_INDENT_OFFSET, s) + 1;
+	char *ret;
+
 	if (prefix)
-		printf("%s", prefix);
-	printf("%-*s", depth * C_INDENT_OFFSET, s);
+		len += strlen(prefix);
+
+	if (!len)
+		return NULL;
+	ret = malloc(len);
+
+	snprintf(ret, len, "%s%-*s",
+		 prefix ? prefix : "", depth * C_INDENT_OFFSET, s);
+
+	return ret;
 }
 
-static int print_node_pre(obj_t *node, void *args) {
-	pn_args_t *pna = (pn_args_t *) args;
-	char offstr[16];
-
-	if (pna->newline) {
-		if (node->type == __type_struct_member) {
-			if (node->last_bit)
-				snprintf(offstr, 16, "0x%lx:%2i-%-2i ",
-					 node->offset,
-					 node->first_bit,
-					 node->last_bit);
-			else
-				snprintf(offstr, 16, "0x%lx ", node->offset);
-		} else
-			offstr[0] = 0;
-		print_margin(pna->prefix, offstr, pna->depth);
-	}
-
-	if (!node)
-		fail("No node\n");
-
-	switch(node->type) {
-	case __type_struct:
-	case __type_union:
-	case __type_enum:
-		if (node->name)
-			printf("%s %s {\n",
-			       typetostr(node->type), node->name);
-		else
-			printf("%s {\n", typetostr(node->type));
-		pna->depth++;
-		goto out_newline;
-	case __type_qualifier:
-		printf("%s ", node->base_type);
-		break;
-	case __type_base:
-		printf("%s ", node->base_type);
-		if (node->name)
-			fail("Base type has name %s\n", node->name);
-		break;
-	case __type_constant:
-		printf("%s = %lx,\n", node->name, node->constant);
-		goto out_newline;
-	case __type_reffile:
-	{
-		char *type = filenametotype(node->base_type);
-		printf("%s ", type);
-		free(type);
-		break;
-	}
-	case __type_ptr:
-		if (is_paren_needed(node))
-			pna->ptrs++;
-		break;
-	default:
-		;
-	}
-
-	pna->newline = false;
-	return CB_CONT;
-
-out_newline:
-	pna->newline = true;
-	return CB_CONT;
+static char *print_margin(const char *prefix, int depth) {
+	return  print_margin_offset(prefix, "", depth);
 }
 
-static int print_node_in(obj_t *node, void *args){
-	pn_args_t *pna = (pn_args_t *) args;
+typedef struct {
+	char *prefix;
+	char *postfix;
+} pp_t;
 
-	if (!node)
-		fail("No node\n");
-
-	switch(node->type) {
-	case __type_func:
-	{
-		char *s = NULL;
-		bool paren = pna->ptrs != 0;
-
-		if (node->name)
-			s = node->name;
-		else
-			s = find_ancestor_name(node);
-		if (paren) {
-			putchar('(');
-			while (pna->ptrs) {
-				putchar('*');
-				pna->ptrs--;
-			}
-		}
-		if (s)
-			printf("%s", s);
-		if (paren)
-			printf(")");
-		puts(" (");
-		pna->depth++;
-		pna->newline = true;
-		break;
-	}
-	default:
-		;
-	}
-
-	return CB_CONT;
+void free_pp(pp_t pp) {
+	free(pp.prefix);
+	free(pp.postfix);
 }
 
-static int print_node_post(obj_t *node, void *args) {
-	pn_args_t *pna = (pn_args_t *) args;
+static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix);
 
-	if (!node)
-		fail("No node\n");
+/* Add prefix p at the begining of string s */
+char *_prefix_str(char **s, char *p, bool space, bool freep) {
+	size_t lenp = strlen(p), lens = 0, newlen;
 
-	switch(node->type) {
-	case __type_struct:
-	case __type_union:
-	case __type_enum:
-	case __type_func:
-		if (pna->depth == 0)
-			fail("depth underflow\n");
-		pna->depth--;
-		print_margin(pna->prefix, "", pna->depth);
-		if (node->type == __type_func)
-			putchar(')');
-		else
-			putchar('}');
-		if (pna->depth == 0) {
-			puts(";");
-			break;
-		}
-		goto out_sameline;
-	case __type_ptr:
-		if (!is_paren_needed(node))
-			putchar('*');
-		goto out_sameline;
-	case __type_typedef:
-		printf("typedef %s;\n", node->name);
+	if (*s)
+		lens = strlen(*s);
+	newlen = lens + lenp + 1;
+
+	if (space)
+		newlen++;
+
+	*s = realloc(*s, newlen);
+	if (!*s)
+		fail("realloc failed in _prefix_str(): %s\n", strerror(errno));
+
+	if (lens)
+		memmove(space ? *s+lenp+1 : *s+lenp, *s, lens + 1);
+	else
+		(*s)[lenp] = '\0';
+	memcpy(*s, p, lenp);
+	if (space)
+		(*s)[lenp] = ' ';
+
+	if (freep)
+		free(p);
+
+	return *s;
+}
+
+static char *prefix_str(char **s, char *p) {
+	if (!p)
+		return *s;
+	return _prefix_str(s, p, false, false);
+}
+
+static char *prefix_str_free(char **s, char *p) {
+	if (!p)
+		return *s;
+	return _prefix_str(s, p, false, true);
+}
+
+static char *prefix_str_space(char **s, char *p) {
+	if (!p)
+		return *s;
+	return _prefix_str(s, p, true, false);
+}
+
+static char *_postfix_str(char **s, char *p, bool space, bool freep) {
+	int lenp = strlen(p), lens = 0, newlen;
+	if (*s)
+		lens = strlen(*s);
+	newlen = lens + lenp + 1;
+
+	if (space)
+		newlen++;
+
+	*s = realloc(*s, newlen);
+	if (!*s)
+		fail("realloc failed in _postfix_str(): %s\n", strerror(errno));
+
+	if (lens == 0)
+		(*s)[0] = '\0';
+	if (space)
+		strcat(*s, " ");
+	strcat(*s, p);
+
+	if (freep)
+		free(p);
+
+	return *s;
+}
+
+static char *postfix_str(char **s, char *p) {
+	if (!p)
+		return *s;
+	return _postfix_str(s, p, false, false);
+}
+
+static char *postfix_str_free(char **s, char *p) {
+	if (!p)
+		return *s;
+	return _postfix_str(s, p, false, true);
+}
+
+/*static char *postfix_str_space(char **s, char *p) {
+	if (!p)
+		return *s;
+	return _postfix_str(s, p, true, false);
+	}*/
+
+static pp_t print_base(obj_t *o, int depth, const char *prefix) {
+	pp_t ret = {NULL, NULL};
+
+	ret.prefix = malloc(strlen(o->base_type) + 2);
+
+	strcpy(ret.prefix, o->base_type);
+	strcat(ret.prefix, " ");
+
+	return ret;
+}
+
+#define CONSTANT_FMT "%s = %lu"
+static pp_t print_constant(obj_t *o, int depth, const char *prefix) {
+	pp_t ret = {NULL, NULL};
+	size_t len = snprintf(NULL, 0, CONSTANT_FMT, o->name, o->constant) + 1;
+
+	ret.prefix = malloc(len);
+	snprintf(ret.prefix, len, CONSTANT_FMT, o->name, o->constant);
+
+	return ret;
+}
+
+static pp_t print_reffile(obj_t *o, int depth,
+			  const char *prefix) {
+	pp_t ret = {NULL, NULL};
+	char *s = filenametotype(o->base_type);
+
+	s = realloc(s, strlen(s) + 2);
+	strcat(s, " ");
+	ret.prefix = s;
+
+	return ret;
+}
+
+static pp_t print_structlike(obj_t *o, int depth, const char *prefix) {
+	pp_t ret = {NULL, NULL}, tmp;
+	obj_list_t *list = NULL;
+	char *s, *margin;
+	size_t sz;
+
+	sz = strlen(typetostr(o->type)) + 4;
+	if (o->name)
+		sz += strlen(o->name) + 1;
+	s = malloc(sz);
+
+	if (o->name)
+		snprintf(s, sz, "%s %s {\n", typetostr(o->type), o->name);
+	else
+		snprintf(s, sz, "%s {\n", typetostr(o->type));
+
+	if (o->member_list)
+		list = o->member_list->first;
+	while (list) {
+		tmp = _print_tree(list->member, depth+1, true, prefix);
+		postfix_str_free(&s, tmp.prefix);
+		postfix_str_free(&s, tmp.postfix);
+		postfix_str(&s, o->type == __type_enum ? ",\n" :";\n");
+		list = list->next;
+	}
+
+	margin = print_margin(prefix, depth);
+	postfix_str_free(&s, margin);
+	postfix_str(&s,  depth == 0 ? "};\n" : "}");
+
+	ret.prefix = s;
+	return ret;
+}
+
+static pp_t print_func(obj_t *o, int depth, const char *prefix) {
+	pp_t ret = {NULL, NULL}, return_type;
+	obj_list_t *list = NULL;
+	obj_t *next = o->ptr;
+	char *s, *name, *margin;
+
+	return_type = _print_tree(next, depth, false, prefix);
+	ret.prefix = return_type.prefix;
+
+	if (o->name)
+		name = o->name;
+	else
+		name = "";
+
+	s = malloc(strlen(name)+3);
+	sprintf(s, "%s(\n", name);
+
+	if (o->member_list)
+		list = o->member_list->first;
+	while (list) {
+		pp_t arg = _print_tree(list->member, depth+1, true, prefix);
+		postfix_str_free(&s, arg.prefix);
+		postfix_str_free(&s, arg.postfix);
+		list = list->next;
+		postfix_str(&s, list ? ",\n" : "\n");
+	}
+
+	margin = print_margin(prefix, depth);
+	postfix_str_free(&s, margin);
+	postfix_str(&s, depth == 0 ? ");\n" : ")");
+
+	ret.postfix = s;
+	return ret;
+}
+
+static pp_t print_array(obj_t *o, int depth, const char *prefix) {
+	pp_t ret = {NULL, NULL};
+	char s[16];
+	obj_t *next = o ->ptr;
+
+	ret = _print_tree(next, depth, false, prefix);
+
+	snprintf(s, 16, "[%lu]", o->constant);
+	prefix_str(&ret.postfix, s);
+
+	return ret;
+}
+
+static pp_t print_ptr(obj_t *o, int depth, const char *prefix) {
+	pp_t ret = {NULL, NULL};
+	bool need_paren = is_paren_needed(o);
+	obj_t *next = o->ptr;
+
+	ret = _print_tree(next, depth, false, prefix);
+	if (need_paren) {
+		postfix_str(&ret.prefix, "(*");
+		prefix_str(&ret.postfix, ")");
+	} else
+		postfix_str(&ret.prefix, "*");
+
+	return ret;
+}
+
+static pp_t print_varlike(obj_t *o, int depth, const char *prefix) {
+	pp_t ret = {NULL, NULL};
+	char *s = NULL;
+
+	if (is_bitfield(o)) {
+		s = malloc(strlen(o->name) + 5);
+		sprintf(s, "%s:%i", o->name, o->last_bit - o->first_bit + 1);
+	} else
+		s = o->name;
+
+	ret = _print_tree(o->ptr, depth, false, prefix);
+
+	if (s)
+		postfix_str(&ret.prefix, s);
+
+	if (is_bitfield(o))
+		free(s);
+
+	return ret;
+}
+
+static pp_t print_typedef(obj_t *o, int depth, const char *prefix) {
+	pp_t ret = {NULL, NULL};
+
+	ret = _print_tree(o->ptr, depth, false, prefix);
+
+	prefix_str(&ret.prefix, "typedef ");
+	postfix_str(&ret.postfix, ";\n");
+
+	return ret;
+}
+
+static pp_t print_qualifier(obj_t *o, int depth, const char *prefix) {
+	pp_t ret = {NULL, NULL};
+
+	ret = _print_tree(o->ptr, depth, false, prefix);
+	prefix_str_space(&ret.prefix, o->base_type);
+
+	return ret;
+}
+
+#define BASIC_CASE(type)				\
+	case __type_##type:				\
+		ret = print_##type(o, depth, prefix);	\
 		break;
+
+static void show_node(obj_t *o, int margin); /*FIXME: DBG */
+
+static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix) {
+	pp_t ret = {NULL, NULL};
+	char *margin;
+
+	if (!o)
+		fail("NULL pointer in _print_tree\n");
+	debug("_print_tree(): %s\n", typetostr(o->type));
+
+	switch (o->type) {
+	BASIC_CASE(reffile);
+	BASIC_CASE(constant);
+	BASIC_CASE(base);
+	BASIC_CASE(typedef);
+	BASIC_CASE(qualifier);
+	BASIC_CASE(func);
+	BASIC_CASE(array);
+	BASIC_CASE(ptr);
 	case __type_var:
 	case __type_struct_member:
-		if (node->dont_print)
-			/* Untag the node */
-			node->dont_print = false;
-		else if (node->name)
-			fputs(node->name, stdout);
-		if (pna->ptrs)
-			fail("Unmatched ptrs\n");
-		puts(";");
+		ret = print_varlike(o, depth, prefix);
 		break;
-	case __type_array:
-	{
-		bool paren = pna->ptrs != 0;
-		char *s;
-
-		if (paren) {
-			putchar('(');
-			while (pna->ptrs) {
-				putchar('*');
-				pna->ptrs--;
-			}
-		}
-		if ((node->ptr->type != __type_array) &&
-		    (s = find_ancestor_name(node)))
-			fputs(s, stdout);
-		if (paren)
-			printf(")");
-
-		printf("[%lu]", node->index);
-		goto out_sameline;
+	case __type_struct:
+	case __type_union:
+	case __type_enum:
+		ret = print_structlike(o, depth, prefix);
 		break;
-	}
 	default:
-		;
+		fail("WIP: doesn't handle %s\n", typetostr(o->type));
 	}
 
-	pna->newline = true;
-	return CB_CONT;
+	if (!newline)
+		return ret;
 
-out_sameline:
-	pna->newline = false;
-	return CB_CONT;
+	if (o->type == __type_struct_member) {
+		char offstr[16];
+		if (o->last_bit)
+			snprintf(offstr, 16, "0x%lx:%2i-%-2i ",
+				 o->offset, o->first_bit, o->last_bit);
+		else
+			snprintf(offstr, 16, "0x%lx ", o->offset);
+		margin = print_margin_offset(prefix, offstr, depth);
+	} else
+		margin = print_margin(prefix, depth);
 
+	prefix_str_free(&ret.prefix, margin);
+	return ret;
 }
 
-void _print_tree(obj_t *root, int depth, bool newline, const char *prefix) {
-	pn_args_t pna = {depth, newline, prefix};
-	walk_tree3(root, print_node_pre, print_node_in, print_node_post,
-		   &pna, true);
+static void print_tree_prefix(obj_t *root, const char *prefix) {
+	pp_t s = _print_tree(root, 0, true, prefix);
+
+	printf("%s%s",
+	       s.prefix ? s.prefix : "",
+	       s.postfix ? s.postfix : "");
+	free_pp(s);
 }
 
 void print_tree(obj_t *root) {
-	_print_tree(root, 0, false, NULL);
+	print_tree_prefix(root, NULL);
 }
-
 
 static int fill_parent_cb(obj_t *o, void *args) {
 	obj_t **parent = (obj_t **) args;
@@ -610,8 +755,8 @@ int debug_tree(obj_t *root) {
 
 static void print_two_nodes(const char *s, obj_t *o1, obj_t *o2) {
 	printf("%s:\n", s);
-	_print_tree(o1, 0, true, DEL_PREFIX);
-	_print_tree(o2, 0, true, ADD_PREFIX);
+	print_tree_prefix(o1, DEL_PREFIX);
+	print_tree_prefix(o2, ADD_PREFIX);
 }
 
 static void _print_node_list(const char *s, const char *prefix,
@@ -620,7 +765,7 @@ static void _print_node_list(const char *s, const char *prefix,
 
 	printf("%s:\n", s);
 	while (l && l != last) {
-		_print_tree(l->member, 0, true, prefix);
+		print_tree_prefix(l->member, prefix);
 		l = l->next;
 	}
 }
