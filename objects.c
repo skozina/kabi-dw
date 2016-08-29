@@ -789,12 +789,22 @@ typedef enum {
 	CMP_DIFF,	/* Nodes are differents */
 } cmp_ret_t;
 
+static int cmp_node_reffile(obj_t *o1, obj_t *o2) {
+	char *s1 = filenametotype(o1->base_type);
+	char *s2 = filenametotype(o2->base_type);
+	int ret;
+
+	ret = cmp_str(s1, s2);
+	free(s1);
+	free(s2);
+
+	return ret;
+}
 static int cmp_nodes(obj_t *o1, obj_t *o2) {
 	if ((o1->type != o2->type) ||
 	    cmp_str(o1->name, o2->name) ||
 	    (o1->type == __type_reffile ?
-	     cmp_str(filenametotype(o1->base_type),
-		     filenametotype(o2->base_type)) :
+	     cmp_node_reffile(o1, o2) :
 	     cmp_str(o1->base_type, o2->base_type)) ||
 	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
 	    (has_constant(o1) && (o1->constant != o2->constant)) ||
