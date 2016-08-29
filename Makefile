@@ -33,7 +33,8 @@ OBJS+=parser.yy.o parser.tab.o
 
 all: $(PROG)
 
-debug: CFLAGS += -DDEBUG
+debug: CFLAGS += -DDEBUG -fsanitize=address
+debug: LDFLAGS=-lasan -ldw -lelf -lfl
 debug: FLEXFLAGS += -d
 debug: $(PROG)
 
