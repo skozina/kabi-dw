@@ -601,7 +601,7 @@ static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix) {
 	if (!newline)
 		return ret;
 
-	if (o->type == __type_struct_member) {
+	if (o->type == __type_struct_member && !display_options.no_offset) {
 		char offstr[16];
 		if (o->last_bit)
 			snprintf(offstr, 16, "0x%lx:%2i-%-2i ",
@@ -624,6 +624,8 @@ static void print_tree_prefix(obj_t *root, const char *prefix) {
 	       s.postfix ? s.postfix : "");
 	free_pp(s);
 }
+
+struct dopt display_options;
 
 void print_tree(obj_t *root) {
 	print_tree_prefix(root, NULL);
@@ -854,9 +856,14 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 	tmp = cmp_nodes(o1, o2);
 	if (tmp) {
 		if (worthy_of_print(o1)) {
-			const char *s =
-				(tmp == CMP_OFFSET) ? "Shifted" : "Replaced";
-			print_two_nodes(s, o1, o2);
+			if ((tmp == CMP_OFFSET && !display_options.no_offset) ||
+			    (tmp != CMP_OFFSET && !display_options.no_replaced))
+			{
+					const char *s =	(tmp == CMP_OFFSET) ?
+						"Shifted" : "Replaced";
+
+					print_two_nodes(s, o1, o2);
+			}
 			return COMP_DIFF;
 		} else {
 			if (tmp == CMP_OFFSET)
@@ -874,14 +881,16 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 		if (cmp_nodes(list1->member, list2->member) == CMP_DIFF) {
 			if ((next = find_object(list1->member, list2))) {
 				/* Insertion */
-				_print_node_list("Inserted", ADD_PREFIX,
-						list2, next);
+				if (!display_options.no_inserted)
+					_print_node_list("Inserted", ADD_PREFIX,
+							 list2, next);
 				list2 = next;
 				ret = COMP_DIFF;
 			} else if ((next = find_object(list2->member, list1))) {
 				/* Removal */
-				_print_node_list("Deleted", DEL_PREFIX,
-						list1, next);
+				if (!display_options.no_deleted)
+					_print_node_list("Deleted", DEL_PREFIX,
+							 list1, next);
 				list1 = next;
 				ret = COMP_DIFF;
 			}
@@ -891,8 +900,9 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 		if (tmp == COMP_NEED_PRINT) {
 			if (!worthy_of_print(list1->member))
 				fail("Unworthy objects are unexpected here\n");
-			print_two_nodes("Replaced",
-				       list1->member, list2->member);
+			if (!display_options.no_replaced)
+				print_two_nodes("Replaced",
+						list1->member, list2->member);
 		}
 		if (tmp != COMP_SAME)
 			ret = COMP_DIFF;
@@ -900,11 +910,13 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 		list1 = list1->next;
 		list2 = list2->next;
 		if (!list1 && list2) {
-			print_node_list("Added", ADD_PREFIX, list2);
+			if (!display_options.no_added)
+				print_node_list("Added", ADD_PREFIX, list2);
 			return COMP_DIFF;
 		}
 		if (list1 && !list2) {
-			print_node_list("Removed", DEL_PREFIX, list1);
+			if (!display_options.no_removed)
+				print_node_list("Removed", DEL_PREFIX, list1);
 			return COMP_DIFF;
 		}
 	}
@@ -912,7 +924,8 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 	if (o1->ptr && o2->ptr) {
 		tmp = _compare_tree(o1->ptr, o2->ptr);
 		if (tmp == COMP_NEED_PRINT) {
-			if (worthy_of_print(o1->ptr))
+			if (worthy_of_print(o1->ptr) &&
+			    !display_options.no_replaced)
 				print_two_nodes("Replaced", o1, o2);
 		}
 		if (tmp != COMP_SAME)
@@ -925,7 +938,7 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 int compare_tree(obj_t *o1, obj_t *o2) {
 	int ret = _compare_tree(o1, o2);
 
-	if (ret == COMP_NEED_PRINT)
+	if (ret == COMP_NEED_PRINT && !display_options.no_replaced)
 		print_two_nodes("Replaced", o1, o2);
 
 	if (ret != COMP_SAME)

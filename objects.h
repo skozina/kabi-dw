@@ -157,6 +157,24 @@ static inline bool is_n_ary(obj_t *o) {
 	}
 }
 
+/*
+ * Display options
+ */
+struct dopt {
+	int no_offset;		/* Don't display struct offset */
+	/*
+	 * The following options allow to hide some symbol changes in
+	 * kABI comparison. Hides...
+	 */
+	int no_replaced; /* replaced symbols */
+	int no_shifted;  /* symbols whose offset shifted */ 
+	int no_inserted; /* symbols inserted in the middle of a struct/union */
+	int no_deleted;  /* symbols removed in the middle (poke a hole) */
+	int no_added;    /* symbols added at the end of a struct/union... */
+	int no_removed;  /* symbols removed at the end of a struct/union... */
+};
+extern struct dopt display_options;
+
 typedef enum {
 	CB_CONT = 0,	/* Continue tree walk */
 	CB_SKIP,	/* Skip the children of this node */

@@ -371,7 +371,27 @@ obj_t *_parse(FILE *file) {
 
 void parse_usage() {
 	printf("Usage:\n"
-	       "\tparse [-d][-h][-p] kabi_file [-c kabi_file]\n");
+	       "\tparse [options] kabi_file [kabi_file]\n"
+	       "\nGeneral options:\n"
+	       "    -p, --print:\tdisplay the symbol in a c-like format\n"
+	       "    -c, --compare:\t"
+	       "compare two symbols (need two kabi files args)\n"
+	       "    -h, --hide-kabi:\thide some rh specific kabi trickery\n"
+	       "    -d, --debug:\tprint the raw tree\n"
+	       "    --no-offset:\tdon't display the offset of struct fields\n"
+	       "\nCompare options:\n"
+	       "    --no-replaced:\thide replaced symbols"
+	       " (symbols that changed, but hasn't moved)\n"
+	       "    --no-shifted:\thide shifted symbols"
+	       " (symbol that hasn't changed, but whose offset changed)\n"
+	       "    --no-inserted:\t"
+	       "hide symbols inserted in the middle of a struct, union...\n"
+	       "    --no-deleted:\t"
+	       "hide symbols removed from the middle of a struct, union...\n"
+	       "    --no-added:\t\t"
+	       "hide symbols added at the end of a struct, union...\n"
+	       "    --no-removed:\t"
+	       "hide symbols removed from the end of a struct, union...\n");
 	exit(1);
 }
 
@@ -385,15 +405,26 @@ FILE *fopen_safe(char *filename) {
 	return file;
 }
 
+#define DISPLAY_NO_OPT(name) \
+	{"no-"#name, no_argument, &display_options.no_##name, 1}
+
 int parse(int argc, char **argv) {
 	obj_t *root, *root2;
 	int opt, opt_index, ret = 0;
 	struct option loptions[] = {
 		{"compare", no_argument, 0, 'c'},
 		{"debug", no_argument, 0, 'd'},
-		{"hidekabi", no_argument, 0, 'k'},
+		{"hide-kabi", no_argument, 0, 'k'},
 		{"print", no_argument, 0, 'p'},
 		{"show", no_argument, 0, 'p'},
+		{"help", no_argument, 0, '?'},
+		DISPLAY_NO_OPT(offset),
+		DISPLAY_NO_OPT(replaced),
+		DISPLAY_NO_OPT(shifted),
+		DISPLAY_NO_OPT(inserted),
+		DISPLAY_NO_OPT(deleted),
+		DISPLAY_NO_OPT(added),
+		DISPLAY_NO_OPT(removed),
 		{0, 0, 0, 0}
 	};
 
@@ -403,9 +434,13 @@ int parse(int argc, char **argv) {
 	yydebug = 0;
 #endif
 
+	memset(&display_options, 0, sizeof(display_options));
+
 	while ((opt = getopt_long(argc, argv, "cdhp",
 				  loptions, &opt_index)) != -1) {
 		switch (opt) {
+		case 0:
+			break;
 		case 'c':
 			parse_config.compare = true;
 			break;
@@ -418,8 +453,7 @@ int parse(int argc, char **argv) {
 		case 'p':
 			parse_config.print = true;
 			break;
-		default: /* '?' */
-			printf("Unknown parse option -%c\n", (char) opt);
+		default:
 			parse_usage();
 		}
 	}
