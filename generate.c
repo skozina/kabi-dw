@@ -314,7 +314,7 @@ static void print_die_struct_member(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
 		if (dwarf_attr(die, DW_AT_bit_size, &attr) == NULL)
 			fail("Bit size of member %s missing!\n", name);
 		(void) dwarf_formudata(&attr, &size);
-		fprintf(fout, ":%ld-%ld", offset, offset + size);
+		fprintf(fout, ":%ld-%ld", offset, offset + size - 1);
 	}
 
 	fprintf(fout, " %s ", name);
