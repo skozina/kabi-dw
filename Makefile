@@ -49,9 +49,7 @@ parser.tab.c: parser.y
 	$(YACC) $(YACCFLAGS) parser.y
 
 parser.yy.c: parser.tab.c parser.l parser.h
-#	$(YACC) $(YACCFLAGS) parser.y
 	$(FLEX) $(FLEXFLAGS) -o parser.yy.c parser.l
-#	$(CC) $(CFLAGS) parser.tab.c parser.yy.c
 
 depend: .depend
 
