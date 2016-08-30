@@ -609,7 +609,7 @@ static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix) {
 
 	if (o->type == __type_struct_member && !display_options.no_offset) {
 		char offstr[16];
-		if (o->last_bit)
+		if (is_bitfield(o))
 			snprintf(offstr, 16, "0x%lx:%2i-%-2i ",
 				 o->offset, o->first_bit, o->last_bit);
 		else

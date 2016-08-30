@@ -85,7 +85,7 @@ typedef struct obj_list_head {
  * index:	index of array
  * offset:	(var) offset of a struct member
  * first_bit, last_bit: (var) bit range within the offset.
- *			Only valid if last != 0
+ *			Only valid if last_bit != 0
  */
 typedef struct obj {
 	obj_types type;	
@@ -116,7 +116,7 @@ static inline bool has_index(obj_t *o) {
 }
 
 static inline bool is_bitfield(obj_t *o) {
-	return o->first_bit != 0;
+	return o->last_bit != 0;
 }
 
 static inline bool is_terminal(obj_t *o) {
