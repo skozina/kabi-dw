@@ -535,6 +535,9 @@ static pp_t print_varlike(obj_t *o, int depth, const char *prefix) {
 	if (s)
 		postfix_str(&ret.prefix, s);
 
+	if (!depth)
+		postfix_str(&ret.postfix, ";\n");
+
 	if (is_bitfield(o))
 		free(s);
 
