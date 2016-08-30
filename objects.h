@@ -86,6 +86,9 @@ typedef struct obj_list_head {
  * offset:	(var) offset of a struct member
  * first_bit, last_bit: (var) bit range within the offset.
  *			Only valid if last_bit != 0
+ *
+ * Note the dual parent/child relationship with the n-ary member_list and the
+ * the unary ptr. Only functions uses both.
  */
 typedef struct obj {
 	obj_types type;	
@@ -158,6 +161,8 @@ static inline bool is_n_ary(obj_t *o) {
 
 /*
  * Display options
+ *
+ * Used for show and compare commands.
  */
 struct dopt {
 	int no_offset;		/* Don't display struct offset */
@@ -174,6 +179,7 @@ struct dopt {
 };
 extern struct dopt display_options;
 
+/* Return values for tree walk callbacks */
 typedef enum {
 	CB_CONT = 0,	/* Continue tree walk */
 	CB_SKIP,	/* Skip the children of this node */
@@ -209,9 +215,15 @@ int walk_tree(obj_t *root, cb_t cb, void *args);
 int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 	       void *args, bool ptr_first);
 
+/* Return values for the (_)compare_tree functions */
 enum {
-	COMP_SAME = 0,
-	COMP_DIFF,
+	COMP_SAME = 0,	/* Subtree are equal */
+	COMP_DIFF,	/* Subtree differs */
+	/*
+	 * Subtree differs and we need to display the change at a higher level
+	 * for the output to have enough context to be understandable (see 
+	 * worthy_of_print())
+	 */
 	COMP_NEED_PRINT,
 };
 int compare_tree(obj_t *o1, obj_t *o2);
