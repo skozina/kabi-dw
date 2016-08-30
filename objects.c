@@ -249,10 +249,9 @@ static bool is_paren_needed(obj_t *node) {
 	obj_t *child = node->ptr;
 
 	while(child) {
-		if (c_precedence(child) < c_precedence(node)) {
-			child->close_paren++;
+		if (c_precedence(child) < c_precedence(node))
 			return true;
-		}
+
 		child = child->ptr;
 	}
 	return false;

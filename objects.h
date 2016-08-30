@@ -46,11 +46,11 @@ typedef enum {
 	__type_enum,
 	__type_func,
 	__type_ptr,
-	__type_typedef, /* do we keep that, or should it be always expanded */
+	__type_typedef,
 	__type_array,
 	__type_var, /* a variable, member of an union or a function argument */
 	__type_struct_member,
-	__type_qualifier, /* a type qulifier such as "const" or "volatile" */
+	__type_qualifier, /* a type qualifier such as "const" or "volatile" */
 	__type_base,
 	__type_constant, /* An element of an enumeration */
 	NR_OBJ_TYPES
@@ -68,7 +68,7 @@ typedef struct obj_list_head {
 } obj_list_head_t;
 
 /*
- * Structure representing symbols
+ * Structure representing symbols. Several field are overloaded.
  *
  * type:	type of the symbol (such as struct, function, pointer, base
  *		type...)
@@ -86,8 +86,6 @@ typedef struct obj_list_head {
  * offset:	(var) offset of a struct member
  * first_bit, last_bit: (var) bit range within the offset.
  *			Only valid if last != 0
- * dont_print	(var, struct_member) don't print the name, it has already
- *		been printed by the array or func code. Only used in print_tree
  */
 typedef struct obj {
 	obj_types type;	
@@ -103,8 +101,6 @@ typedef struct obj {
 			unsigned char first_bit, last_bit;
 		};
 	};
-	int close_paren;
-	bool dont_print;
 } obj_t;
 
 static inline bool has_offset(obj_t *o) {
