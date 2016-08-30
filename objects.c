@@ -274,18 +274,6 @@ static bool is_paren_needed(obj_t *node) {
 	return false;
 }
 
-typedef struct print_node_args {
-	int depth;
-	bool newline;
-	const char *prefix;
-	/*
-	 * Number of indirection that need to be handled.
-	 * It also indicates that parentheses are needed since "*" has a
-	 * lower precedence than array "[]" or functions "()"
-	 */
-	int ptrs;
-} pn_args_t;
-
 static char *print_margin_offset(const char *prefix, const char *s, int depth) {
 	size_t len = snprintf(NULL, 0, "%-*s", depth * C_INDENT_OFFSET, s) + 1;
 	char *ret;
