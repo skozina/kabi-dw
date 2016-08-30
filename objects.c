@@ -199,7 +199,8 @@ const char *obj_type_name[NR_OBJ_TYPES+1] =
 	 "unknown type"
 	};
 
-static const char *typetostr(obj_types t) {
+static const char *typetostr(obj_t *o) {
+	int t = o->type;
 	if (t >= NR_OBJ_TYPES)
 		t = NR_OBJ_TYPES;
 	return obj_type_name[t];
@@ -432,15 +433,15 @@ static pp_t print_structlike(obj_t *o, int depth, const char *prefix) {
 	char *s, *margin;
 	size_t sz;
 
-	sz = strlen(typetostr(o->type)) + 4;
+	sz = strlen(typetostr(o)) + 4;
 	if (o->name)
 		sz += strlen(o->name) + 1;
 	s = malloc(sz);
 
 	if (o->name)
-		snprintf(s, sz, "%s %s {\n", typetostr(o->type), o->name);
+		snprintf(s, sz, "%s %s {\n", typetostr(o), o->name);
 	else
-		snprintf(s, sz, "%s {\n", typetostr(o->type));
+		snprintf(s, sz, "%s {\n", typetostr(o));
 
 	if (o->member_list)
 		list = o->member_list->first;
@@ -580,7 +581,7 @@ static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix) {
 
 	if (!o)
 		fail("NULL pointer in _print_tree\n");
-	debug("_print_tree(): %s\n", typetostr(o->type));
+	debug("_print_tree(): %s\n", typetostr(o));
 
 	switch (o->type) {
 	BASIC_CASE(reffile);
@@ -601,7 +602,7 @@ static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix) {
 		ret = print_structlike(o, depth, prefix);
 		break;
 	default:
-		fail("WIP: doesn't handle %s\n", typetostr(o->type));
+		fail("WIP: doesn't handle %s\n", typetostr(o));
 	}
 
 	if (!newline)
@@ -727,7 +728,7 @@ static void _show_node(FILE *f, obj_t *o, int margin) {
 	if (o)
 		fprintf(f,
 			"\%*s<%s, \"%s\", \"%s\", %p, %p, %p, %lu, %i, %i>\n",
-			margin, "", typetostr(o->type), o->name, o->base_type,
+			margin, "", typetostr(o), o->name, o->base_type,
 			o, o->parent, o->ptr,
 			o->offset, o->first_bit, o->last_bit);
 	else
