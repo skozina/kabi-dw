@@ -29,6 +29,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <sys/stat.h>
 
 #include "objects.h"
 #include "utils.h"
@@ -1122,13 +1123,14 @@ int show(int argc, char **argv) {
 struct {
 	bool debug;
 	bool hide_kabi;
-	FILE *file1;
-	FILE *file2;
+	char *path1;
+	char *path2;
 } compare_config = {false, false, NULL, NULL};
 
 void compare_usage() {
 	printf("Usage:\n"
-	       "\tcompare [options] kabi_file [kabi_file]\n"
+	       "\tcompare [options] kabi_file kabi_file\n"
+	       "\tcompare [options] kabi_dir kabi_dir\n"
 	       "\nGeneral options:\n"
 	       "    -k, --hide-kabi:\thide some rh specific kabi trickery\n"
 	       "    -d, --debug:\tprint the raw tree\n"
@@ -1148,9 +1150,86 @@ void compare_usage() {
 	exit(1);
 }
 
+static int compare_two_files(char *path1, char *path2) {
+	obj_t *root1, *root2;
+	FILE *file1, *file2;
+	int ret = 0, tmp;
+
+	file1 = fopen_safe(path1);
+	file2 = fopen_safe(path2);
+
+	root1 = parse(file1);
+	root2 = parse(file2);
+
+	if (compare_config.hide_kabi) {
+		hide_kabi(root1);
+		hide_kabi(root2);
+	}
+
+	if (compare_config.debug) {
+		debug_tree(root1);
+		debug_tree(root2);
+	}
+
+	printf("Comparing %s\n", basename(path1));
+	tmp = compare_tree(root1, root2);
+	if (tmp == COMP_NEED_PRINT)
+		fail("compare_tree still need to print\n");
+	if (tmp == COMP_DIFF)
+		ret = EXIT_KABI_CHANGE;
+
+	free_obj(root1);
+	free_obj(root2);
+	fclose(file1);
+	fclose(file2);
+
+	return ret;
+
+}
+
+typedef struct cf_cb {
+	char *kabi_dir_old;
+	char *kabi_dir_new;
+	char *file_name;
+} cf_cb_t;
+
+static bool compare_files_cb(char *kabi_path, void *arg) {
+	cf_cb_t *conf = (cf_cb_t *)arg;
+	struct stat fstat;
+	char *temp_kabi_path;
+
+	/* If conf->*_dir contains slashes, skip them */
+	conf->file_name = kabi_path + strlen(conf->kabi_dir_old);
+	while (*conf->file_name == '/')
+		conf->file_name++;
+
+	if (asprintf(&temp_kabi_path, "%s/%s", conf->kabi_dir_new,
+	    conf->file_name) == -1)
+		fail("asprintf() failed\n");
+
+	if (stat(temp_kabi_path, &fstat) != 0) {
+		if (errno == ENOENT)
+			printf("Symbol removed or moved: %s\n",
+			       conf->file_name);
+		else
+			fail("Failed to stat() file%s: %s\n", temp_kabi_path,
+			    strerror(errno));
+
+		goto out;
+	}
+
+	compare_two_files(kabi_path, temp_kabi_path);
+
+out:
+	free(temp_kabi_path);
+	return true;
+}
+
 int compare(int argc, char **argv) {
-	obj_t *root, *root2;
-	int opt, opt_index, ret = 0, tmp;
+	int opt, opt_index, ret = 0;
+	char *path1, *path2;
+	struct stat sb1, sb2;
+	cf_cb_t conf = {NULL, NULL, NULL};
 	struct option loptions[] = {
 		{"debug", no_argument, 0, 'd'},
 		{"hide-kabi", no_argument, 0, 'k'},
@@ -1188,34 +1267,28 @@ int compare(int argc, char **argv) {
 		compare_usage();
 	}
 
-	compare_config.file1 = fopen_safe(argv[optind]);
-	optind++;
-	compare_config.file2 = fopen_safe(argv[optind]);
+	path1 = compare_config.path1 = argv[optind++];
+	path2 = compare_config.path2 = argv[optind];
 
-	root = parse(compare_config.file1);
-	root2 = parse(compare_config.file2);
+	if ((stat(path1, &sb1) == -1) || (stat(path2, &sb2) == -1))
+		fail("stat failed: %s\n", strerror(errno));
 
-	if (compare_config.hide_kabi) {
-		hide_kabi(root);
-		hide_kabi(root2);
+	if (S_ISREG(sb1.st_mode)) {
+		if (S_ISREG(sb2.st_mode))
+			return compare_two_files(path1, path2);
+		else
+			fail("Second file is not a regular file\n");
 	}
 
-	if (compare_config.debug) {
-		debug_tree(root);
-		debug_tree(root2);
-	}
+	if (S_ISDIR(sb1.st_mode)) {
+		if (!S_ISDIR(sb2.st_mode))
+			fail("Second file is not a directory\n");
+	} else
+		fail("Only support directories and regular files\n");
 
-	tmp = compare_tree(root, root2);
-	if (tmp == COMP_NEED_PRINT)
-		fail("compare_tree still need to print\n");
-	if (tmp == COMP_DIFF)
-		ret = EXIT_KABI_CHANGE;
-
-	free_obj(root);
-	free_obj(root2);
-	fclose(compare_config.file1);
-	fclose(compare_config.file2);
+	conf.kabi_dir_old = path1;
+	conf.kabi_dir_new = path2;
+	walk_dir(path1, false, compare_files_cb, &conf);
 
 	return ret;
-
 }
