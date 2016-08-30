@@ -412,13 +412,6 @@ static char *postfix_str_free(char **s, char *p) {
 	return _postfix_str(s, p, false, true);
 }
 
-/*static char *postfix_str_space(char **s, char *p) {
-	if (!p)
-		return *s;
-	return _postfix_str(s, p, true, false);
-	}*/
-
-
 #define asprintf_safe(args...)					\
 do {								\
 	if (asprintf(args) == -1 )				\
