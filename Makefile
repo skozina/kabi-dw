@@ -38,6 +38,9 @@ debug: LDFLAGS=-lasan -ldw -lelf -lfl
 debug: FLEXFLAGS += -d
 debug: $(PROG)
 
+asan: CFLAGS += -fsanitize=address
+asan: LDFLAGS=-lasan -ldw -lelf -lfl
+asan: $(PROG)
 
 $(PROG): $(OBJS)
 	$(CC) -o $(PROG) $(OBJS) $(LDFLAGS)
