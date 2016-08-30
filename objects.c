@@ -418,24 +418,25 @@ static char *postfix_str_free(char **s, char *p) {
 	return _postfix_str(s, p, true, false);
 	}*/
 
+
+#define asprintf_safe(args...)					\
+do {								\
+	if (asprintf(args) == -1 )				\
+		fail("asprintf failed: %s", strerror(errno));	\
+} while(0)
+
 static pp_t print_base(obj_t *o, int depth, const char *prefix) {
 	pp_t ret = {NULL, NULL};
 
-	ret.prefix = malloc(strlen(o->base_type) + 2);
-
-	strcpy(ret.prefix, o->base_type);
-	strcat(ret.prefix, " ");
+	asprintf_safe(&ret.prefix, "%s ", o->base_type);
 
 	return ret;
 }
 
-#define CONSTANT_FMT "%s = %lu"
 static pp_t print_constant(obj_t *o, int depth, const char *prefix) {
 	pp_t ret = {NULL, NULL};
-	size_t len = snprintf(NULL, 0, CONSTANT_FMT, o->name, o->constant) + 1;
 
-	ret.prefix = malloc(len);
-	snprintf(ret.prefix, len, CONSTANT_FMT, o->name, o->constant);
+	asprintf_safe(&ret.prefix, "%s = %lu", o->name, o->constant);
 
 	return ret;
 }
@@ -457,17 +458,11 @@ static pp_t print_structlike(obj_t *o, int depth, const char *prefix) {
 	pp_t ret = {NULL, NULL}, tmp;
 	obj_list_t *list = NULL;
 	char *s, *margin;
-	size_t sz;
-
-	sz = strlen(typetostr(o)) + 4;
-	if (o->name)
-		sz += strlen(o->name) + 1;
-	s = malloc(sz);
 
 	if (o->name)
-		snprintf(s, sz, "%s %s {\n", typetostr(o), o->name);
+		asprintf_safe(&s, "%s %s {\n", typetostr(o), o->name);
 	else
-		snprintf(s, sz, "%s {\n", typetostr(o));
+		asprintf_safe(&s, "%s {\n", typetostr(o));
 
 	if (o->member_list)
 		list = o->member_list->first;
@@ -501,8 +496,7 @@ static pp_t print_func(obj_t *o, int depth, const char *prefix) {
 	else
 		name = "";
 
-	s = malloc(strlen(name)+3);
-	sprintf(s, "%s(\n", name);
+	asprintf_safe(&s, "%s(\n", name);
 
 	if (o->member_list)
 		list = o->member_list->first;
@@ -524,13 +518,13 @@ static pp_t print_func(obj_t *o, int depth, const char *prefix) {
 
 static pp_t print_array(obj_t *o, int depth, const char *prefix) {
 	pp_t ret = {NULL, NULL};
-	char s[16];
+	char *s;
 	obj_t *next = o ->ptr;
 
 	ret = _print_tree(next, depth, false, prefix);
 
-	snprintf(s, 16, "[%lu]", o->constant);
-	prefix_str(&ret.postfix, s);
+	asprintf_safe(&s, "[%lu]", o->constant);
+	prefix_str_free(&ret.postfix, s);
 
 	return ret;
 }
@@ -555,10 +549,10 @@ static pp_t print_varlike(obj_t *o, int depth, const char *prefix) {
 	pp_t ret = {NULL, NULL};
 	char *s = NULL;
 
-	if (is_bitfield(o)) {
-		s = malloc(strlen(o->name) + 5);
-		sprintf(s, "%s:%i", o->name, o->last_bit - o->first_bit + 1);
-	} else
+	if (is_bitfield(o))
+		asprintf_safe(&s, "%s:%i",
+			      o->name, o->last_bit - o->first_bit + 1);
+	else
 		s = o->name;
 
 	ret = _print_tree(o->ptr, depth, false, prefix);
@@ -644,13 +638,14 @@ static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix) {
 		return ret;
 
 	if (o->type == __type_struct_member && !display_options.no_offset) {
-		char offstr[16];
+		char *offstr;
 		if (is_bitfield(o))
-			snprintf(offstr, 16, "0x%lx:%2i-%-2i ",
-				 o->offset, o->first_bit, o->last_bit);
+			asprintf_safe(&offstr, "0x%lx:%2i-%-2i ",
+				      o->offset, o->first_bit, o->last_bit);
 		else
-			snprintf(offstr, 16, "0x%lx ", o->offset);
+			asprintf_safe(&offstr, "0x%lx ", o->offset);
 		margin = print_margin_offset(prefix, offstr, depth);
+		free(offstr);
 	} else
 		margin = print_margin(prefix, depth);
 
