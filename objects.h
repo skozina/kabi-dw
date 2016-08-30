@@ -28,6 +28,9 @@
 #define debug(args...)
 #endif
 
+/* Return value when we detect a kABI change */
+#define EXIT_KABI_CHANGE 3
+
 /* Indentation offset for c-style and tree debug outputs */
 #define C_INDENT_OFFSET   8
 #define DBG_INDENT_OFFSET 4
@@ -217,5 +220,8 @@ enum {
 };
 int compare_tree(obj_t *o1, obj_t *o2);
 int hide_kabi(obj_t *root);
+
+int show(int argc, char **argv);
+int compare(int argc, char **argv);
 
 #endif

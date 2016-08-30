@@ -41,7 +41,7 @@
 #include "utils.h"
 #include "generate.h"
 #include "check.h"
-#include "parse.h"
+#include "objects.h"
 
 static char *progname;
 
@@ -49,8 +49,9 @@ void usage(void) {
 	printf("Usage:\n"
 	    "\t %s generate [-v] [-s symbol_file] [-o kabi_dir] kernel_dir\n"
 	    "\t %s check [-v] kabi_dir_old kabi_dir_new\n"
-	    "\t %s parse kabi_file [kabi_file]\n",
-	       progname, progname, progname);
+	    "\t %s show [options] kabi_file\n"
+	    "\t %s compare [options] kabi_file kabi_file\n",
+	       progname, progname, progname, progname);
 	exit(1);
 }
 
@@ -224,8 +225,10 @@ int main(int argc, char **argv) {
 	} else if (strcmp(argv[0], "check") == 0) {
 		argv++; argc--;
 		check(argc, argv);
-	} else if (strcmp(argv[0], "parse") == 0) {
-		ret = parse(argc, argv);
+	} else if (strcmp(argv[0], "compare") == 0) {
+		ret = compare(argc, argv);
+	} else if (strcmp(argv[0], "show") == 0) {
+		ret = show(argc, argv);
 	} else {
 		usage();
 	}

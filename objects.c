@@ -27,6 +27,8 @@
 #include <strings.h>
 #include <limits.h>
 #include <errno.h>
+#include <unistd.h>
+#include <getopt.h>
 
 #include "objects.h"
 #include "utils.h"
@@ -1034,4 +1036,186 @@ static int hide_kabi_cb(obj_t *o, void *args) {
 int hide_kabi(obj_t *root) {
 	void *parent;
 	return walk_tree(root, hide_kabi_cb, &parent);
+}
+
+static FILE *fopen_safe(char *filename) {
+	FILE *file;
+
+	file = fopen(filename, "r");
+	if (!file)
+		fail("Failed to open kABI file: %s\n", filename);
+
+	return file;
+}
+
+extern obj_t *parse(FILE *file);
+
+struct {
+	bool debug;
+	bool hide_kabi;
+	FILE *file;
+} show_config = {false, false, NULL};
+
+void show_usage() {
+	printf("Usage:\n"
+	       "\tcompare [options] kabi_file [kabi_file]\n"
+	       "\nGeneral options:\n"
+	       "    -k, --hide-kabi:\thide some rh specific kabi trickery\n"
+	       "    -d, --debug:\tprint the raw tree\n"
+	       "    --no-offset:\tdon't display the offset of struct fields\n");
+	exit(1);
+}
+
+#define DISPLAY_NO_OPT(name) \
+	{"no-"#name, no_argument, &display_options.no_##name, 1}
+
+int show(int argc, char **argv) {
+	obj_t *root;
+	int opt, opt_index, ret = 0;
+	struct option loptions[] = {
+		{"debug", no_argument, 0, 'd'},
+		{"hide-kabi", no_argument, 0, 'k'},
+		{"help", no_argument, 0, '?'},
+		DISPLAY_NO_OPT(offset),
+		{0, 0, 0, 0}
+	};
+
+	memset(&display_options, 0, sizeof(display_options));
+
+	while ((opt = getopt_long(argc, argv, "dk",
+				  loptions, &opt_index)) != -1) {
+		switch (opt) {
+		case 0:
+			break;
+		case 'd':
+			show_config.debug = true;
+			break;
+		case 'k':
+			show_config.hide_kabi = true;
+			break;
+		default:
+			show_usage();
+		}
+	}
+
+	if (optind + 1 != argc)
+		show_usage();
+
+	show_config.file = fopen_safe(argv[optind]);
+
+	root = parse(show_config.file);
+
+	if (show_config.hide_kabi)
+		hide_kabi(root);
+
+	if (show_config.debug)
+		debug_tree(root);
+
+	print_tree(root);
+
+	free_obj(root);
+	fclose(show_config.file);
+
+	return ret;
+}
+
+struct {
+	bool debug;
+	bool hide_kabi;
+	FILE *file1;
+	FILE *file2;
+} compare_config = {false, false, NULL, NULL};
+
+void compare_usage() {
+	printf("Usage:\n"
+	       "\tcompare [options] kabi_file [kabi_file]\n"
+	       "\nGeneral options:\n"
+	       "    -k, --hide-kabi:\thide some rh specific kabi trickery\n"
+	       "    -d, --debug:\tprint the raw tree\n"
+	       "    --no-offset:\tdon't display the offset of struct fields\n"
+	       "    --no-replaced:\thide replaced symbols"
+	       " (symbols that changed, but hasn't moved)\n"
+	       "    --no-shifted:\thide shifted symbols"
+	       " (symbol that hasn't changed, but whose offset changed)\n"
+	       "    --no-inserted:\t"
+	       "hide symbols inserted in the middle of a struct, union...\n"
+	       "    --no-deleted:\t"
+	       "hide symbols removed from the middle of a struct, union...\n"
+	       "    --no-added:\t\t"
+	       "hide symbols added at the end of a struct, union...\n"
+	       "    --no-removed:\t"
+	       "hide symbols removed from the end of a struct, union...\n");
+	exit(1);
+}
+
+int compare(int argc, char **argv) {
+	obj_t *root, *root2;
+	int opt, opt_index, ret = 0, tmp;
+	struct option loptions[] = {
+		{"debug", no_argument, 0, 'd'},
+		{"hide-kabi", no_argument, 0, 'k'},
+		{"help", no_argument, 0, '?'},
+		DISPLAY_NO_OPT(offset),
+		DISPLAY_NO_OPT(replaced),
+		DISPLAY_NO_OPT(shifted),
+		DISPLAY_NO_OPT(inserted),
+		DISPLAY_NO_OPT(deleted),
+		DISPLAY_NO_OPT(added),
+		DISPLAY_NO_OPT(removed),
+		{0, 0, 0, 0}
+	};
+
+	memset(&display_options, 0, sizeof(display_options));
+
+	while ((opt = getopt_long(argc, argv, "dk",
+				  loptions, &opt_index)) != -1) {
+		switch (opt) {
+		case 0:
+			break;
+		case 'd':
+			compare_config.debug = true;
+			break;
+		case 'k':
+			compare_config.hide_kabi = true;
+			break;
+		default:
+			compare_usage();
+		}
+	}
+
+	if (optind + 2 != argc) {
+		printf("%i %i\n", optind, argc);
+		compare_usage();
+	}
+
+	compare_config.file1 = fopen_safe(argv[optind]);
+	optind++;
+	compare_config.file2 = fopen_safe(argv[optind]);
+
+	root = parse(compare_config.file1);
+	root2 = parse(compare_config.file2);
+
+	if (compare_config.hide_kabi) {
+		hide_kabi(root);
+		hide_kabi(root2);
+	}
+
+	if (compare_config.debug) {
+		debug_tree(root);
+		debug_tree(root2);
+	}
+
+	tmp = compare_tree(root, root2);
+	if (tmp == COMP_NEED_PRINT)
+		fail("compare_tree still need to print\n");
+	if (tmp == COMP_DIFF)
+		ret = EXIT_KABI_CHANGE;
+
+	free_obj(root);
+	free_obj(root2);
+	fclose(compare_config.file1);
+	fclose(compare_config.file2);
+
+	return ret;
+
 }

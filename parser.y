@@ -16,7 +16,6 @@
 */
 
 %{
-#include "parse.h"
 #include "parser.h"
 #include <limits.h>
 
@@ -342,91 +341,8 @@ reference_file:
 
 extern void usage(void);
 
-struct {
-	bool debug;
-	bool hide_kabi;
-	bool print;
-	bool compare;
-	FILE *file1;
-	FILE *file2;
-} parse_config = {false, false, false, false, NULL, NULL};
-
-obj_t *_parse(FILE *file) {
+obj_t *parse(FILE *file) {
 	obj_t *root = NULL;
-
-	yyin = file;
-	yyparse(&root);
-	if (!root)
-		fail("No object build\n");
-
-	if (parse_config.hide_kabi)
-		hide_kabi(root);
-	if (parse_config.debug)
-		debug_tree(root);
-	if (parse_config.print)
-		print_tree(root);
-
-	return root;
-}
-
-void parse_usage() {
-	printf("Usage:\n"
-	       "\tparse [options] kabi_file [kabi_file]\n"
-	       "\nGeneral options:\n"
-	       "    -p, --print:\tdisplay the symbol in a c-like format\n"
-	       "    -c, --compare:\t"
-	       "compare two symbols (need two kabi files args)\n"
-	       "    -h, --hide-kabi:\thide some rh specific kabi trickery\n"
-	       "    -d, --debug:\tprint the raw tree\n"
-	       "    --no-offset:\tdon't display the offset of struct fields\n"
-	       "\nCompare options:\n"
-	       "    --no-replaced:\thide replaced symbols"
-	       " (symbols that changed, but hasn't moved)\n"
-	       "    --no-shifted:\thide shifted symbols"
-	       " (symbol that hasn't changed, but whose offset changed)\n"
-	       "    --no-inserted:\t"
-	       "hide symbols inserted in the middle of a struct, union...\n"
-	       "    --no-deleted:\t"
-	       "hide symbols removed from the middle of a struct, union...\n"
-	       "    --no-added:\t\t"
-	       "hide symbols added at the end of a struct, union...\n"
-	       "    --no-removed:\t"
-	       "hide symbols removed from the end of a struct, union...\n");
-	exit(1);
-}
-
-FILE *fopen_safe(char *filename) {
-	FILE *file;
-
-	file = fopen(filename, "r");
-	if (!file)
-		fail("Failed to open kABI file: %s\n", filename);
-
-	return file;
-}
-
-#define DISPLAY_NO_OPT(name) \
-	{"no-"#name, no_argument, &display_options.no_##name, 1}
-
-int parse(int argc, char **argv) {
-	obj_t *root, *root2;
-	int opt, opt_index, ret = 0;
-	struct option loptions[] = {
-		{"compare", no_argument, 0, 'c'},
-		{"debug", no_argument, 0, 'd'},
-		{"hide-kabi", no_argument, 0, 'k'},
-		{"print", no_argument, 0, 'p'},
-		{"show", no_argument, 0, 'p'},
-		{"help", no_argument, 0, '?'},
-		DISPLAY_NO_OPT(offset),
-		DISPLAY_NO_OPT(replaced),
-		DISPLAY_NO_OPT(shifted),
-		DISPLAY_NO_OPT(inserted),
-		DISPLAY_NO_OPT(deleted),
-		DISPLAY_NO_OPT(added),
-		DISPLAY_NO_OPT(removed),
-		{0, 0, 0, 0}
-	};
 
 #ifdef DEBUG
 	yydebug = 1;
@@ -434,66 +350,12 @@ int parse(int argc, char **argv) {
 	yydebug = 0;
 #endif
 
-	memset(&display_options, 0, sizeof(display_options));
+	yyin = file;
+	yyparse(&root);
+	if (!root)
+		fail("No object build\n");
 
-	while ((opt = getopt_long(argc, argv, "cdhp",
-				  loptions, &opt_index)) != -1) {
-		switch (opt) {
-		case 0:
-			break;
-		case 'c':
-			parse_config.compare = true;
-			break;
-		case 'd':
-			parse_config.debug = true;
-			break;
-		case 'h':
-			parse_config.hide_kabi = true;
-			break;
-		case 'p':
-			parse_config.print = true;
-			break;
-		default:
-			parse_usage();
-		}
-	}
-
-	if (optind >= argc) {
-		parse_usage();
-	}
-
-	parse_config.file1 = fopen_safe(argv[optind]);
-	optind++;
-
-	if (parse_config.compare) {
-		if (optind >= argc)
-			parse_usage();
-		parse_config.file2 = fopen_safe(argv[optind]);
-		optind++;
-	}
-
-	if ( optind != argc) {
-		parse_usage();
-	}
-
-	root = _parse(parse_config.file1);
-
-	if (parse_config.compare) {
-		int tmp;
-
-		root2 = _parse(parse_config.file2);
-		tmp = compare_tree(root, root2);
-		if (tmp == COMP_NEED_PRINT)
-			fail("compare_tree still need to print\n");
-		if (tmp == COMP_DIFF)
-			ret = EXIT_KABI_CHANGE;
-		free_obj(root2);
-		fclose(parse_config.file2);
-	}
-	free_obj(root);
-	fclose(parse_config.file1);
-
-	return ret;
+	return root;
 }
 
 int yyerror(obj_t **root, char *s)
