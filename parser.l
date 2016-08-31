@@ -57,12 +57,12 @@ HEX		[a-fA-F0-9]
 		  return(IDENTIFIER);
 		}
 
-0[xX]{HEX}+	{ yylval.l = strtol(yytext, NULL, 16);
-		  debug("Constant: 0x%lx\n", yylval.l);
+0[xX]{HEX}+	{ yylval.ul = strtoul(yytext, NULL, 16);
+		  debug("Constant: 0x%lx\n", yylval.ul);
 		  return(CONSTANT);
 		}
-{NUM}+		{ yylval.l = strtol(yytext, NULL, 10);
-		  debug("Constant: %li\n", yylval.l);
+{NUM}+		{ yylval.ul = strtoul(yytext, NULL, 10);
+		  debug("Constant: %li\n", yylval.ul);
 		  return(CONSTANT);
 		}
 

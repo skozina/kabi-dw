@@ -41,7 +41,7 @@
 }
 
 %token <str> IDENTIFIER STRING SRCFILE
-%token <l> CONSTANT
+%token <ul> CONSTANT
 
 %token NEWLINE
 %token TYPEDEF

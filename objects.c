@@ -429,7 +429,7 @@ static pp_t print_base(obj_t *o, int depth, const char *prefix) {
 static pp_t print_constant(obj_t *o, int depth, const char *prefix) {
 	pp_t ret = {NULL, NULL};
 
-	asprintf_safe(&ret.prefix, "%s = %lu", o->name, o->constant);
+	asprintf_safe(&ret.prefix, "%s = %li", o->name, (long)o->constant);
 
 	return ret;
 }
