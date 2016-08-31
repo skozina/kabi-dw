@@ -409,8 +409,10 @@ static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
 
 	/* Grab the first argument */
 	dwarf_child(die, &child_die);
+
 	/* Walk all arguments until we run into the function body */
-	do {
+	while ((dwarf_tag(&child_die) == DW_TAG_formal_parameter) ||
+	    (dwarf_tag(&child_die) == DW_TAG_unspecified_parameters)) {
 		const char *name = get_die_name(&child_die);
 		fprintf(fout, "%s ", name);
 
@@ -424,9 +426,9 @@ static void print_subprogram_arguments(Dwarf *dbg, FILE *fout,
 		else
 			print_die(dbg, fout, cu_die, &child_die, conf);
 
-	} while ((dwarf_siblingof(&child_die, &child_die) == 0) &&
-	    ((dwarf_tag(&child_die) == DW_TAG_formal_parameter) ||
-	    (dwarf_tag(&child_die) == DW_TAG_unspecified_parameters)));
+		if (dwarf_siblingof(&child_die, &child_die) != 0)
+			break;
+	}
 }
 
 static void print_die_subprogram(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
