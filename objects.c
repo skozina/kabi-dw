@@ -469,7 +469,7 @@ static pp_t print_structlike(obj_t *o, int depth, const char *prefix) {
 
 	margin = print_margin(prefix, depth);
 	postfix_str_free(&s, margin);
-	postfix_str(&s,  depth == 0 ? "};\n" : "}");
+	postfix_str(&s, "}");
 
 	ret.prefix = s;
 	return ret;
@@ -503,7 +503,7 @@ static pp_t print_func(obj_t *o, int depth, const char *prefix) {
 
 	margin = print_margin(prefix, depth);
 	postfix_str_free(&s, margin);
-	postfix_str(&s, depth == 0 ? ");\n" : ")");
+	postfix_str(&s, ")");
 
 	ret.postfix = s;
 	return ret;
@@ -553,9 +553,6 @@ static pp_t print_varlike(obj_t *o, int depth, const char *prefix) {
 	if (s)
 		postfix_str(&ret.prefix, s);
 
-	if (!depth)
-		postfix_str(&ret.postfix, ";\n");
-
 	if (is_bitfield(o))
 		free(s);
 
@@ -568,7 +565,7 @@ static pp_t print_typedef(obj_t *o, int depth, const char *prefix) {
 	ret = _print_tree(o->ptr, depth, false, prefix);
 
 	prefix_str(&ret.prefix, "typedef ");
-	postfix_str(&ret.postfix, ";\n");
+	postfix_str(&ret.prefix, o->name);
 
 	return ret;
 }
@@ -649,7 +646,7 @@ static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix) {
 static void print_tree_prefix(obj_t *root, const char *prefix) {
 	pp_t s = _print_tree(root, 0, true, prefix);
 
-	printf("%s%s",
+	printf("%s%s;\n",
 	       s.prefix ? s.prefix : "",
 	       s.postfix ? s.postfix : "");
 	free_pp(s);
