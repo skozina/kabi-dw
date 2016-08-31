@@ -227,11 +227,11 @@ char *filenametotype(char *filename) {
 	if ( sscanf(base, "%m[a-z]--%m[^.].txt", &prefix, &name) != 2 )
 		fail("Unexpected file name: %s\n", filename);
 
-	if (IS_PREFIX(prefix, TYPEDEF_FILE)||
-	    IS_PREFIX(prefix, ENUM_FILE)) {
+	if (IS_PREFIX(prefix, TYPEDEF_FILE))
 		type = name;
-	} else if (IS_PREFIX(prefix, STRUCT_FILE)||
-		   IS_PREFIX(prefix, UNION_FILE)) {
+	else if (IS_PREFIX(prefix, STRUCT_FILE)||
+		 IS_PREFIX(prefix, UNION_FILE) ||
+		 IS_PREFIX(prefix, ENUM_FILE)) {
 		type = malloc(strlen(prefix)+strlen(name)+2);
 		sprintf(type, "%s %s", prefix, name);
 	} else
