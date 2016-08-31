@@ -220,7 +220,7 @@ static const char *typetostr(obj_t *o) {
  *
  * It allocates the string which must be freed by the caller.
  */
-char *filenametotype(char *filename) {
+static char *filenametotype(char *filename) {
 	char *base = basename(filename);
 	char *prefix= NULL, *name = NULL, *type = NULL;
 
