@@ -63,7 +63,8 @@ struct dwarf_type {
 static const char *builtin_types[] = {
 	"__va_list_tag",
 	"__builtin_strlen",
-	"__builtin_strcpy"
+	"__builtin_strcpy",
+	NULL
 };
 
 static const bool is_builtin(const char *name) {
