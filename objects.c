@@ -215,6 +215,12 @@ static const char *typetostr(obj_t *o) {
 /* Removes the two dashes at the end of the prefix */
 #define IS_PREFIX(s, prefix) !strncmp(s, prefix, strlen(prefix) - 2)
 
+#define asprintf_safe(args...)					\
+do {								\
+	if (asprintf(args) == -1 )				\
+		fail("asprintf failed: %s", strerror(errno));	\
+} while(0)
+
 /*
  * Get the type of a symbol from the name of the kabi file
  *
@@ -231,10 +237,9 @@ static char *filenametotype(char *filename) {
 		type = name;
 	else if (IS_PREFIX(prefix, STRUCT_FILE)||
 		 IS_PREFIX(prefix, UNION_FILE) ||
-		 IS_PREFIX(prefix, ENUM_FILE)) {
-		type = malloc(strlen(prefix)+strlen(name)+2);
-		sprintf(type, "%s %s", prefix, name);
-	} else
+		 IS_PREFIX(prefix, ENUM_FILE))
+		asprintf_safe(&type, "%s %s", prefix, name);
+	else
 		fail("Unexpected file prefix: %s\n", prefix);
 
 	free(prefix);
@@ -411,12 +416,6 @@ static char *postfix_str_free(char **s, char *p) {
 		return *s;
 	return _postfix_str(s, p, false, true);
 }
-
-#define asprintf_safe(args...)					\
-do {								\
-	if (asprintf(args) == -1 )				\
-		fail("asprintf failed: %s", strerror(errno));	\
-} while(0)
 
 static pp_t print_base(obj_t *o, int depth, const char *prefix) {
 	pp_t ret = {NULL, NULL};
