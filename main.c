@@ -167,8 +167,15 @@ static void generate(int argc, char **argv) {
 
 	generate_symbol_defs(conf);
 
-	if (symbol_file != NULL)
+	if (symbol_file != NULL) {
+		int i;
+
 		free(conf->symbols_found);
+		for (i = 0; i < conf->symbol_cnt; i++)
+			free(conf->symbols[i]);
+		free(conf->symbols);
+	}
+
 	free(conf);
 }
 
