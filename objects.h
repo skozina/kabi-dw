@@ -29,7 +29,7 @@
 #endif
 
 /* Return value when we detect a kABI change */
-#define EXIT_KABI_CHANGE 3
+#define EXIT_KABI_CHANGE 2
 
 /* Indentation offset for c-style and tree debug outputs */
 #define C_INDENT_OFFSET   8

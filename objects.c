@@ -836,33 +836,59 @@ typedef enum {
 	CMP_SAME = 0,
 	CMP_OFFSET,	/* Only the offset has changed */
 	CMP_DIFF,	/* Nodes are differents */
+	CMP_REFFILE,	/* A refered symbol has changed */
 } cmp_ret_t;
+
+static int compare_two_files(char *filename, char *newfile, bool follow);
 
 static int cmp_node_reffile(obj_t *o1, obj_t *o2) {
 	char *s1 = filenametotype(o1->base_type);
 	char *s2 = filenametotype(o2->base_type);
-	int ret;
+	int ret, len;
 
 	ret = cmp_str(s1, s2);
 	free(s1);
 	free(s2);
 
-	return ret;
+	if (ret)
+		return CMP_DIFF;
+
+	/*
+	 * Compare the symbol referenced by file, but be careful not
+	 * to follow imaginary declaration path.
+	 *
+	 * TODO: This is quite wasteful. We reopen files and parse
+	 * them again many times.
+	 */
+	len = strlen(DECLARATION_PATH);
+	if (strncmp(o1->base_type, DECLARATION_PATH, len) &&
+	    strncmp(o1->base_type, DECLARATION_PATH, len) &&
+	    compare_two_files(o1->base_type, o2->base_type, true))
+		return CMP_REFFILE;
+
+	return CMP_SAME;
 }
 static int cmp_nodes(obj_t *o1, obj_t *o2) {
 	if ((o1->type != o2->type) ||
 	    cmp_str(o1->name, o2->name) ||
-	    (o1->type == __type_reffile ?
-	     cmp_node_reffile(o1, o2) :
-	     cmp_str(o1->base_type, o2->base_type)) ||
 	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
 	    (has_constant(o1) && (o1->constant != o2->constant)) ||
 	    (has_index(o1) && (o1->index != o2->index)))
 		return CMP_DIFF;
 
-	if ((o1->offset != o2->offset) ||
-	    (o1->first_bit != o2->first_bit) ||
-	    (o1->last_bit != o2->last_bit))
+	if (o1->type == __type_reffile) {
+		int ret;
+
+		ret = cmp_node_reffile(o1, o2);
+		if (ret)
+			return ret;
+	} else if (cmp_str(o1->base_type, o2->base_type))
+		return CMP_DIFF;
+
+	if (has_offset(o1) &&
+	    ((o1->offset != o2->offset) ||
+	     (o1->first_bit != o2->first_bit) ||
+	     (o1->last_bit != o2->last_bit)))
 		return CMP_OFFSET;
 
 	return CMP_SAME;
@@ -902,19 +928,22 @@ int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 
 	tmp = cmp_nodes(o1, o2);
 	if (tmp) {
-		if (worthy_of_print(o1)) {
+		if (tmp == CMP_REFFILE)
+			fprintf(stream, "symbol %s has changed\n",
+				o1->base_type);
+		else if (worthy_of_print(o1)) {
 			if ((tmp == CMP_OFFSET && !display_options.no_offset) ||
-			    (tmp != CMP_OFFSET && !display_options.no_replaced))
-			{
-					const char *s =	(tmp == CMP_OFFSET) ?
-						"Shifted" : "Replaced";
-
-					print_two_nodes(s, o1, o2, stream);
+			    (tmp == CMP_DIFF && !display_options.no_replaced)) {
+				const char *s =	(tmp == CMP_OFFSET) ?
+					"Shifted" : "Replaced";
+				print_two_nodes(s, o1, o2, stream);
 			}
 			return COMP_DIFF;
 		} else {
-			if (tmp == CMP_OFFSET)
+			if (tmp == CMP_OFFSET){
+				print_two_nodes("DEBUG", o1, o2, stdout);
 				fail("CMP_OFFSET unexpected here\n");
+			}
 			return COMP_NEED_PRINT;
 		}
 	}
@@ -1169,20 +1198,65 @@ int show(int argc, char **argv) {
 	return ret;
 }
 
-struct {
+typedef struct {
 	bool debug;
 	bool hide_kabi;
-	char *path1;
-	char *path2;
-} compare_config = {false, false, NULL, NULL};
+	int follow;
+	char *old_dir;
+	char *new_dir;
+	char *filename;
+	char **flist;
+	int flistsz;
+	int flistcnt;
+	int ret;
+} compare_config_t;
+
+compare_config_t compare_config = {false, false, 0,
+				   NULL, NULL, NULL, NULL,
+				   0, 0, 0};
+
+static bool push_file(char *filename) {
+	int i, sz = compare_config.flistsz;
+	int cnt = compare_config.flistcnt;
+	char **flist = compare_config.flist;
+
+	for (i = 0; i < cnt; i++)
+		if (!strcmp(flist[i], filename))
+			return false;
+
+	if (!sz) {
+		compare_config.flistsz = sz = 16;
+		compare_config.flist = flist = malloc(16 * sizeof(char *));
+	}
+	if (cnt >= sz) {
+		sz *= 2;
+		compare_config.flistsz = sz;
+		compare_config.flist = flist =
+			realloc(flist, sz * sizeof(char *));
+	}
+
+	flist[cnt] = strdup(filename);
+	compare_config.flistcnt++;
+
+	return true;
+}
+
+static void free_files() {
+	int i;
+
+	for (i = 0; i < compare_config.flistcnt; i++)
+		free(compare_config.flist[i]);
+	free(compare_config.flist);
+	compare_config.flistcnt = compare_config.flistsz = 0;
+}
 
 void compare_usage() {
 	printf("Usage:\n"
-	       "\tcompare [options] kabi_file kabi_file\n"
-	       "\tcompare [options] kabi_dir kabi_dir\n"
+	       "\tcompare [options] kabi_dir kabi_dir [kabi_file]\n"
 	       "\nGeneral options:\n"
 	       "    -k, --hide-kabi:\thide some rh specific kabi trickery\n"
 	       "    -d, --debug:\tprint the raw tree\n"
+	       "    --follow:\tdon't follow referenced symbols\n"
 	       "    --no-offset:\tdon't display the offset of struct fields\n"
 	       "    --no-replaced:\thide replaced symbols"
 	       " (symbols that changed, but hasn't moved)\n"
@@ -1199,15 +1273,53 @@ void compare_usage() {
 	exit(1);
 }
 
-static int compare_two_files(char *path1, char *path2, char *filename) {
+/*
+ * Parse two files and compare the resulting tree.
+ *
+ * filename: file to compare (relative to compare_config.*_dir)
+ * newfile:  if not NULL, the file to use in compare_config.new_dir,
+ *           otherwise, filename is used for both.
+ * follow:   Are we here because we followed a reference file? If so,
+ *           don't print anything and exit immediately if follow
+ *           option isn't set.
+ */
+static int compare_two_files(char *filename, char *newfile, bool follow) {
 	obj_t *root1, *root2;
+	char *old_dir = compare_config.old_dir;
+	char *new_dir = compare_config.new_dir;
+	char *path1, *path2, *s = NULL;
 	FILE *file1, *file2, *stream;
-	char *s;
+	struct stat fstat;
 	size_t sz;
 	int ret = 0, tmp;
 
+	if (follow && !compare_config.follow)
+		return 0;
+
+	/* Avoid infinite loop */
+	if (!push_file(filename))
+		return 0;
+
+	asprintf_safe(&path1, "%s/%s", old_dir, filename);
+	asprintf_safe(&path2, "%s/%s", new_dir, newfile ? newfile : filename);
+
+	if (stat(path2, &fstat) != 0) {
+		if (errno == ENOENT) {
+			printf("Symbol removed or moved: %s\n", filename);
+			free(path1);
+			free(path2);
+
+			return EXIT_KABI_CHANGE;
+		}
+		else
+			fail("Failed to stat() file%s: %s\n",
+			     path2, strerror(errno));
+	}
+
 	file1 = fopen_safe(path1);
 	file2 = fopen_safe(path2);
+	free(path1);
+	free(path2);
 
 	root1 = parse(file1);
 	root2 = parse(file2);
@@ -1217,20 +1329,26 @@ static int compare_two_files(char *path1, char *path2, char *filename) {
 		hide_kabi(root2);
 	}
 
-	if (compare_config.debug) {
+	if (compare_config.debug && !follow) {
 		debug_tree(root1);
 		debug_tree(root2);
 	}
 
-	stream = open_memstream(&s, &sz);
+	if (follow)
+		stream = fopen("/dev/null", "w");
+	else
+		stream = open_memstream(&s, &sz);
 	tmp = compare_tree(root1, root2, stream);
+
 	if (tmp == COMP_NEED_PRINT)
 		fail("compare_tree still need to print\n");
 	if (tmp == COMP_DIFF) {
-		if (filename)
+		if (!follow) {
 			printf("Changes detected in: %s\n", filename);
-		fflush(stream);
-		fputs(s, stdout);
+			fflush(stream);
+			fputs(s, stdout);
+			putchar('\n');
+		}
 		ret = EXIT_KABI_CHANGE;
 	}
 
@@ -1245,39 +1363,19 @@ static int compare_two_files(char *path1, char *path2, char *filename) {
 
 }
 
-typedef struct cf_cb {
-	char *kabi_dir_old;
-	char *kabi_dir_new;
-} cf_cb_t;
-
 static bool compare_files_cb(char *kabi_path, void *arg) {
-	cf_cb_t *conf = (cf_cb_t *)arg;
-	struct stat fstat;
-	char *temp_kabi_path, *filename;
+	compare_config_t *conf = (compare_config_t *)arg;
+	char *filename;
 
 	/* If conf->*_dir contains slashes, skip them */
-	filename = kabi_path + strlen(conf->kabi_dir_old);
+	filename = kabi_path + strlen(conf->old_dir);
 	while (*filename == '/')
 		filename++;
 
-	if (asprintf(&temp_kabi_path, "%s/%s",
-		     conf->kabi_dir_new, filename) == -1)
-		fail("asprintf() failed\n");
+	free_files();
+	if (compare_two_files(filename, NULL, false))
+		conf->ret = EXIT_KABI_CHANGE;
 
-	if (stat(temp_kabi_path, &fstat) != 0) {
-		if (errno == ENOENT)
-			printf("Symbol removed or moved: %s\n", filename);
-		else
-			fail("Failed to stat() file%s: %s\n", temp_kabi_path,
-			    strerror(errno));
-
-		goto out;
-	}
-
-	compare_two_files(kabi_path, temp_kabi_path, filename);
-
-out:
-	free(temp_kabi_path);
 	return true;
 }
 
@@ -1285,14 +1383,14 @@ out:
  * Performs the compare command
  */
 int compare(int argc, char **argv) {
-	int opt, opt_index, ret = 0;
-	char *path1, *path2;
+	int opt, opt_index;
+	char *old_dir, *new_dir;
 	struct stat sb1, sb2;
-	cf_cb_t conf = {NULL, NULL, NULL};
 	struct option loptions[] = {
 		{"debug", no_argument, 0, 'd'},
 		{"hide-kabi", no_argument, 0, 'k'},
 		{"help", no_argument, 0, '?'},
+		{"follow", no_argument, &compare_config.follow, 1},
 		DISPLAY_NO_OPT(offset),
 		DISPLAY_NO_OPT(replaced),
 		DISPLAY_NO_OPT(shifted),
@@ -1321,33 +1419,49 @@ int compare(int argc, char **argv) {
 		}
 	}
 
-	if (optind + 2 != argc) {
-		printf("%i %i\n", optind, argc);
+	if (argc < optind + 2) {
+		printf("Wrong number of argument\n");
 		compare_usage();
 	}
 
-	path1 = compare_config.path1 = argv[optind++];
-	path2 = compare_config.path2 = argv[optind];
+	old_dir = compare_config.old_dir = argv[optind++];
+	new_dir = compare_config.new_dir = argv[optind++];
 
-	if ((stat(path1, &sb1) == -1) || (stat(path2, &sb2) == -1))
+	if ((stat(old_dir, &sb1) == -1) || (stat(new_dir, &sb2) == -1))
 		fail("stat failed: %s\n", strerror(errno));
 
-	if (S_ISREG(sb1.st_mode)) {
-		if (S_ISREG(sb2.st_mode))
-			return compare_two_files(path1, path2, NULL);
-		else
-			fail("Second file is not a regular file\n");
+	if (!S_ISDIR(sb1.st_mode) || !S_ISDIR(sb2.st_mode)) {
+		printf("Compare takes two directories as arguments\n");
+		compare_usage();
 	}
 
-	if (S_ISDIR(sb1.st_mode)) {
-		if (!S_ISDIR(sb2.st_mode))
-			fail("Second file is not a directory\n");
-	} else
-		fail("Only support directories and regular files\n");
+	if (optind == argc) {
+		walk_dir(old_dir, false, compare_files_cb, &compare_config);
 
-	conf.kabi_dir_old = path1;
-	conf.kabi_dir_new = path2;
-	walk_dir(path1, false, compare_files_cb, &conf);
+		return compare_config.ret;
+	}
 
-	return ret;
+	while (optind < argc) {
+		char *path, *filename;
+
+		filename = compare_config.filename =  argv[optind++];
+		asprintf_safe(&path, "%s/%s", old_dir, filename);
+
+		if (stat(path, &sb1) == -1) {
+			if (errno == ENOENT)
+				fail("file does not exist: %s\n", path);
+			fail("stat failed: %s\n", strerror(errno));
+		}
+
+		if (!S_ISREG(sb1.st_mode)) {
+			printf("Compare third argument must be a regular file");
+			compare_usage();
+		}
+		free(path);
+
+		if (compare_two_files(filename, NULL, false))
+			compare_config.ret = EXIT_KABI_CHANGE;
+	}
+
+	return compare_config.ret;
 }
