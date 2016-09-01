@@ -226,7 +226,7 @@ enum {
 	 */
 	COMP_NEED_PRINT,
 };
-int compare_tree(obj_t *o1, obj_t *o2);
+int compare_tree(obj_t *o1, obj_t *o2, FILE *stream);
 int hide_kabi(obj_t *root);
 
 int show(int argc, char **argv);

@@ -642,10 +642,10 @@ static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix) {
 	return ret;
 }
 
-static void print_tree_prefix(obj_t *root, const char *prefix) {
+static void print_tree_prefix(obj_t *root, const char *prefix, FILE *stream) {
 	pp_t s = _print_tree(root, 0, true, prefix);
 
-	printf("%s%s;\n",
+	fprintf(stream, "%s%s;\n",
 	       s.prefix ? s.prefix : "",
 	       s.postfix ? s.postfix : "");
 	free_pp(s);
@@ -654,7 +654,7 @@ static void print_tree_prefix(obj_t *root, const char *prefix) {
 struct dopt display_options;
 
 void print_tree(obj_t *root) {
-	print_tree_prefix(root, NULL);
+	print_tree_prefix(root, NULL, stdout);
 }
 
 static int fill_parent_cb(obj_t *o, void *args) {
@@ -802,26 +802,26 @@ int debug_tree(obj_t *root) {
 	return walk_tree3(root, debug_node, NULL, dec_depth, &depth, false);
 }
 
-static void print_two_nodes(const char *s, obj_t *o1, obj_t *o2) {
-	printf("%s:\n", s);
-	print_tree_prefix(o1, DEL_PREFIX);
-	print_tree_prefix(o2, ADD_PREFIX);
+static void print_two_nodes(const char *s, obj_t *o1, obj_t *o2, FILE *stream) {
+	fprintf(stream, "%s:\n", s);
+	print_tree_prefix(o1, DEL_PREFIX, stream);
+	print_tree_prefix(o2, ADD_PREFIX, stream);
 }
 
 static void _print_node_list(const char *s, const char *prefix,
-			    obj_list_t *list, obj_list_t *last) {
+			     obj_list_t *list, obj_list_t *last, FILE *stream) {
 	obj_list_t *l = list;
 
-	printf("%s:\n", s);
+	fprintf(stream, "%s:\n", s);
 	while (l && l != last) {
-		print_tree_prefix(l->member, prefix);
+		print_tree_prefix(l->member, prefix, stream);
 		l = l->next;
 	}
 }
 
 static void print_node_list(const char *s, const char *prefix,
-			   obj_list_t *list) {
-	_print_node_list(s, prefix, list, NULL);
+			    obj_list_t *list, FILE *stream) {
+	_print_node_list(s, prefix, list, NULL, stream);
 }
 
 static int cmp_str(char *s1, char *s2) {
@@ -896,9 +896,9 @@ bool worthy_of_print(obj_t *o) {
 		(o->type == __type_var) ;
 }
 
-int _compare_tree(obj_t *o1, obj_t *o2) {
+int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 	obj_list_t *list1 = NULL, *list2 = NULL, *next;
-	int ret, tmp;
+	int ret = COMP_SAME, tmp;
 
 	tmp = cmp_nodes(o1, o2);
 	if (tmp) {
@@ -909,7 +909,7 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 					const char *s =	(tmp == CMP_OFFSET) ?
 						"Shifted" : "Replaced";
 
-					print_two_nodes(s, o1, o2);
+					print_two_nodes(s, o1, o2, stream);
 			}
 			return COMP_DIFF;
 		} else {
@@ -930,26 +930,26 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 				/* Insertion */
 				if (!display_options.no_inserted)
 					_print_node_list("Inserted", ADD_PREFIX,
-							 list2, next);
+							 list2, next, stream);
 				list2 = next;
 				ret = COMP_DIFF;
 			} else if ((next = find_object(list2->member, list1))) {
 				/* Removal */
 				if (!display_options.no_deleted)
 					_print_node_list("Deleted", DEL_PREFIX,
-							 list1, next);
+							 list1, next, stream);
 				list1 = next;
 				ret = COMP_DIFF;
 			}
 		}
 
-		tmp = _compare_tree(list1->member, list2->member);
+		tmp = _compare_tree(list1->member, list2->member, stream);
 		if (tmp == COMP_NEED_PRINT) {
 			if (!worthy_of_print(list1->member))
 				fail("Unworthy objects are unexpected here\n");
 			if (!display_options.no_replaced)
-				print_two_nodes("Replaced",
-						list1->member, list2->member);
+				print_two_nodes("Replaced", list1->member,
+						list2->member, stream);
 		}
 		if (tmp != COMP_SAME)
 			ret = COMP_DIFF;
@@ -958,22 +958,24 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 		list2 = list2->next;
 		if (!list1 && list2) {
 			if (!display_options.no_added)
-				print_node_list("Added", ADD_PREFIX, list2);
+				print_node_list("Added", ADD_PREFIX,
+						list2, stream);
 			return COMP_DIFF;
 		}
 		if (list1 && !list2) {
 			if (!display_options.no_removed)
-				print_node_list("Removed", DEL_PREFIX, list1);
+				print_node_list("Removed", DEL_PREFIX,
+						list1, stream);
 			return COMP_DIFF;
 		}
 	}
 
 	if (o1->ptr && o2->ptr) {
-		tmp = _compare_tree(o1->ptr, o2->ptr);
+		tmp = _compare_tree(o1->ptr, o2->ptr, stream);
 		if (tmp == COMP_NEED_PRINT) {
 			if (worthy_of_print(o1->ptr) &&
 			    !display_options.no_replaced)
-				print_two_nodes("Replaced", o1, o2);
+				print_two_nodes("Replaced", o1, o2, stream);
 		}
 		if (tmp != COMP_SAME)
 			ret = tmp;
@@ -985,11 +987,11 @@ int _compare_tree(obj_t *o1, obj_t *o2) {
 /*
  * Compare two symbols and show the difference in a c-like format
  */
-int compare_tree(obj_t *o1, obj_t *o2) {
-	int ret = _compare_tree(o1, o2);
+int compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
+	int ret = _compare_tree(o1, o2, stream);
 
 	if (ret == COMP_NEED_PRINT && !display_options.no_replaced)
-		print_two_nodes("Replaced", o1, o2);
+		print_two_nodes("Replaced", o1, o2, stream);
 
 	if (ret != COMP_SAME)
 		return COMP_DIFF;
@@ -1197,9 +1199,11 @@ void compare_usage() {
 	exit(1);
 }
 
-static int compare_two_files(char *path1, char *path2) {
+static int compare_two_files(char *path1, char *path2, char *filename) {
 	obj_t *root1, *root2;
-	FILE *file1, *file2;
+	FILE *file1, *file2, *stream;
+	char *s;
+	size_t sz;
 	int ret = 0, tmp;
 
 	file1 = fopen_safe(path1);
@@ -1218,17 +1222,24 @@ static int compare_two_files(char *path1, char *path2) {
 		debug_tree(root2);
 	}
 
-	printf("Comparing %s\n", basename(path1));
-	tmp = compare_tree(root1, root2);
+	stream = open_memstream(&s, &sz);
+	tmp = compare_tree(root1, root2, stream);
 	if (tmp == COMP_NEED_PRINT)
 		fail("compare_tree still need to print\n");
-	if (tmp == COMP_DIFF)
+	if (tmp == COMP_DIFF) {
+		if (filename)
+			printf("Changes detected in: %s\n", filename);
+		fflush(stream);
+		fputs(s, stdout);
 		ret = EXIT_KABI_CHANGE;
+	}
 
 	free_obj(root1);
 	free_obj(root2);
 	fclose(file1);
 	fclose(file2);
+	fclose(stream);
+	free(s);
 
 	return ret;
 
@@ -1237,27 +1248,25 @@ static int compare_two_files(char *path1, char *path2) {
 typedef struct cf_cb {
 	char *kabi_dir_old;
 	char *kabi_dir_new;
-	char *file_name;
 } cf_cb_t;
 
 static bool compare_files_cb(char *kabi_path, void *arg) {
 	cf_cb_t *conf = (cf_cb_t *)arg;
 	struct stat fstat;
-	char *temp_kabi_path;
+	char *temp_kabi_path, *filename;
 
 	/* If conf->*_dir contains slashes, skip them */
-	conf->file_name = kabi_path + strlen(conf->kabi_dir_old);
-	while (*conf->file_name == '/')
-		conf->file_name++;
+	filename = kabi_path + strlen(conf->kabi_dir_old);
+	while (*filename == '/')
+		filename++;
 
-	if (asprintf(&temp_kabi_path, "%s/%s", conf->kabi_dir_new,
-	    conf->file_name) == -1)
+	if (asprintf(&temp_kabi_path, "%s/%s",
+		     conf->kabi_dir_new, filename) == -1)
 		fail("asprintf() failed\n");
 
 	if (stat(temp_kabi_path, &fstat) != 0) {
 		if (errno == ENOENT)
-			printf("Symbol removed or moved: %s\n",
-			       conf->file_name);
+			printf("Symbol removed or moved: %s\n", filename);
 		else
 			fail("Failed to stat() file%s: %s\n", temp_kabi_path,
 			    strerror(errno));
@@ -1265,7 +1274,7 @@ static bool compare_files_cb(char *kabi_path, void *arg) {
 		goto out;
 	}
 
-	compare_two_files(kabi_path, temp_kabi_path);
+	compare_two_files(kabi_path, temp_kabi_path, filename);
 
 out:
 	free(temp_kabi_path);
@@ -1325,7 +1334,7 @@ int compare(int argc, char **argv) {
 
 	if (S_ISREG(sb1.st_mode)) {
 		if (S_ISREG(sb2.st_mode))
-			return compare_two_files(path1, path2);
+			return compare_two_files(path1, path2, NULL);
 		else
 			fail("Second file is not a regular file\n");
 	}
