@@ -1103,6 +1103,7 @@ static int hide_kabi_cb(obj_t *o, void *args) {
 
 	(*parent)->name = new->name;
 	(*parent)->ptr = new->ptr;
+	(*parent)->ptr->parent = (*parent);
 	_free_obj(o, new);
 	free(new);
 
