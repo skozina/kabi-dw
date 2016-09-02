@@ -802,12 +802,6 @@ int debug_tree(obj_t *root) {
 	return walk_tree3(root, debug_node, NULL, dec_depth, &depth, false);
 }
 
-static void print_two_nodes(const char *s, obj_t *o1, obj_t *o2, FILE *stream) {
-	fprintf(stream, "%s:\n", s);
-	print_tree_prefix(o1, DEL_PREFIX, stream);
-	print_tree_prefix(o2, ADD_PREFIX, stream);
-}
-
 static void _print_node_list(const char *s, const char *prefix,
 			     obj_list_t *list, obj_list_t *last, FILE *stream) {
 	obj_list_t *l = list;
@@ -922,6 +916,28 @@ bool worthy_of_print(obj_t *o) {
 		(o->type == __type_var) ;
 }
 
+static void print_two_nodes(const char *s, obj_t *o1, obj_t *o2, FILE *stream) {
+
+	while (!worthy_of_print(o1)) {
+		o1 = o1->parent;
+		o2 = o2->parent;
+		if ((o1 == NULL) || (o2 == NULL))
+			fail("No ancestor worthy of print\n");
+	}
+	fprintf(stream, "%s:\n", s);
+	print_tree_prefix(o1, DEL_PREFIX, stream);
+	print_tree_prefix(o2, ADD_PREFIX, stream);
+}
+
+obj_t *worthy_parent(obj_t *o) {
+	do {
+		if (worthy_of_print(o))
+			return o;
+	} while((o = o->parent));
+
+	fail("No ancestor worthy of print\n");
+}
+
 int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 	obj_list_t *list1 = NULL, *list2 = NULL, *next;
 	int ret = COMP_SAME, tmp;
@@ -931,21 +947,13 @@ int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 		if (tmp == CMP_REFFILE)
 			fprintf(stream, "symbol %s has changed\n",
 				o1->base_type);
-		else if (worthy_of_print(o1)) {
-			if ((tmp == CMP_OFFSET && !display_options.no_offset) ||
-			    (tmp == CMP_DIFF && !display_options.no_replaced)) {
-				const char *s =	(tmp == CMP_OFFSET) ?
-					"Shifted" : "Replaced";
-				print_two_nodes(s, o1, o2, stream);
-			}
-			return COMP_DIFF;
-		} else {
-			if (tmp == CMP_OFFSET){
-				print_two_nodes("DEBUG", o1, o2, stdout);
-				fail("CMP_OFFSET unexpected here\n");
-			}
-			return COMP_NEED_PRINT;
+		else if ((tmp == CMP_OFFSET && !display_options.no_offset) ||
+			 (tmp == CMP_DIFF && !display_options.no_replaced)) {
+			const char *s =	(tmp == CMP_OFFSET) ?
+				"Shifted" : "Replaced";
+			print_two_nodes(s, o1, o2, stream);
 		}
+		return COMP_DIFF;
 	}
 
 	if (o1->member_list)
@@ -972,15 +980,8 @@ int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 			}
 		}
 
-		tmp = _compare_tree(list1->member, list2->member, stream);
-		if (tmp == COMP_NEED_PRINT) {
-			if (!worthy_of_print(list1->member))
-				fail("Unworthy objects are unexpected here\n");
-			if (!display_options.no_replaced)
-				print_two_nodes("Replaced", list1->member,
-						list2->member, stream);
-		}
-		if (tmp != COMP_SAME)
+		if (_compare_tree(list1->member, list2->member, stream) !=
+		    COMP_SAME)
 			ret = COMP_DIFF;
 
 		list1 = list1->next;
@@ -999,16 +1000,9 @@ int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 		}
 	}
 
-	if (o1->ptr && o2->ptr) {
-		tmp = _compare_tree(o1->ptr, o2->ptr, stream);
-		if (tmp == COMP_NEED_PRINT) {
-			if (worthy_of_print(o1->ptr) &&
-			    !display_options.no_replaced)
-				print_two_nodes("Replaced", o1, o2, stream);
-		}
-		if (tmp != COMP_SAME)
-			ret = tmp;
-	}
+	if (o1->ptr && o2->ptr)
+		if (_compare_tree(o1->ptr, o2->ptr, stream) != COMP_SAME)
+			ret = COMP_DIFF;
 
 	return ret;
 }
@@ -1017,15 +1011,7 @@ int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
  * Compare two symbols and show the difference in a c-like format
  */
 int compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
-	int ret = _compare_tree(o1, o2, stream);
-
-	if (ret == COMP_NEED_PRINT && !display_options.no_replaced)
-		print_two_nodes("Replaced", o1, o2, stream);
-
-	if (ret != COMP_SAME)
-		return COMP_DIFF;
-
-	return COMP_SAME;
+	return _compare_tree(o1, o2, stream);
 }
 
 /*
@@ -1347,8 +1333,6 @@ static int compare_two_files(char *filename, char *newfile, bool follow) {
 		stream = open_memstream(&s, &sz);
 	tmp = compare_tree(root1, root2, stream);
 
-	if (tmp == COMP_NEED_PRINT)
-		fail("compare_tree still need to print\n");
 	if (tmp == COMP_DIFF) {
 		if (!follow) {
 			printf("Changes detected in: %s\n", filename);

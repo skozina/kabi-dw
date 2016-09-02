@@ -220,12 +220,6 @@ int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 enum {
 	COMP_SAME = 0,	/* Subtree are equal */
 	COMP_DIFF,	/* Subtree differs */
-	/*
-	 * Subtree differs and we need to display the change at a higher level
-	 * for the output to have enough context to be understandable (see 
-	 * worthy_of_print())
-	 */
-	COMP_NEED_PRINT,
 };
 int compare_tree(obj_t *o1, obj_t *o2, FILE *stream);
 int hide_kabi(obj_t *root);
