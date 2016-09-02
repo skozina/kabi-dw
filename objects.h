@@ -176,6 +176,7 @@ struct dopt {
 	int no_deleted;  /* symbols removed in the middle (poke a hole) */
 	int no_added;    /* symbols added at the end of a struct/union... */
 	int no_removed;  /* symbols removed at the end of a struct/union... */
+	int no_moved_files; /* file that has been moved (or removed) */
 };
 extern struct dopt display_options;
 

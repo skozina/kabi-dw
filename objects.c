@@ -1269,7 +1269,11 @@ void compare_usage() {
 	       "    --no-added:\t\t"
 	       "hide symbols added at the end of a struct, union...\n"
 	       "    --no-removed:\t"
-	       "hide symbols removed from the end of a struct, union...\n");
+	       "hide symbols removed from the end of a struct, union...\n"
+	       "    --no-moved-files:\thide changes caused by symbols "
+	       "definition moving to another\n\t\t\t"
+		"Warning: it also hides symbols that are removed entirely\n");
+
 	exit(1);
 }
 
@@ -1305,7 +1309,9 @@ static int compare_two_files(char *filename, char *newfile, bool follow) {
 
 	if (stat(path2, &fstat) != 0) {
 		if (errno == ENOENT) {
-			printf("Symbol removed or moved: %s\n", filename);
+			if (!display_options.no_moved_files)
+				printf("Symbol removed or moved: %s\n",
+				       filename);
 			free(path1);
 			free(path2);
 
@@ -1398,6 +1404,8 @@ int compare(int argc, char **argv) {
 		DISPLAY_NO_OPT(deleted),
 		DISPLAY_NO_OPT(added),
 		DISPLAY_NO_OPT(removed),
+		{"no-moved-files", no_argument,
+		 &display_options.no_moved_files, 1},
 		{0, 0, 0, 0}
 	};
 
