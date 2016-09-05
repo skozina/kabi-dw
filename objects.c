@@ -1121,7 +1121,7 @@ struct {
 
 void show_usage() {
 	printf("Usage:\n"
-	       "\tcompare [options] kabi_file [kabi_file]\n"
+	       "\tcompare [options] kabi_file...\n"
 	       "\nOptions:\n"
 	       "    -h, --help:\tshow this message\n"
 	       "    -k, --hide-kabi:\thide some rh specific kabi trickery\n"
@@ -1166,23 +1166,27 @@ int show(int argc, char **argv) {
 		}
 	}
 
-	if (optind + 1 != argc)
+	if (optind >= argc)
 		show_usage();
 
-	show_config.file = fopen_safe(argv[optind]);
+	while (optind < argc) {
+		show_config.file = fopen_safe(argv[optind++]);
 
-	root = parse(show_config.file);
+		root = parse(show_config.file);
 
-	if (show_config.hide_kabi)
-		hide_kabi(root);
+		if (show_config.hide_kabi)
+			hide_kabi(root);
 
-	if (show_config.debug)
-		debug_tree(root);
+		if (show_config.debug)
+			debug_tree(root);
 
-	print_tree(root);
+		print_tree(root);
+		if (optind < argc)
+			putchar('\n');
 
-	free_obj(root);
-	fclose(show_config.file);
+		free_obj(root);
+		fclose(show_config.file);
+	}
 
 	return ret;
 }
