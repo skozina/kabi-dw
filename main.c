@@ -36,6 +36,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
+#include <getopt.h>
 
 #include "main.h"
 #include "utils.h"
@@ -115,33 +116,35 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 	*symbol_file = NULL;
 	conf->verbose = false;
 	conf->kabi_dir = DEFAULT_OUTPUT_DIR;
+	int opt, opt_index;
+	struct option loptions[] = {
+		{"verbose", no_argument, 0, 'v'},
+		{"output", required_argument, 0, 'o'},
+		{"symbols", required_argument, 0, 's'},
+		{0, 0, 0, 0}
+	};
 
-	while ((argc > 0) && (*argv[0] == '-')) {
-		if (strcmp(*argv, "-v") == 0) {
-			argc--; argv++;
+	while ((opt = getopt_long(argc, argv, "vo:s:",
+				  loptions, &opt_index)) != -1) {
+		switch (opt) {
+		case 'v':
 			conf->verbose = true;
-		} else if (strcmp(*argv, "-o") == 0) {
-			argc--; argv++;
-			if (argc < 1)
-				usage();
-			conf->kabi_dir = argv[0];
-			argc--; argv++;
-		} else if (strcmp(*argv, "-s") == 0) {
-			argc--; argv++;
-			if (argc < 1)
-				usage();
-			*symbol_file = argv[0];
-			argc--; argv++;
-		} else {
+			break;
+		case 'o':
+			conf->kabi_dir = optarg;
+			break;
+		case 's':
+			*symbol_file = optarg;
+			break;
+		default:
 			usage();
 		}
 	}
 
-	if (argc != 1)
+	if (optind != argc - 1)
 		usage();
 
-	conf->kernel_dir = argv[0];
-	argc--; argv++;
+	conf->kernel_dir = argv[optind];
 
 	rec_mkdir(conf->kabi_dir);
 }
@@ -227,7 +230,6 @@ int main(int argc, char **argv) {
 	argv++; argc--;
 
 	if (strcmp(argv[0], "generate") == 0) {
-		argv++; argc--;
 		generate(argc, argv);
 	} else if (strcmp(argv[0], "check") == 0) {
 		argv++; argc--;
