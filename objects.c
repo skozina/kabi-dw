@@ -1122,7 +1122,8 @@ struct {
 void show_usage() {
 	printf("Usage:\n"
 	       "\tcompare [options] kabi_file [kabi_file]\n"
-	       "\nGeneral options:\n"
+	       "\nOptions:\n"
+	       "    -h, --help:\tshow this message\n"
 	       "    -k, --hide-kabi:\thide some rh specific kabi trickery\n"
 	       "    -d, --debug:\tprint the raw tree\n"
 	       "    --no-offset:\tdon't display the offset of struct fields\n");
@@ -1141,14 +1142,14 @@ int show(int argc, char **argv) {
 	struct option loptions[] = {
 		{"debug", no_argument, 0, 'd'},
 		{"hide-kabi", no_argument, 0, 'k'},
-		{"help", no_argument, 0, '?'},
+		{"help", no_argument, 0, 'h'},
 		DISPLAY_NO_OPT(offset),
 		{0, 0, 0, 0}
 	};
 
 	memset(&display_options, 0, sizeof(display_options));
 
-	while ((opt = getopt_long(argc, argv, "dk",
+	while ((opt = getopt_long(argc, argv, "dkh",
 				  loptions, &opt_index)) != -1) {
 		switch (opt) {
 		case 0:
@@ -1159,6 +1160,7 @@ int show(int argc, char **argv) {
 		case 'k':
 			show_config.hide_kabi = true;
 			break;
+		case 'h':
 		default:
 			show_usage();
 		}
@@ -1240,7 +1242,8 @@ static void free_files() {
 void compare_usage() {
 	printf("Usage:\n"
 	       "\tcompare [options] kabi_dir kabi_dir [kabi_file]\n"
-	       "\nGeneral options:\n"
+	       "\nOptions:\n"
+	       "    -h, --help:\tshow this message\n"
 	       "    -k, --hide-kabi:\thide some rh specific kabi trickery\n"
 	       "    -d, --debug:\tprint the raw tree\n"
 	       "    --follow:\tdon't follow referenced symbols\n"
@@ -1380,7 +1383,7 @@ int compare(int argc, char **argv) {
 	struct option loptions[] = {
 		{"debug", no_argument, 0, 'd'},
 		{"hide-kabi", no_argument, 0, 'k'},
-		{"help", no_argument, 0, '?'},
+		{"help", no_argument, 0, 'h'},
 		{"follow", no_argument, &compare_config.follow, 1},
 		DISPLAY_NO_OPT(offset),
 		DISPLAY_NO_OPT(replaced),
@@ -1396,7 +1399,7 @@ int compare(int argc, char **argv) {
 
 	memset(&display_options, 0, sizeof(display_options));
 
-	while ((opt = getopt_long(argc, argv, "dk",
+	while ((opt = getopt_long(argc, argv, "dkh",
 				  loptions, &opt_index)) != -1) {
 		switch (opt) {
 		case 0:
@@ -1407,6 +1410,7 @@ int compare(int argc, char **argv) {
 		case 'k':
 			compare_config.hide_kabi = true;
 			break;
+		case 'h':
 		default:
 			compare_usage();
 		}
