@@ -48,7 +48,8 @@ static char *progname;
 
 void usage(void) {
 	printf("Usage:\n"
-	    "\t %s generate [-v] [-s symbol_file] [-o kabi_dir] kernel_dir\n"
+	    "\t %s generate [-v] [-s symbol_file] [-o kabi_dir]"
+	    " [-r path] kernel_dir\n"
 	    "\t %s check [-v] kabi_dir_old kabi_dir_new\n"
 	    "\t %s show [options] kabi_file\n"
 	    "\t %s compare [options] kabi_file kabi_file\n",
@@ -121,10 +122,11 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 		{"verbose", no_argument, 0, 'v'},
 		{"output", required_argument, 0, 'o'},
 		{"symbols", required_argument, 0, 's'},
+		{"replace-path", required_argument, 0, 'r'},
 		{0, 0, 0, 0}
 	};
 
-	while ((opt = getopt_long(argc, argv, "vo:s:",
+	while ((opt = getopt_long(argc, argv, "vo:s:r:",
 				  loptions, &opt_index)) != -1) {
 		switch (opt) {
 		case 'v':
@@ -135,6 +137,9 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 			break;
 		case 's':
 			*symbol_file = optarg;
+			break;
+		case 'r':
+			get_file_replace_path = optarg;
 			break;
 		default:
 			usage();

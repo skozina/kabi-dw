@@ -100,6 +100,8 @@ static bool is_declaration(Dwarf_Die *die) {
 	return (true);
 }
 
+char *get_file_replace_path = NULL;
+
 static const char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 	Dwarf_Files *files;
 	size_t nfiles;
@@ -125,6 +127,16 @@ static const char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 		fail("cannot get files for CU %s\n", dwarf_diename(cu_die));
 
 	filename = dwarf_filesrc(files, file, NULL, NULL);
+
+	if (get_file_replace_path) {
+		int len = strlen(get_file_replace_path);
+
+		if (!strncmp(filename, get_file_replace_path, len)){
+			filename = filename + len;
+			while(*filename == '/')
+				filename++;
+		}
+	}
 
 	/* Skip current dir prefix */
 	while (strncmp(filename, "./", 2) == 0) {
