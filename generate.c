@@ -494,6 +494,85 @@ static void print_stack_cb(void *data, void *arg) {
 	fprintf(fp, "-> \"%s\"\n", symbol);
 }
 
+
+typedef struct {
+	char *filename;
+	bool ret;
+} contains_cb_t;
+
+static void contains_cb(void *data, void *arg) {
+	char *s = (char *)data;
+	contains_cb_t *args = (contains_cb_t *)arg;
+
+	if (!cmp_str(s, args->filename))
+		args->ret = true;
+}
+
+static bool contains(stack_t *st, char *filename) {
+	contains_cb_t args = {filename, false};
+
+	walk_stack(st, contains_cb, &args);
+	return args.ret;
+}
+
+typedef struct {
+	char *filename;
+	int count;
+	bool incomplete;
+} incomplete_stack_t;
+
+typedef struct {
+	char *filename;
+	incomplete_stack_t *data;
+} gc_cb_t;
+
+static void get_incomplete_cb(void *data, void *arg) {
+	incomplete_stack_t *d = (incomplete_stack_t *)data;
+	gc_cb_t *args = (gc_cb_t *)arg;
+
+	if (!cmp_str(d->filename, args->filename))
+		args->data = d;
+}
+
+static incomplete_stack_t *get_incomplete(stack_t *st, char *filename) {
+       gc_cb_t args = {filename, NULL};
+
+	walk_stack(st, get_incomplete_cb, &args);
+	return args.data;
+}
+
+static void mark_incomplete(stack_t *st, char *filename) {
+	incomplete_stack_t *data = get_incomplete(st, filename);
+
+	if (!data) {
+		incomplete_stack_t *d = malloc(sizeof(incomplete_stack_t));
+
+		d->filename = strdup(filename);
+		d->count = 1;
+		d->incomplete = true;
+		stack_push(st, d);
+	} else
+		data->incomplete = true;
+}
+
+static int is_incomplete(stack_t *st, char *filename) {
+	incomplete_stack_t *data = get_incomplete(st, filename);
+
+	if (!data || !data->incomplete)
+		return 0;
+	return data->count;
+}
+
+static void inc_retry_count(stack_t *st, char *filename) {
+	incomplete_stack_t *data = get_incomplete(st, filename);
+
+	if (!data)
+		fail("NULL not expected here\n");
+
+	data->count++;
+	data->incomplete = false;
+}
+
 static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
     Dwarf_Die *die, generate_config_t *conf) {
 	unsigned int tag = dwarf_tag(die);
@@ -520,10 +599,25 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		if (asprintf(&file_path, "%s/%s", conf->kabi_dir, file) == -1)
 			fail("asprintf() failed\n");
 
-		/* If the file already exist, we're done */
+		/*
+		 * If the file already exist and does not contains
+		 * incomplete definition we're done.  Also don't try
+		 * to reenter a file that is already on the stack.
+		 */
 		if (access(file_path, F_OK) == 0) {
-			free(file_path);
-			goto done;
+			int retry = is_incomplete(conf->incomplete, file);
+			if ( retry && (retry < conf->max_retry) &&
+			    !contains(conf->stack, file)) {
+				/* Remove the file and try again */
+				if (conf->verbose)
+					printf("Retry \"%s\" %ith times\n",
+					       file, retry);
+				inc_retry_count(conf->incomplete, file);
+				unlink(file_path);
+			} else {
+				free(file_path);
+				goto done;
+			}
 		}
 
 		if (is_declaration(die)) {
@@ -633,6 +727,12 @@ done:
 	/* Put the link to the new file in the old file */
 	if (parent_file != NULL && file != NULL)
 		fprintf(parent_file, "@\"%s\"\n", file);
+
+	if (is_declaration(die)) {
+		if (conf->verbose)
+			printf("Incomplete definition: mark the file\n");
+		mark_incomplete(conf->incomplete, stack_head(conf->stack));
+	}
 
 	free(file);
 }
@@ -852,6 +952,7 @@ static bool process_symbol_file(char *path, void *arg) {
  */
 void generate_symbol_defs(generate_config_t *conf) {
 	size_t i;
+	incomplete_stack_t *data;
 
 	/* Lets walk the normal modules */
 	printf("Generating symbol defs from %s...\n", conf->kernel_dir);
@@ -862,4 +963,10 @@ void generate_symbol_defs(generate_config_t *conf) {
 			printf("%s not found!\n", conf->symbols[i]);
 		}
 	}
+
+	while ((data = stack_pop(conf->incomplete))) {
+		free(data->filename);
+		free(data);
+	}
+	stack_destroy(conf->incomplete);
 }

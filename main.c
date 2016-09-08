@@ -117,16 +117,18 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 	*symbol_file = NULL;
 	conf->verbose = false;
 	conf->kabi_dir = DEFAULT_OUTPUT_DIR;
+	conf->max_retry = MAX_RETRY;
 	int opt, opt_index;
 	struct option loptions[] = {
 		{"verbose", no_argument, 0, 'v'},
 		{"output", required_argument, 0, 'o'},
 		{"symbols", required_argument, 0, 's'},
 		{"replace-path", required_argument, 0, 'r'},
+		{"max-retry", required_argument, 0, 'm'},
 		{0, 0, 0, 0}
 	};
 
-	while ((opt = getopt_long(argc, argv, "vo:s:r:",
+	while ((opt = getopt_long(argc, argv, "vo:s:r:m:",
 				  loptions, &opt_index)) != -1) {
 		switch (opt) {
 		case 'v':
@@ -141,6 +143,9 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 		case 'r':
 			get_file_replace_path = optarg;
 			break;
+		case 'm':
+			conf->max_retry = atoi(optarg);
+			break;
 		default:
 			usage();
 		}
@@ -152,6 +157,8 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 	conf->kernel_dir = argv[optind];
 
 	rec_mkdir(conf->kabi_dir);
+
+	conf->incomplete = stack_init();
 }
 
 static void generate(int argc, char **argv) {

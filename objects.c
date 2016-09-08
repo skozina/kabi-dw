@@ -818,14 +818,6 @@ static void print_node_list(const char *s, const char *prefix,
 	_print_node_list(s, prefix, list, NULL, stream);
 }
 
-static int cmp_str(char *s1, char *s2) {
-	if ((s1 == NULL) != (s2 == NULL))
-		return 1;
-	if (s1)
-		return strcmp(s1, s2);
-	return 0;
-}
-
 typedef enum {
 	CMP_SAME = 0,
 	CMP_OFFSET,	/* Only the offset has changed */

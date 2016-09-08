@@ -151,3 +151,11 @@ void rec_mkdir(char *path) {
 
 	free(buf);
 }
+
+int cmp_str(char *s1, char *s2) {
+	if ((s1 == NULL) != (s2 == NULL))
+		return 1;
+	if (s1)
+		return strcmp(s1, s2);
+	return 0;
+}

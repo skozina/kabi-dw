@@ -28,6 +28,7 @@ extern stack_t *stack_init(void);
 extern void stack_destroy(stack_t *);
 extern void stack_push(stack_t *, void *);
 extern void *stack_pop(stack_t *);
+extern void *stack_head(stack_t *);
 extern void walk_stack(stack_t *, void (*)(void *, void *), void *);
 
 #endif /* STACK_H_ */
