@@ -1011,6 +1011,11 @@ int compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 /*
  * Hide some RH_KABI magic
  *
+ * WARNING: this code is ugly and full of add-hoc hacks, but I'm
+ * afraid it can't be fixed. It has to follow the internals of
+ * RH_KABI_* macros. Also, it may have to change if RH_KABI_*
+ * functions change in the future.
+ *
  * RH_KABI_REPLACE the old field by a complex construction of union
  * and struct used to check that the new field didn't change the
  * alignement. It is of the form:
@@ -1026,6 +1031,17 @@ int compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
  * the same space. It puts the two new field into an unnamed
  * struct. We don't hide that as we have no way to know if that struct
  * is an artifact from RH_KABI_USE2 or was added deliberately.
+ *
+ * RH_KABI_DEPRECATE(_FN) prefix the field name with
+ * rh_reserved_. This is not the most specific string. It currently
+ * appears in a few places that deprecates the field by hand, in which
+ * it's OK to hide it too, but for some reason in
+ * block_device_operations the reserved fields are of the form "void
+ * *rh_reserved_ptrsX" instead of the usual "unsigned long
+ * rh_reservedX". Treat this case as an exception.
+ *
+ * Most RH_KABI_* functions, don't add any recognizable code so we
+ * can't hide them here.
  */
 static int hide_kabi_cb(obj_t *o, void *args) {
 	obj_t *kabi_struct, *new, *old, *parent = o->parent, *keeper;
@@ -1033,9 +1049,20 @@ static int hide_kabi_cb(obj_t *o, void *args) {
 	obj_list_t *l;
 	bool show_new_field = (bool) args;
 
-	if (o->name && !strncmp(o->name, "__UNIQUE_ID_rh_kabi_hide", 24))
-		fail("Missed a kabi unique ID\n");
+	if (o->name) {
+		if (!strncmp(o->name, "__UNIQUE_ID_rh_kabi_hide", 24))
+			fail("Missed a kabi unique ID\n");
 
+		/* Hide RH_KABI_DEPRECATE* */
+		if (!strncmp(o->name, "rh_reserved_", 12) &&
+		    strncmp(o->name, "rh_reserved_ptrs", 16)) {
+			char *tmp = strdup(o->name+12);
+			free(o->name);
+			o->name = tmp;
+		}
+	}
+
+	/* Hide RH_KABI_REPLACE */
 	if ((o->type != __type_union) || o->name ||
 	    !(lh = o->member_list) || list_empty(lh) ||
 	    !(l = lh->first) || !(new = l->member) ||
