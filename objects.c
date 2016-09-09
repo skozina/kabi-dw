@@ -1331,7 +1331,7 @@ static int compare_two_files(char *filename, char *newfile, bool follow) {
 	obj_t *root1, *root2;
 	char *old_dir = compare_config.old_dir;
 	char *new_dir = compare_config.new_dir;
-	char *path1, *path2, *s = NULL;
+	char *path1, *path2, *s = NULL, *filename2;
 	FILE *file1, *file2, *stream;
 	struct stat fstat;
 	size_t sz;
@@ -1345,17 +1345,25 @@ static int compare_two_files(char *filename, char *newfile, bool follow) {
 		return 0;
 
 	asprintf_safe(&path1, "%s/%s", old_dir, filename);
-	asprintf_safe(&path2, "%s/%s", new_dir, newfile ? newfile : filename);
+	filename2 = newfile ? newfile : filename;
+	asprintf_safe(&path2, "%s/%s", new_dir, filename2);
 
 	if (stat(path2, &fstat) != 0) {
 		if (errno == ENOENT) {
-			if (!display_options.no_moved_files)
+			/* Don't consider an incomplete definition a change */
+			if (!strncmp(filename2, DECLARATION_PATH,
+				     strlen(DECLARATION_PATH)))
+				ret = 0;
+			else
+				ret = EXIT_KABI_CHANGE;
+
+			if (ret && !display_options.no_moved_files)
 				printf("Symbol removed or moved: %s\n",
 				       filename);
 			free(path1);
 			free(path2);
 
-			return EXIT_KABI_CHANGE;
+			return ret;
 		}
 		else
 			fail("Failed to stat() file%s: %s\n",
