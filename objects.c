@@ -1188,9 +1188,9 @@ void show_usage() {
 	printf("Usage:\n"
 	       "\tcompare [options] kabi_file...\n"
 	       "\nOptions:\n"
-	       "    -h, --help:\tshow this message\n"
+	       "    -h, --help:\t\tshow this message\n"
 	       "    -k, --hide-kabi:\thide changes made by RH_KABI_REPLACE()\n"
-	       "    -n, --hide-kabi-new:\thide the kabi trickery made by"
+	       "    -n, --hide-kabi-new:\n\t\t\thide the kabi trickery made by"
 	       " RH_KABI_REPLACE, but show the new field\n"
 
 	       "    -d, --debug:\tprint the raw tree\n"
@@ -1299,9 +1299,9 @@ void compare_usage() {
 	       "\tcompare [options] kabi_dir kabi_dir [kabi_file...]\n"
 	       "\tcompare [options] kabi_file kabi_file\n"
 	       "\nOptions:\n"
-	       "    -h, --help:\tshow this message\n"
+	       "    -h, --help:\t\tshow this message\n"
 	       "    -k, --hide-kabi:\thide changes made by RH_KABI_REPLACE()\n"
-	       "    -n, --hide-kabi-new:\thide the kabi trickery made by"
+	       "    -n, --hide-kabi-new:\n\t\t\thide the kabi trickery made by"
 	       " RH_KABI_REPLACE, but show the new field\n"
 	       "    -d, --debug:\tprint the raw tree\n"
 	       "    --follow:\t\tfollow referenced symbols\n"
@@ -1319,7 +1319,7 @@ void compare_usage() {
 	       "    --no-removed:\t"
 	       "hide symbols removed from the end of a struct, union...\n"
 	       "    --no-moved-files:\thide changes caused by symbols "
-	       "definition moving to another\n\t\t\t"
+	       "definition moving to another file\n\t\t\t"
 		"Warning: it also hides symbols that are removed entirely\n");
 
 	exit(1);
