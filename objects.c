@@ -584,7 +584,7 @@ static pp_t print_qualifier(obj_t *o, int depth, const char *prefix) {
 		ret = print_##type(o, depth, prefix);	\
 		break;
 
-static void show_node(obj_t *o, int margin); /*FIXME: DBG */
+struct dopt display_options;
 
 /*
  * Display an object in a c-like format
@@ -651,8 +651,6 @@ static void print_tree_prefix(obj_t *root, const char *prefix, FILE *stream) {
 	       s.postfix ? s.postfix : "");
 	free_pp(s);
 }
-
-struct dopt display_options;
 
 void print_tree(obj_t *root) {
 	print_tree_prefix(root, NULL, stdout);
@@ -933,22 +931,53 @@ obj_t *worthy_parent(obj_t *o) {
 	fail("No ancestor worthy of print\n");
 }
 
+typedef struct compare_config_s {
+	bool debug;
+	bool hide_kabi;
+	bool hide_kabi_new;
+	int follow;
+	char *old_dir;
+	char *new_dir;
+	char *filename;
+	char **flist;
+	int flistsz;
+	int flistcnt;
+	int ret;
+	/*
+	 * The following options allow to hide some symbol changes in
+	 * kABI comparison. Hides...
+	 */
+	int no_replaced; /* replaced symbols */
+	int no_shifted;  /* symbols whose offset shifted */ 
+	int no_inserted; /* symbols inserted in the middle of a struct/union */
+	int no_deleted;  /* symbols removed in the middle (poke a hole) */
+	int no_added;    /* symbols added at the end of a struct/union... */
+	int no_removed;  /* symbols removed at the end of a struct/union... */
+	int no_moved_files; /* file that has been moved (or removed) */
+} compare_config_t;
+
+compare_config_t compare_config = {false, false, 0,
+				   NULL, NULL, NULL, NULL,
+				   0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
 int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 	obj_list_t *list1 = NULL, *list2 = NULL, *next;
 	int ret = COMP_SAME, tmp;
 
 	tmp = cmp_nodes(o1, o2);
 	if (tmp) {
-		if (tmp == CMP_REFFILE)
+		if (tmp == CMP_REFFILE) {
 			fprintf(stream, "symbol %s has changed\n",
 				o1->base_type);
-		else if ((tmp == CMP_OFFSET && !display_options.no_shifted) ||
-			 (tmp == CMP_DIFF && !display_options.no_replaced)) {
+			ret = COMP_DIFF;
+		} else if ((tmp == CMP_OFFSET && !compare_config.no_shifted) ||
+			   (tmp == CMP_DIFF && !compare_config.no_replaced)) {
 			const char *s =	(tmp == CMP_OFFSET) ?
 				"Shifted" : "Replaced";
 			print_two_nodes(s, o1, o2, stream);
+			ret = COMP_DIFF;
 		}
-		return COMP_DIFF;
+		return ret;
 	}
 
 	if (o1->member_list)
@@ -960,18 +989,20 @@ int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 		if (cmp_nodes(list1->member, list2->member) == CMP_DIFF) {
 			if ((next = find_object(list1->member, list2))) {
 				/* Insertion */
-				if (!display_options.no_inserted)
+				if (!compare_config.no_inserted) {
 					_print_node_list("Inserted", ADD_PREFIX,
 							 list2, next, stream);
+					ret = COMP_DIFF;
+				}
 				list2 = next;
-				ret = COMP_DIFF;
 			} else if ((next = find_object(list2->member, list1))) {
 				/* Removal */
-				if (!display_options.no_deleted)
+				if (!compare_config.no_deleted) {
 					_print_node_list("Deleted", DEL_PREFIX,
 							 list1, next, stream);
+					ret = COMP_DIFF;
+				}
 				list1 = next;
-				ret = COMP_DIFF;
 			}
 		}
 
@@ -982,16 +1013,20 @@ int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 		list1 = list1->next;
 		list2 = list2->next;
 		if (!list1 && list2) {
-			if (!display_options.no_added)
+			if (!compare_config.no_added) {
 				print_node_list("Added", ADD_PREFIX,
 						list2, stream);
-			return COMP_DIFF;
+				ret = COMP_DIFF;
+			}
+			return ret;
 		}
 		if (list1 && !list2) {
-			if (!display_options.no_removed)
+			if (!compare_config.no_removed) {
 				print_node_list("Removed", DEL_PREFIX,
 						list1, stream);
-			return COMP_DIFF;
+				ret = COMP_DIFF;
+			}
+			return ret;
 		}
 	}
 
@@ -1169,9 +1204,6 @@ void show_usage() {
 	exit(1);
 }
 
-#define DISPLAY_NO_OPT(name) \
-	{"no-"#name, no_argument, &display_options.no_##name, 1}
-
 /*
  * Performs the show command
  */
@@ -1183,7 +1215,7 @@ int show(int argc, char **argv) {
 		{"hide-kabi", no_argument, 0, 'k'},
 		{"hide-kabi-new", no_argument, 0, 'n'},
 		{"help", no_argument, 0, 'h'},
-		DISPLAY_NO_OPT(offset),
+		{"no-offset", no_argument, &display_options.no_offset, 1},
 		{0, 0, 0, 0}
 	};
 
@@ -1232,24 +1264,6 @@ int show(int argc, char **argv) {
 
 	return ret;
 }
-
-typedef struct {
-	bool debug;
-	bool hide_kabi;
-	bool hide_kabi_new;
-	int follow;
-	char *old_dir;
-	char *new_dir;
-	char *filename;
-	char **flist;
-	int flistsz;
-	int flistcnt;
-	int ret;
-} compare_config_t;
-
-compare_config_t compare_config = {false, false, 0,
-				   NULL, NULL, NULL, NULL,
-				   0, 0, 0};
 
 static bool push_file(char *filename) {
 	int i, sz = compare_config.flistsz;
@@ -1351,15 +1365,14 @@ static int compare_two_files(char *filename, char *newfile, bool follow) {
 	if (stat(path2, &fstat) != 0) {
 		if (errno == ENOENT) {
 			/* Don't consider an incomplete definition a change */
-			if (!strncmp(filename2, DECLARATION_PATH,
-				     strlen(DECLARATION_PATH)))
-				ret = 0;
-			else
+			if (strncmp(filename2, DECLARATION_PATH,
+				    strlen(DECLARATION_PATH)) &&
+			    !compare_config.no_moved_files) {
 				ret = EXIT_KABI_CHANGE;
-
-			if (ret && !display_options.no_moved_files)
 				printf("Symbol removed or moved: %s\n",
 				       filename);
+			}
+
 			free(path1);
 			free(path2);
 
@@ -1431,6 +1444,9 @@ static bool compare_files_cb(char *kabi_path, void *arg) {
 	return true;
 }
 
+#define COMPARE_NO_OPT(name) \
+	{"no-"#name, no_argument, &compare_config.no_##name, 1}
+
 /*
  * Performs the compare command
  */
@@ -1444,15 +1460,15 @@ int compare(int argc, char **argv) {
 		{"hide-kabi-new", no_argument, 0, 'n'},
 		{"help", no_argument, 0, 'h'},
 		{"follow", no_argument, &compare_config.follow, 1},
-		DISPLAY_NO_OPT(offset),
-		DISPLAY_NO_OPT(replaced),
-		DISPLAY_NO_OPT(shifted),
-		DISPLAY_NO_OPT(inserted),
-		DISPLAY_NO_OPT(deleted),
-		DISPLAY_NO_OPT(added),
-		DISPLAY_NO_OPT(removed),
+		{"no-offset", no_argument, &display_options.no_offset, 1},
+		COMPARE_NO_OPT(replaced),
+		COMPARE_NO_OPT(shifted),
+		COMPARE_NO_OPT(inserted),
+		COMPARE_NO_OPT(deleted),
+		COMPARE_NO_OPT(added),
+		COMPARE_NO_OPT(removed),
 		{"no-moved-files", no_argument,
-		 &display_options.no_moved_files, 1},
+		 &compare_config.no_moved_files, 1},
 		{0, 0, 0, 0}
 	};
 
