@@ -942,7 +942,7 @@ int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 		if (tmp == CMP_REFFILE)
 			fprintf(stream, "symbol %s has changed\n",
 				o1->base_type);
-		else if ((tmp == CMP_OFFSET && !display_options.no_offset) ||
+		else if ((tmp == CMP_OFFSET && !display_options.no_shifted) ||
 			 (tmp == CMP_DIFF && !display_options.no_replaced)) {
 			const char *s =	(tmp == CMP_OFFSET) ?
 				"Shifted" : "Replaced";
