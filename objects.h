@@ -222,7 +222,7 @@ enum {
 	COMP_DIFF,	/* Subtree differs */
 };
 int compare_tree(obj_t *o1, obj_t *o2, FILE *stream);
-int hide_kabi(obj_t *root);
+int hide_kabi(obj_t *root, bool show_new_field);
 
 int show(int argc, char **argv);
 int compare(int argc, char **argv);

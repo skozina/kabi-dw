@@ -1026,9 +1026,10 @@ int compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
  * is an artifact from RH_KABI_USE2 or was added deliberately.
  */
 static int hide_kabi_cb(obj_t *o, void *args) {
-	obj_t *kabi_struct, *new, **parent = (obj_t **)args;
+	obj_t *kabi_struct, *new, *old, *parent = o->parent, *keeper;
 	obj_list_head_t *lh;
 	obj_list_t *l;
+	bool show_new_field = (bool) args;
 
 	if (o->name && !strncmp(o->name, "__UNIQUE_ID_rh_kabi_hide", 24))
 		fail("Missed a kabi unique ID\n");
@@ -1039,10 +1040,13 @@ static int hide_kabi_cb(obj_t *o, void *args) {
 	    !(l = l->next) || !(kabi_struct = l->member) ||
 	    (kabi_struct->type != __type_var) ||
 	    !kabi_struct->name ||
-	    strncmp(kabi_struct->name, "__UNIQUE_ID_rh_kabi_hide", 24)) {
-		*parent = o;
+	    strncmp(kabi_struct->name, "__UNIQUE_ID_rh_kabi_hide", 24))
 		return CB_CONT;
-	}
+
+	if (!kabi_struct->ptr || kabi_struct->ptr->type != __type_struct ||
+	    !(lh = kabi_struct->ptr->member_list) || list_empty(lh) ||
+	    !(l = lh->first) || !(old = l->member))
+		fail("Unexpeted rh_kabi_hide struct format\n");
 
 	/*
 	 * It is a rh_kabi_hide union
@@ -1056,7 +1060,7 @@ static int hide_kabi_cb(obj_t *o, void *args) {
 	 *       <var, "__UNIQUE_ID_rh_kabi_hide55", "(null)", 0x1ea9700 0 0 0>
 	 *          <struct, "(null)", "(null)", (nil) 0 0 0>
 	 *             <struct member, "old_field", "(null)", 0x1ea9640 0 0 0>
-	 *                <base, "(null)", "int", (nil) 0 0 0>
+	 *                <base, "(null)", "int", (nil) 0 0 0>		^(old)
 	 *       <var, "(null)", "(null)", 0x1ea97a0 0 0 0>
 	 *          <union, "(null)", "(null)", (nil) 0 0 0>
 	 *
@@ -1064,33 +1068,42 @@ static int hide_kabi_cb(obj_t *o, void *args) {
 	 * <struct member, "new_field", "(null)", 0x1ea9540 16 0 0>
 	 *    <base, "(null)", "int", (nil) 0 0 0>
 	 *
+	 * or that:
+	 * <struct member, "old_field", "(null)", 0x1ea9640 0 0 0>
+	 *    <base, "(null)", "int", (nil) 0 0 0>
+	 *
 	 * Parent is always an unary node, struct_member or var
 	 */
 
-	if (!*parent ||
-	    !( ((*parent)->type == __type_var) ||
-	       ((*parent)->type == __type_struct_member) ) ||
-	    ((*parent)->ptr != o) || (*parent)->name) {
-		_show_node(stderr, *parent, 0);
+	if (!parent ||
+	    !( (parent->type == __type_var) ||
+	       (parent->type == __type_struct_member) ) ||
+	    (parent->ptr != o) || parent->name) {
+		_show_node(stderr, parent, 0);
 		fail("Unexpected parent\n");
 	}
 	if (new->type != __type_var) {
 		_show_node(stderr, new, 0);
-		fail("Unexpected new\n");
+		fail("Unexpected new field\n");
+	}
+	if (old->type != __type_struct_member) {
+		_show_node(stderr, old, 0);
+		fail("Unexpected old field\n");
 	}
 
-	(*parent)->name = new->name;
-	(*parent)->ptr = new->ptr;
-	(*parent)->ptr->parent = (*parent);
-	_free_obj(o, new);
-	free(new);
+	keeper = show_new_field ? new : old;
+
+	parent->name = keeper->name;
+	parent->ptr = keeper->ptr;
+	parent->ptr->parent = parent;
+	_free_obj(o, keeper);
+	free(keeper);
 
 	return CB_SKIP;
 }
 
-int hide_kabi(obj_t *root) {
-	void *parent;
-	return walk_tree(root, hide_kabi_cb, &parent);
+int hide_kabi(obj_t *root, bool show_new_field) {
+	return walk_tree(root, hide_kabi_cb, (void *)show_new_field);
 }
 
 static FILE *fopen_safe(char *filename) {
@@ -1108,6 +1121,7 @@ extern obj_t *parse(FILE *file);
 struct {
 	bool debug;
 	bool hide_kabi;
+	bool hide_kabi_new;
 	FILE *file;
 } show_config = {false, false, NULL};
 
@@ -1116,7 +1130,10 @@ void show_usage() {
 	       "\tcompare [options] kabi_file...\n"
 	       "\nOptions:\n"
 	       "    -h, --help:\tshow this message\n"
-	       "    -k, --hide-kabi:\thide some rh specific kabi trickery\n"
+	       "    -k, --hide-kabi:\thide changes made by RH_KABI_REPLACE()\n"
+	       "    -n, --hide-kabi-new:\thide the kabi trickery made by"
+	       " RH_KABI_REPLACE, but show the new field\n"
+
 	       "    -d, --debug:\tprint the raw tree\n"
 	       "    --no-offset:\tdon't display the offset of struct fields\n");
 	exit(1);
@@ -1134,6 +1151,7 @@ int show(int argc, char **argv) {
 	struct option loptions[] = {
 		{"debug", no_argument, 0, 'd'},
 		{"hide-kabi", no_argument, 0, 'k'},
+		{"hide-kabi-new", no_argument, 0, 'n'},
 		{"help", no_argument, 0, 'h'},
 		DISPLAY_NO_OPT(offset),
 		{0, 0, 0, 0}
@@ -1141,7 +1159,7 @@ int show(int argc, char **argv) {
 
 	memset(&display_options, 0, sizeof(display_options));
 
-	while ((opt = getopt_long(argc, argv, "dkh",
+	while ((opt = getopt_long(argc, argv, "dknh",
 				  loptions, &opt_index)) != -1) {
 		switch (opt) {
 		case 0:
@@ -1149,6 +1167,8 @@ int show(int argc, char **argv) {
 		case 'd':
 			show_config.debug = true;
 			break;
+		case 'n':
+			show_config.hide_kabi_new = true;
 		case 'k':
 			show_config.hide_kabi = true;
 			break;
@@ -1167,7 +1187,7 @@ int show(int argc, char **argv) {
 		root = parse(show_config.file);
 
 		if (show_config.hide_kabi)
-			hide_kabi(root);
+			hide_kabi(root, show_config.hide_kabi_new);
 
 		if (show_config.debug)
 			debug_tree(root);
@@ -1186,6 +1206,7 @@ int show(int argc, char **argv) {
 typedef struct {
 	bool debug;
 	bool hide_kabi;
+	bool hide_kabi_new;
 	int follow;
 	char *old_dir;
 	char *new_dir;
@@ -1240,9 +1261,11 @@ void compare_usage() {
 	       "\tcompare [options] kabi_dir kabi_dir [kabi_file]\n"
 	       "\nOptions:\n"
 	       "    -h, --help:\tshow this message\n"
-	       "    -k, --hide-kabi:\thide some rh specific kabi trickery\n"
+	       "    -k, --hide-kabi:\thide changes made by RH_KABI_REPLACE()\n"
+	       "    -n, --hide-kabi-new:\thide the kabi trickery made by"
+	       " RH_KABI_REPLACE, but show the new field\n"
 	       "    -d, --debug:\tprint the raw tree\n"
-	       "    --follow:\tdon't follow referenced symbols\n"
+	       "    --follow:\t\tfollow referenced symbols\n"
 	       "    --no-offset:\tdon't display the offset of struct fields\n"
 	       "    --no-replaced:\thide replaced symbols"
 	       " (symbols that changed, but hasn't moved)\n"
@@ -1317,8 +1340,8 @@ static int compare_two_files(char *filename, char *newfile, bool follow) {
 	root2 = parse(file2);
 
 	if (compare_config.hide_kabi) {
-		hide_kabi(root1);
-		hide_kabi(root2);
+		hide_kabi(root1, compare_config.hide_kabi_new);
+		hide_kabi(root2, compare_config.hide_kabi_new);
 	}
 
 	if (compare_config.debug && !follow) {
@@ -1379,6 +1402,7 @@ int compare(int argc, char **argv) {
 	struct option loptions[] = {
 		{"debug", no_argument, 0, 'd'},
 		{"hide-kabi", no_argument, 0, 'k'},
+		{"hide-kabi-new", no_argument, 0, 'n'},
 		{"help", no_argument, 0, 'h'},
 		{"follow", no_argument, &compare_config.follow, 1},
 		DISPLAY_NO_OPT(offset),
@@ -1395,7 +1419,7 @@ int compare(int argc, char **argv) {
 
 	memset(&display_options, 0, sizeof(display_options));
 
-	while ((opt = getopt_long(argc, argv, "dkh",
+	while ((opt = getopt_long(argc, argv, "dknh",
 				  loptions, &opt_index)) != -1) {
 		switch (opt) {
 		case 0:
@@ -1403,6 +1427,8 @@ int compare(int argc, char **argv) {
 		case 'd':
 			compare_config.debug = true;
 			break;
+		case 'n':
+			compare_config.hide_kabi_new = true;
 		case 'k':
 			compare_config.hide_kabi = true;
 			break;
