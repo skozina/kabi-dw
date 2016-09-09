@@ -882,9 +882,11 @@ static int cmp_nodes(obj_t *o1, obj_t *o2) {
 
 obj_list_t *find_object(obj_t *o, obj_list_t *l) {
 	obj_list_t *list = l;
+	int ret;
 
 	while (list) {
-		if (cmp_nodes(o, list->member) == CMP_SAME)
+		ret = cmp_nodes(o, list->member);
+		if (ret == CMP_SAME || ret == CMP_OFFSET)
 			return list;
 		list = list->next;
 	}
