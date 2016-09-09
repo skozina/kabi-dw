@@ -216,12 +216,6 @@ static const char *typetostr(obj_t *o) {
 /* Removes the two dashes at the end of the prefix */
 #define IS_PREFIX(s, prefix) !strncmp(s, prefix, strlen(prefix) - 2)
 
-#define asprintf_safe(args...)					\
-do {								\
-	if (asprintf(args) == -1 )				\
-		fail("asprintf failed: %s", strerror(errno));	\
-} while(0)
-
 /*
  * Get the type of a symbol from the name of the kabi file
  *

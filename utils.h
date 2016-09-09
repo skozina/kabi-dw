@@ -24,6 +24,12 @@
 	exit(1);				\
 }
 
+#define asprintf_safe(args...)					\
+do {								\
+	if (asprintf(args) == -1 )				\
+		fail("asprintf failed: %s", strerror(errno));	\
+} while(0)
+
 static inline void *safe_malloc(size_t size) {
 	void *result = malloc(size);
 	if (result == NULL)

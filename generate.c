@@ -204,9 +204,8 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 	 * Pretend like it's in other, non existent file.
 	 */
 	if (is_declaration(die)) {
-		if (asprintf(&file_name, DECLARATION_PATH "/%s%s.txt",
-		    file_prefix, name) == -1)
-			fail("asprintf() failed\n");
+		asprintf_safe(&file_name, DECLARATION_PATH "/%s%s.txt",
+			      file_prefix, name);
 
 		return (file_name);
 	}
@@ -233,9 +232,7 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 	dec_file = get_file(cu_die, die);
 	assert(dec_file != NULL);
 
-	if (asprintf(&file_name, "%s/%s%s.txt", dec_file, file_prefix, name)
-	    == -1)
-		fail("asprintf() failed\n");
+	asprintf_safe(&file_name, "%s/%s%s.txt", dec_file, file_prefix, name);
 
 	return (file_name);
 }
@@ -596,8 +593,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		long dec_line;
 		char *file_path;
 
-		if (asprintf(&file_path, "%s/%s", conf->kabi_dir, file) == -1)
-			fail("asprintf() failed\n");
+		asprintf_safe(&file_path, "%s/%s", conf->kabi_dir, file);
 
 		/*
 		 * If the file already exist and does not contains

@@ -62,15 +62,10 @@ void walk_dir(char *path, bool list_dirs, bool (*cb)(char *, void *),
 		    (strcmp(ent->d_name, ".") == 0))
 			continue;
 
-		if (path[strlen(path) - 1] == '/') {
-			if (asprintf(&new_path, "%s%s", path, ent->d_name)
-			    == -1)
-				fail("asprintf() failed");
-		} else {
-			if (asprintf(&new_path, "%s/%s", path, ent->d_name)
-			    == -1)
-				fail("asprintf() failed");
-		}
+		if (path[strlen(path) - 1] == '/')
+			asprintf_safe(&new_path, "%s%s", path, ent->d_name);
+		else
+			asprintf_safe(&new_path, "%s/%s", path, ent->d_name);
 
 		if (lstat(new_path, &entstat) != 0) {
 			fail("Failed to stat directory %s: %s\n", new_path,
