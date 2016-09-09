@@ -29,6 +29,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <libgen.h>
 #include <sys/stat.h>
 
 #include "objects.h"
@@ -1287,7 +1288,8 @@ static void free_files() {
 
 void compare_usage() {
 	printf("Usage:\n"
-	       "\tcompare [options] kabi_dir kabi_dir [kabi_file]\n"
+	       "\tcompare [options] kabi_dir kabi_dir [kabi_file...]\n"
+	       "\tcompare [options] kabi_file kabi_file\n"
 	       "\nOptions:\n"
 	       "    -h, --help:\tshow this message\n"
 	       "    -k, --hide-kabi:\thide changes made by RH_KABI_REPLACE()\n"
@@ -1478,8 +1480,23 @@ int compare(int argc, char **argv) {
 	if ((stat(old_dir, &sb1) == -1) || (stat(new_dir, &sb2) == -1))
 		fail("stat failed: %s\n", strerror(errno));
 
+	if (S_ISREG(sb1.st_mode) && S_ISREG(sb2.st_mode)) {
+		char *oldname = basename(old_dir);
+		char *newname = basename(new_dir);
+
+		if (optind != argc) {
+			printf("Too many arguments\n");
+			compare_usage();
+		}
+		compare_config.old_dir = dirname(old_dir);
+		compare_config.new_dir = dirname(new_dir);
+
+		return compare_two_files(oldname, newname, false);
+	}
+
 	if (!S_ISDIR(sb1.st_mode) || !S_ISDIR(sb2.st_mode)) {
-		printf("Compare takes two directories as arguments\n");
+		printf("Compare takes two directories or two regular"
+		       " files as arguments\n");
 		compare_usage();
 	}
 
