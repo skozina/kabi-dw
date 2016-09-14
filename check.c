@@ -171,6 +171,22 @@ static bool verify_words(FILE *fp_old, FILE *fp_new, check_config_t *conf,
 	return (true);
 }
 
+static bool is_stack_line(char *word) {
+	return (strcmp(word, "->") == 0);
+}
+
+static void parse_stack_line(FILE *fp, check_config_t *conf) {
+	char *line = NULL;
+	size_t len = 0;
+
+	if (getline(&line, &len, fp) == -1)
+		fail("Stack line corrupted in: %s\n", conf->file_name);
+
+	/* Just drop it */
+	if (line != NULL)
+		free(line);
+}
+
 static bool parse_type(FILE *fp_old, FILE *fp_new, check_config_t *conf) {
 	char *oldw, *neww;
 	parse_func_t parse_func;
@@ -182,8 +198,17 @@ static bool parse_type(FILE *fp_old, FILE *fp_new, check_config_t *conf) {
 	while (c != EOF) {
 		/* Read the type from the original file */
 		neww = read_word(fp_new, &c);
+		while (is_stack_line(neww)) {
+			parse_stack_line(fp_new, conf);
+			neww = read_word(fp_new, &c);
+		}
+
 		if (fp_old != NULL) {
 			oldw = read_word(fp_old, &c);
+			while (is_stack_line(oldw)) {
+				parse_stack_line(fp_old, conf);
+				neww = read_word(fp_old, &c);
+			}
 			if (c == EOF)
 				goto done;
 
@@ -527,7 +552,7 @@ static bool get_next_union(FILE *fp_old, FILE *fp_new, char **oldname,
 	return (false);
 }
 
-static bool parse_union(FILE *fp_old, FILE * fp_new, check_config_t *conf) {
+static bool parse_union(FILE *fp_old, FILE *fp_new, check_config_t *conf) {
 	char *oldname, *newname;
 	bool result = true;
 
