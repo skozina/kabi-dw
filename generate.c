@@ -205,7 +205,7 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 	 */
 	if (is_declaration(die)) {
 		asprintf_safe(&file_name, DECLARATION_PATH "/%s%s.txt",
-			      file_prefix, name);
+		    file_prefix, name);
 
 		return (file_name);
 	}

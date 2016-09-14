@@ -29,17 +29,17 @@ FLEXFLAGS=
 OBJS=$(SRCS:.c=.o)
 OBJS+=parser.yy.o parser.tab.o
 
-.PHONY: clean all depend
+.PHONY: clean all depend debug asan
 
 all: $(PROG)
 
-debug: CFLAGS += -DDEBUG -fsanitize=address
-debug: LDFLAGS=-lasan -ldw -lelf -lfl
-debug: FLEXFLAGS += -d
+debug: CFLAGS+=-DDEBUG -fsanitize=address
+debug: LDFLAGS+=-lasan
+debug: FLEXFLAGS+=-d
 debug: $(PROG)
 
-asan: CFLAGS += -fsanitize=address
-asan: LDFLAGS=-lasan -ldw -lelf -lfl
+asan: CFLAGS+=-fsanitize=address
+asan: LDFLAGS+=-lasan
 asan: $(PROG)
 
 $(PROG): $(OBJS)

@@ -950,7 +950,7 @@ typedef struct compare_config_s {
 	int no_moved_files; /* file that has been moved (or removed) */
 } compare_config_t;
 
-compare_config_t compare_config = {false, false, 0,
+compare_config_t compare_config = {false, false, false, 0,
 				   NULL, NULL, NULL, NULL,
 				   0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
