@@ -207,7 +207,7 @@ static bool parse_type(FILE *fp_old, FILE *fp_new, check_config_t *conf) {
 			oldw = read_word(fp_old, &c);
 			while (is_stack_line(oldw)) {
 				parse_stack_line(fp_old, conf);
-				neww = read_word(fp_old, &c);
+				oldw = read_word(fp_old, &c);
 			}
 			if (c == EOF)
 				goto done;
