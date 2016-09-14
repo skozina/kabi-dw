@@ -1,5 +1,5 @@
 /*
-	Copyright(C) 2016, Red Hat, Inc., Stanislav Kozina
+	Copyright(C) 2016, Red Hat, Inc., Jerome Marchand
 
 	This program is free software: you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -15,20 +15,21 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef STACK_H_
-#define	STACK_H_
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdbool.h>
 
-typedef struct {
-	unsigned int st_capacity; /* Total size of the stack */
-	unsigned int st_count; /* Number of items stored */
-	void **st_data; /* Stack itself */
-} stack_t;
+#include "objects.h"
 
-extern stack_t *stack_init(void);
-extern void stack_destroy(stack_t *);
-extern void stack_push(stack_t *, void *);
-extern void *stack_pop(stack_t *);
-extern void *stack_head(stack_t *);
-extern void walk_stack(stack_t *, void (*)(void *, void *), void *);
+/* Prevents warning: ‘input’ defined but not used  */
+#define YY_NO_INPUT
 
-#endif /* STACK_H_ */
+/* Why can't it get it from string.h? */
+char *strdup(const char *s);
+/* Why can't it get it from stdio.h? */
+int fileno(FILE *stream);
+
+int yylex();
+int yyerror(obj_t **root, char *s);
+FILE *yyin;

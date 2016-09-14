@@ -36,19 +36,23 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
+#include <getopt.h>
 
 #include "main.h"
 #include "utils.h"
 #include "generate.h"
 #include "check.h"
+#include "objects.h"
 
 static char *progname;
 
 void usage(void) {
 	printf("Usage:\n"
-	    "\t %s generate [-v] [-s symbol_file] [-o kabi_dir] kernel_dir\n"
-	    "\t %s check [-v] kabi_dir_old kabi_dir_new\n",
-	    progname, progname);
+	    "\t %s generate [options] kernel_dir\n"
+	    "\t %s check [-v] kabi_dir_old kabi_dir_new\n"
+	    "\t %s show [options] kabi_file...\n"
+	    "\t %s compare [options] kabi_dir kabi_dir...\n",
+	       progname, progname, progname, progname);
 	exit(1);
 }
 
@@ -107,40 +111,74 @@ static void read_symbols(char *filename, char ***symbolsp, size_t *cntp) {
 	*cntp = i;
 }
 
+void generate_usage() {
+	printf("Usage:\n"
+	       "\tgenerate [options] kernel_dir\n"
+	       "\nOptions:\n"
+	       "    -h, --help:\t\tshow this message\n"
+	       "    -v, --verbose:\tdisplay debug information\n"
+	       "    -o, --output kabi_dir:\n\t\t\t"
+	       "where to write kabi files (default: \"output\")\n"
+	       "    -s, --symbols symbol_file:\n\t\t\ta file containing the"
+	       " list of symbols of interest (e.g. whitelisted)\n"
+	       "    -r, --replace-path abs_path:\n\t\t\t"
+	       "replace the absolute path by a relative path\n"
+	       "    -m, --max-retry n:\n\t\t\t"
+	       "max number o trial to generate a kabi file (default %i)\n",
+	       MAX_RETRY);
+	exit(1);
+}
+
 static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
     char **symbol_file) {
 	*symbol_file = NULL;
 	conf->verbose = false;
 	conf->kabi_dir = DEFAULT_OUTPUT_DIR;
+	conf->max_retry = MAX_RETRY;
+	int opt, opt_index;
+	struct option loptions[] = {
+		{"help", no_argument, 0, 'h'},
+		{"verbose", no_argument, 0, 'v'},
+		{"output", required_argument, 0, 'o'},
+		{"symbols", required_argument, 0, 's'},
+		{"replace-path", required_argument, 0, 'r'},
+		{"max-retry", required_argument, 0, 'm'},
+		{0, 0, 0, 0}
+	};
 
-	while ((argc > 0) && (*argv[0] == '-')) {
-		if (strcmp(*argv, "-v") == 0) {
-			argc--; argv++;
+	while ((opt = getopt_long(argc, argv, "hvo:s:r:m:",
+				  loptions, &opt_index)) != -1) {
+		switch (opt) {
+		case 'h':
+			generate_usage();
+		case 'v':
 			conf->verbose = true;
-		} else if (strcmp(*argv, "-o") == 0) {
-			argc--; argv++;
-			if (argc < 1)
-				usage();
-			conf->kabi_dir = argv[0];
-			argc--; argv++;
-		} else if (strcmp(*argv, "-s") == 0) {
-			argc--; argv++;
-			if (argc < 1)
-				usage();
-			*symbol_file = argv[0];
-			argc--; argv++;
-		} else {
-			usage();
+			break;
+		case 'o':
+			conf->kabi_dir = optarg;
+			break;
+		case 's':
+			*symbol_file = optarg;
+			break;
+		case 'r':
+			get_file_replace_path = optarg;
+			break;
+		case 'm':
+			conf->max_retry = atoi(optarg);
+			break;
+		default:
+			generate_usage();
 		}
 	}
 
-	if (argc != 1)
-		usage();
+	if (optind != argc - 1)
+		generate_usage();
 
-	conf->kernel_dir = argv[0];
-	argc--; argv++;
+	conf->kernel_dir = argv[optind];
 
 	rec_mkdir(conf->kabi_dir);
+
+	conf->incomplete = stack_init();
 }
 
 static void generate(int argc, char **argv) {
@@ -164,8 +202,15 @@ static void generate(int argc, char **argv) {
 
 	generate_symbol_defs(conf);
 
-	if (symbol_file != NULL)
+	if (symbol_file != NULL) {
+		int i;
+
 		free(conf->symbols_found);
+		for (i = 0; i < conf->symbol_cnt; i++)
+			free(conf->symbols[i]);
+		free(conf->symbols);
+	}
+
 	free(conf);
 }
 
@@ -207,6 +252,8 @@ static void check(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
+	int ret = 0;
+
 	progname = argv[0];
 
 	if (argc < 2)
@@ -215,14 +262,17 @@ int main(int argc, char **argv) {
 	argv++; argc--;
 
 	if (strcmp(argv[0], "generate") == 0) {
-		argv++; argc--;
 		generate(argc, argv);
 	} else if (strcmp(argv[0], "check") == 0) {
 		argv++; argc--;
 		check(argc, argv);
+	} else if (strcmp(argv[0], "compare") == 0) {
+		ret = compare(argc, argv);
+	} else if (strcmp(argv[0], "show") == 0) {
+		ret = show(argc, argv);
 	} else {
 		usage();
 	}
 
-	return (0);
+	return ret;
 }

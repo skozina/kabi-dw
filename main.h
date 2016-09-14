@@ -39,6 +39,9 @@
 /* Path used for DW_AT_declaration, ie. those we don't have */
 #define	DECLARATION_PATH	"<declarations>"
 
+/* Maximum number of times to try to build an incomplete type */
+#define MAX_RETRY	100
+
 typedef struct {
 	bool verbose;
 	char *kernel_dir; /* Path to  the kernel modules to process */
@@ -50,6 +53,8 @@ typedef struct {
 	char **ksymtab; /* ksymtab of the current kernel module */
 	size_t ksymtab_len;
 	stack_t *stack; /* Current stack of symbol we're parsing */
+	stack_t *incomplete;
+	int max_retry;
 } generate_config_t;
 
 typedef struct {

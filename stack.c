@@ -67,6 +67,13 @@ void *stack_pop(stack_t *st) {
 	return (st->st_data[st->st_count]);
 }
 
+void *stack_head(stack_t *st) {
+	if (st->st_count == 0)
+		return (NULL);
+
+	return (st->st_data[st->st_count-1]);
+}
+
 void walk_stack(stack_t *st, void (*cb)(void *, void *), void *arg) {
 	unsigned int i;
 

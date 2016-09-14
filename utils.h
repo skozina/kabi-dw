@@ -24,6 +24,12 @@
 	exit(1);				\
 }
 
+#define asprintf_safe(args...)					\
+do {								\
+	if (asprintf(args) == -1 )				\
+		fail("asprintf failed: %s", strerror(errno));	\
+} while(0)
+
 static inline void *safe_malloc(size_t size) {
 	void *result = malloc(size);
 	if (result == NULL)
@@ -35,5 +41,6 @@ static inline void *safe_malloc(size_t size) {
 extern void walk_dir(char *, bool, bool (*)(char *, void *), void *);
 extern int check_is_directory(char *);
 extern void rec_mkdir(char *);
+extern int cmp_str(char *s1, char *s2);
 
 #endif /* UTILS_H */
