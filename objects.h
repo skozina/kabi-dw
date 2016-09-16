@@ -84,8 +84,8 @@ typedef struct obj_list_head {
  * constant:	(constant) constant value of an enumeration
  * index:	index of array
  * offset:	(var) offset of a struct member
+ * is_bitfield: (var) It's a bitfield
  * first_bit, last_bit: (var) bit range within the offset.
- *			Only valid if last_bit != 0
  *
  * Note the dual parent/child relationship with the n-ary member_list and the
  * the unary ptr. Only functions uses both.
@@ -101,7 +101,7 @@ typedef struct obj {
 		unsigned long index;
 		struct {
 			unsigned long offset;
-			unsigned char first_bit, last_bit;
+			unsigned char is_bitfield, first_bit, last_bit;
 		};
 	};
 } obj_t;
@@ -119,7 +119,7 @@ static inline bool has_index(obj_t *o) {
 }
 
 static inline bool is_bitfield(obj_t *o) {
-	return o->last_bit != 0;
+	return o->is_bitfield != 0;
 }
 
 static inline bool is_terminal(obj_t *o) {

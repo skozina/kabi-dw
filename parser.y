@@ -175,6 +175,7 @@ struct_elt:
 		abort("Invalid offset: %lx:%lu:%lu\n", $1, $3, $5);
 	    $$ = new_struct_member_add($IDENTIFIER, $type);
 	    $$->offset = $1;
+	    $$->is_bitfield = 1;
 	    $$->first_bit = $3;
 	    $$->last_bit = $5;
 	}

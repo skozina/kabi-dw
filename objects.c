@@ -859,7 +859,10 @@ static int _cmp_nodes(obj_t *o1, obj_t *o2, bool search) {
 	    cmp_str(o1->name, o2->name) ||
 	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
 	    (has_constant(o1) && (o1->constant != o2->constant)) ||
-	    (has_index(o1) && (o1->index != o2->index)))
+	    (has_index(o1) && (o1->index != o2->index)) ||
+	    (is_bitfield(o1) != is_bitfield(o2)) ||
+	    (is_bitfield(o1) && ((o1->last_bit - o1->first_bit) !=
+				 (o2->last_bit - o1->first_bit))))
 		return CMP_DIFF;
 
 	if (o1->type == __type_reffile) {
@@ -873,8 +876,7 @@ static int _cmp_nodes(obj_t *o1, obj_t *o2, bool search) {
 
 	if (has_offset(o1) &&
 	    ((o1->offset != o2->offset) ||
-	     (o1->first_bit != o2->first_bit) ||
-	     (o1->last_bit != o2->last_bit))) {
+	     (is_bitfield(o1) && (o1->first_bit != o2->first_bit)))) {
 		if (search && o1->name == NULL)
 			/*
 			 * This field is an unnamed struct or union. When
