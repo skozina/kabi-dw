@@ -650,21 +650,28 @@ void print_tree(obj_t *root) {
 	print_tree_prefix(root, NULL, stdout);
 }
 
-static int fill_parent_cb(obj_t *o, void *args) {
-	obj_t **parent = (obj_t **) args;
+static void fill_parent_rec(obj_t *o, obj_t *parent) {
+	obj_list_t *list = NULL;
 
-	o->parent = *parent;
-	*parent = o;
+	o->parent = parent;
 
-	return 0;
+	if (o->member_list)
+		list = o->member_list->first;
+
+	while (list) {
+		fill_parent_rec(list->member, o);
+		list = list->next;
+	}
+
+	if (o->ptr)
+		fill_parent_rec(o->ptr, o);
 }
 
 /*
  * Walk the tree and fill all the parents field
  */
 void fill_parent(obj_t *root) {
-	obj_t *parent = NULL;
-	walk_tree(root, fill_parent_cb, &parent);
+	fill_parent_rec(root, NULL);
 }
 
 static int walk_list(obj_list_t *list, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
