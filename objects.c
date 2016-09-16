@@ -854,7 +854,7 @@ static int cmp_node_reffile(obj_t *o1, obj_t *o2) {
 
 	return CMP_SAME;
 }
-static int cmp_nodes(obj_t *o1, obj_t *o2) {
+static int _cmp_nodes(obj_t *o1, obj_t *o2, bool search) {
 	if ((o1->type != o2->type) ||
 	    cmp_str(o1->name, o2->name) ||
 	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
@@ -874,10 +874,22 @@ static int cmp_nodes(obj_t *o1, obj_t *o2) {
 	if (has_offset(o1) &&
 	    ((o1->offset != o2->offset) ||
 	     (o1->first_bit != o2->first_bit) ||
-	     (o1->last_bit != o2->last_bit)))
+	     (o1->last_bit != o2->last_bit))) {
+		if (search && o1->name == NULL)
+			/*
+			 * This field is an unnamed struct or union. When
+			 * searching for a node, avoid to consider the next
+			 * unnamed struct or union to be the same one.
+			 */
+			return CMP_DIFF;
 		return CMP_OFFSET;
+	}
 
 	return CMP_SAME;
+}
+
+static int cmp_nodes(obj_t *o1, obj_t *o2) {
+	return _cmp_nodes(o1, o2, false);
 }
 
 obj_list_t *find_object(obj_t *o, obj_list_t *l) {
@@ -885,7 +897,7 @@ obj_list_t *find_object(obj_t *o, obj_list_t *l) {
 	int ret;
 
 	while (list) {
-		ret = cmp_nodes(o, list->member);
+		ret = _cmp_nodes(o, list->member, true);
 		if (ret == CMP_SAME || ret == CMP_OFFSET)
 			return list;
 		list = list->next;
