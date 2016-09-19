@@ -122,10 +122,7 @@ void generate_usage() {
 	       "    -s, --symbols symbol_file:\n\t\t\ta file containing the"
 	       " list of symbols of interest (e.g. whitelisted)\n"
 	       "    -r, --replace-path abs_path:\n\t\t\t"
-	       "replace the absolute path by a relative path\n"
-	       "    -m, --max-retry n:\n\t\t\t"
-	       "max number o trial to generate a kabi file (default %i)\n",
-	       MAX_RETRY);
+	       "replace the absolute path by a relative path\n");
 	exit(1);
 }
 
@@ -134,7 +131,6 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 	*symbol_file = NULL;
 	conf->verbose = false;
 	conf->kabi_dir = DEFAULT_OUTPUT_DIR;
-	conf->max_retry = MAX_RETRY;
 	int opt, opt_index;
 	struct option loptions[] = {
 		{"help", no_argument, 0, 'h'},
@@ -142,7 +138,6 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 		{"output", required_argument, 0, 'o'},
 		{"symbols", required_argument, 0, 's'},
 		{"replace-path", required_argument, 0, 'r'},
-		{"max-retry", required_argument, 0, 'm'},
 		{0, 0, 0, 0}
 	};
 
@@ -163,9 +158,6 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 		case 'r':
 			get_file_replace_path = optarg;
 			break;
-		case 'm':
-			conf->max_retry = atoi(optarg);
-			break;
 		default:
 			generate_usage();
 		}
@@ -177,8 +169,6 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 	conf->kernel_dir = argv[optind];
 
 	rec_mkdir(conf->kabi_dir);
-
-	conf->incomplete = stack_init();
 }
 
 static void generate(int argc, char **argv) {

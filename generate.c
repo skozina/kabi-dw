@@ -509,65 +509,8 @@ static bool contains(stack_t *st, char *filename) {
 	contains_cb_t args = {filename, false};
 
 	walk_stack(st, contains_cb, &args);
+
 	return args.ret;
-}
-
-typedef struct {
-	char *filename;
-	int count;
-	bool incomplete;
-} incomplete_stack_t;
-
-typedef struct {
-	char *filename;
-	incomplete_stack_t *data;
-} gc_cb_t;
-
-static void get_incomplete_cb(void *data, void *arg) {
-	incomplete_stack_t *d = (incomplete_stack_t *)data;
-	gc_cb_t *args = (gc_cb_t *)arg;
-
-	if (!cmp_str(d->filename, args->filename))
-		args->data = d;
-}
-
-static incomplete_stack_t *get_incomplete(stack_t *st, char *filename) {
-       gc_cb_t args = {filename, NULL};
-
-	walk_stack(st, get_incomplete_cb, &args);
-	return args.data;
-}
-
-static void mark_incomplete(stack_t *st, char *filename) {
-	incomplete_stack_t *data = get_incomplete(st, filename);
-
-	if (!data) {
-		incomplete_stack_t *d = malloc(sizeof(incomplete_stack_t));
-
-		d->filename = strdup(filename);
-		d->count = 1;
-		d->incomplete = true;
-		stack_push(st, d);
-	} else
-		data->incomplete = true;
-}
-
-static int is_incomplete(stack_t *st, char *filename) {
-	incomplete_stack_t *data = get_incomplete(st, filename);
-
-	if (!data || !data->incomplete)
-		return 0;
-	return data->count;
-}
-
-static void inc_retry_count(stack_t *st, char *filename) {
-	incomplete_stack_t *data = get_incomplete(st, filename);
-
-	if (!data)
-		fail("NULL not expected here\n");
-
-	data->count++;
-	data->incomplete = false;
 }
 
 static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
@@ -596,25 +539,19 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		asprintf_safe(&file_path, "%s/%s", conf->kabi_dir, file);
 
 		/*
-		 * If the file already exist and does not contains
-		 * incomplete definition we're done.  Also don't try
-		 * to reenter a file that is already on the stack.
+		 * If the file already exists, delete it.
+		 * Don't try to reenter a file that we have seen already for
+		 * this CU, otherwise we could loop forever.
 		 */
 		if (access(file_path, F_OK) == 0) {
-			int retry = is_incomplete(conf->incomplete, file);
-			if ( retry && (retry < conf->max_retry) &&
-			    !contains(conf->stack, file)) {
-				/* Remove the file and try again */
-				if (conf->verbose)
-					printf("Retry \"%s\" %ith times\n",
-					       file, retry);
-				inc_retry_count(conf->incomplete, file);
+			if (!contains(conf->processed, file)) {
 				unlink(file_path);
 			} else {
 				free(file_path);
 				goto done;
 			}
 		}
+		stack_push(conf->processed, strdup(file));
 
 		if (is_declaration(die)) {
 			if (conf->verbose)
@@ -724,12 +661,6 @@ done:
 	if (parent_file != NULL && file != NULL)
 		fprintf(parent_file, "@\"%s\"\n", file);
 
-	if (is_declaration(die)) {
-		if (conf->verbose)
-			printf("Incomplete definition: mark the file\n");
-		mark_incomplete(conf->incomplete, stack_head(conf->stack));
-	}
-
 	free(file);
 }
 
@@ -830,6 +761,8 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 
 			/* Grab a fresh stack of symbols */
 			conf->stack = stack_init();
+			/* And a set of all processed symbols */
+			conf->processed = stack_init();
 
 			/* Print both the CU DIE and symbol DIE */
 			print_die(dbg, NULL, cu_die, &child_die, conf);
@@ -841,6 +774,11 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 				free(data);
 			stack_destroy(conf->stack);
 			conf->stack = NULL;
+
+			while ((data = stack_pop(conf->processed)) != NULL)
+				free(data);
+			stack_destroy(conf->processed);
+			conf->processed = NULL;
 		}
 	} while (dwarf_siblingof(&child_die, &child_die) == 0);
 }
@@ -948,7 +886,6 @@ static bool process_symbol_file(char *path, void *arg) {
  */
 void generate_symbol_defs(generate_config_t *conf) {
 	size_t i;
-	incomplete_stack_t *data;
 
 	/* Lets walk the normal modules */
 	printf("Generating symbol defs from %s...\n", conf->kernel_dir);
@@ -959,10 +896,4 @@ void generate_symbol_defs(generate_config_t *conf) {
 			printf("%s not found!\n", conf->symbols[i]);
 		}
 	}
-
-	while ((data = stack_pop(conf->incomplete))) {
-		free(data->filename);
-		free(data);
-	}
-	stack_destroy(conf->incomplete);
 }
