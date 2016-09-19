@@ -650,21 +650,28 @@ void print_tree(obj_t *root) {
 	print_tree_prefix(root, NULL, stdout);
 }
 
-static int fill_parent_cb(obj_t *o, void *args) {
-	obj_t **parent = (obj_t **) args;
+static void fill_parent_rec(obj_t *o, obj_t *parent) {
+	obj_list_t *list = NULL;
 
-	o->parent = *parent;
-	*parent = o;
+	o->parent = parent;
 
-	return 0;
+	if (o->member_list)
+		list = o->member_list->first;
+
+	while (list) {
+		fill_parent_rec(list->member, o);
+		list = list->next;
+	}
+
+	if (o->ptr)
+		fill_parent_rec(o->ptr, o);
 }
 
 /*
  * Walk the tree and fill all the parents field
  */
 void fill_parent(obj_t *root) {
-	obj_t *parent = NULL;
-	walk_tree(root, fill_parent_cb, &parent);
+	fill_parent_rec(root, NULL);
 }
 
 static int walk_list(obj_list_t *list, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
@@ -847,12 +854,15 @@ static int cmp_node_reffile(obj_t *o1, obj_t *o2) {
 
 	return CMP_SAME;
 }
-static int cmp_nodes(obj_t *o1, obj_t *o2) {
+static int _cmp_nodes(obj_t *o1, obj_t *o2, bool search) {
 	if ((o1->type != o2->type) ||
 	    cmp_str(o1->name, o2->name) ||
 	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
 	    (has_constant(o1) && (o1->constant != o2->constant)) ||
-	    (has_index(o1) && (o1->index != o2->index)))
+	    (has_index(o1) && (o1->index != o2->index)) ||
+	    (is_bitfield(o1) != is_bitfield(o2)) ||
+	    (is_bitfield(o1) && ((o1->last_bit - o1->first_bit) !=
+				 (o2->last_bit - o1->first_bit))))
 		return CMP_DIFF;
 
 	if (o1->type == __type_reffile) {
@@ -866,11 +876,22 @@ static int cmp_nodes(obj_t *o1, obj_t *o2) {
 
 	if (has_offset(o1) &&
 	    ((o1->offset != o2->offset) ||
-	     (o1->first_bit != o2->first_bit) ||
-	     (o1->last_bit != o2->last_bit)))
+	     (is_bitfield(o1) && (o1->first_bit != o2->first_bit)))) {
+		if (search && o1->name == NULL)
+			/*
+			 * This field is an unnamed struct or union. When
+			 * searching for a node, avoid to consider the next
+			 * unnamed struct or union to be the same one.
+			 */
+			return CMP_DIFF;
 		return CMP_OFFSET;
+	}
 
 	return CMP_SAME;
+}
+
+static int cmp_nodes(obj_t *o1, obj_t *o2) {
+	return _cmp_nodes(o1, o2, false);
 }
 
 obj_list_t *find_object(obj_t *o, obj_list_t *l) {
@@ -878,7 +899,7 @@ obj_list_t *find_object(obj_t *o, obj_list_t *l) {
 	int ret;
 
 	while (list) {
-		ret = cmp_nodes(o, list->member);
+		ret = _cmp_nodes(o, list->member, true);
 		if (ret == CMP_SAME || ret == CMP_OFFSET)
 			return list;
 		list = list->next;
