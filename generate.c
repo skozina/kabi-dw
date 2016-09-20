@@ -237,17 +237,17 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 	return (file_name);
 }
 
-static FILE * open_output_file(char *file_name) {
-	char *temp;
+static FILE * open_temp_file(generate_config_t *conf, char **temp_path) {
 	FILE *file;
+	int fd;
 
-	temp = strdup(file_name);
-	rec_mkdir(dirname(temp));
-	free(temp);
+	asprintf_safe(temp_path, "%s/kabi-dw.XXXXXX", conf->kabi_dir);
+	if ((fd = mkstemp(*temp_path)) == -1)
+		fail("mkstemp() failed: %s\n", strerror(errno));
 
-	file = fopen(file_name, "w");
+	file = fdopen(fd, "w");
 	if (file == NULL)
-		fail("Failed to open file %s: %s\n", file_name,
+		fail("Failed to open file %s: %s\n", *temp_path,
 		    strerror(errno));
 
 	return (file);
@@ -518,6 +518,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	unsigned int tag = dwarf_tag(die);
 	const char *name = dwarf_diename(die);
 	char *file;
+	char *temp_path = NULL;
 	FILE *fout;
 
 	/*
@@ -534,37 +535,33 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	if (file != NULL) {
 		const char *dec_file;
 		long dec_line;
-		char *file_path;
 
-		asprintf_safe(&file_path, "%s/%s", conf->kabi_dir, file);
 
 		/*
-		 * If the file already exists, delete it.
 		 * Don't try to reenter a file that we have seen already for
-		 * this CU, otherwise we could loop forever.
+		 * this CU.
+		 * Note that this is just a pure optimization, the same file
+		 * (type) in the same CU must be identical.
+		 * But this is major optimization, without it a single
+		 * re-generation of a top file would require a full regeneration
+		 * of its full tree, thus the difference in speed is many orders
+		 * of magnitude!
 		 */
-		if (access(file_path, F_OK) == 0) {
-			if (!contains(conf->processed, file)) {
-				unlink(file_path);
-			} else {
-				free(file_path);
-				goto done;
-			}
-		}
-		stack_push(conf->processed, strdup(file));
+		if (contains(conf->processed, file))
+			goto done;
+
+		stack_push(conf->processed, safe_strdup(file));
 
 		if (is_declaration(die)) {
 			if (conf->verbose)
 				printf("WARNING: Skipping following file as we "
 				    "have only declaration: %s\n", file);
-			free(file_path);
 			goto done;
 		}
 
 		if (conf->verbose)
 			printf("Generating %s\n", file);
-		fout = open_output_file(file_path);
-		free(file_path);
+		fout = open_temp_file(conf, &temp_path);
 
 		/* Print the CU die on the first line of each file */
 		if (cu_die != NULL)
@@ -577,7 +574,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 
 		/* Print the stack and add then add the current file to it */
 		walk_stack(conf->stack, print_stack_cb, fout);
-		stack_push(conf->stack, strdup(file));
+		stack_push(conf->stack, safe_strdup(file));
 	} else {
 		fout = parent_file;
 	}
@@ -652,8 +649,41 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	}
 
 	if (file != NULL) {
+		char *final_path;
+		char *temp;
+
 		free(stack_pop(conf->stack));
 		fclose(fout);
+
+		asprintf_safe(&final_path, "%s/%s", conf->kabi_dir, file);
+
+		/*
+		 * TODO Jerome compare temp_path with final_path.
+		 *
+		 * again:
+		 * if (doesn_exist(final_path) {
+		 *     rename(temp_path, final_path);
+		 * } else {
+		 *     if (are_the_same(final_path, temp_path)) {
+		 *         unlink(temp_path);
+		 *     } else {
+		 *         final_path += "x";
+		 *         goto again;
+		 *     }
+		 * }
+		 */
+		if (access(final_path, F_OK) == 0)
+			unlink(final_path);
+
+		temp = safe_strdup(final_path);
+		rec_mkdir(dirname(temp)); /* dirname() modifies its buffer! */
+		free(temp);
+
+		if (rename(temp_path, final_path) != 0)
+			fail("rename() failed: %s\n", strerror(errno));
+
+		free(final_path);
+		free(temp_path);
 	}
 
 done:

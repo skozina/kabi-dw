@@ -38,6 +38,13 @@ static inline void *safe_malloc(size_t size) {
 	return (result);
 }
 
+static inline void *safe_strdup(const char *s) {
+	void *result = strdup(s);
+	if (result == NULL)
+		fail("strdup() of \"%s\" failed", s);
+	return (result);
+}
+
 extern void walk_dir(char *, bool, bool (*)(char *, void *), void *);
 extern int check_is_directory(char *);
 extern void rec_mkdir(char *);

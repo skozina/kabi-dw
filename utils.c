@@ -112,8 +112,7 @@ void rec_mkdir(char *path) {
 
 	assert(path != NULL && len > 0);
 
-	buf = safe_malloc(strlen(path) + 1);
-	strcpy(buf, path);
+	buf = safe_strdup(path);
 
 	/* Get rid of trailing slashes */
 	for (pos = buf + len - 1; pos > buf && *pos == '/'; --pos)
@@ -133,11 +132,10 @@ void rec_mkdir(char *path) {
 			*pos = '\0';
 		rv = check_is_directory(buf);
 		if (rv != 0) {
-			if (rv == ENOENT) {
+			if (rv == ENOENT)
 				safe_mkdir(buf);
-			} else {
+			else
 				fail(strerror(rv));
-			}
 		}
 
 		if (pos != NULL)

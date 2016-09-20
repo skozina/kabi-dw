@@ -19,6 +19,8 @@
  * A trivial stack implementation.
  */
 
+#define	_GNU_SOURCE	/* asprintf() */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>

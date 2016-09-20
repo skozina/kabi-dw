@@ -21,6 +21,8 @@
  * EXPORT_SYMBOL() macro.
  */
 
+#define	_GNU_SOURCE	/* asprintf() */
+
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
