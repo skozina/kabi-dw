@@ -20,8 +20,6 @@
  * given build of the Linux kernel.
  */
 
-#define	_GNU_SOURCE	/* asprintf() */
-
 #include <dwarf.h>
 #include <inttypes.h>
 #include <libelf.h>
@@ -33,7 +31,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <assert.h>
-#include <libgen.h> /* basename(), dirname() */
+#include <libgen.h> /* dirname() */
 
 #include <elfutils/libdw.h>
 #include <elfutils/libdwfl.h>
@@ -241,7 +239,8 @@ static FILE * open_temp_file(generate_config_t *conf, char **temp_path) {
 	FILE *file;
 	int fd;
 
-	asprintf_safe(temp_path, "%s/kabi-dw.XXXXXX", conf->kabi_dir);
+	asprintf_safe(temp_path, "%s/%s/kabi-dw.XXXXXX", conf->kabi_dir,
+	    TEMP_PATH);
 	if ((fd = mkstemp(*temp_path)) == -1)
 		fail("mkstemp() failed: %s\n", strerror(errno));
 

@@ -38,6 +38,8 @@
 #define	BUILTIN_PATH		"<built-in>"
 /* Path used for DW_AT_declaration, ie. those we don't have */
 #define	DECLARATION_PATH	"<declarations>"
+/* Path where the type files are temporarily stored. */
+#define	TEMP_PATH		"<temp>"
 
 typedef struct {
 	bool verbose;

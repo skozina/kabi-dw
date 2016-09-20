@@ -20,7 +20,6 @@
  * compares the two.
  */
 
-#define	_GNU_SOURCE	/* asprintf() */
 #define	_POSIX_C_SOURCE 200809L /* strdup() */
 
 #include <sys/types.h>
@@ -32,7 +31,6 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <errno.h>
-#include <libgen.h> /* basename(), dirname() */
 
 #include "main.h"
 #include "utils.h"

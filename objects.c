@@ -19,7 +19,10 @@
  * Internal representation and manipulation of symbols
  */
 
-#define _GNU_SOURCE /* We use GNU basename() that doesn't modify the arg */
+#ifndef	_GNU_SOURCE /* We use GNU basename() that doesn't modify the arg */
+#error "We need GNU version of basename()!"
+#endif
+
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>

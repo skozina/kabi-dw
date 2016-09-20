@@ -17,7 +17,7 @@ PROG=kabi-dw
 SRCS=generate.c ksymtab.c check.c utils.c main.c stack.c objects.c
 
 CC=gcc
-CFLAGS=-Wall -O0 -g --std=c99 -c
+CFLAGS=-Wall -O0 -g --std=c99 -D_GNU_SOURCE -c
 LDFLAGS=-ldw -lelf -lfl
 
 YACC=bison

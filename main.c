@@ -172,6 +172,7 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 }
 
 static void generate(int argc, char **argv) {
+	char *temp_path;
 	char *symbol_file;
 	generate_config_t *conf = safe_malloc(sizeof (*conf));
 
@@ -190,7 +191,18 @@ static void generate(int argc, char **argv) {
 			conf->symbols_found[i] = false;
 	}
 
+	/* Create a place for temporary files */
+	asprintf_safe(&temp_path, "%s/%s", conf->kabi_dir, TEMP_PATH);
+	rec_mkdir(temp_path);
+
 	generate_symbol_defs(conf);
+
+	/* Delete the temporary space again */
+	if (rmdir(temp_path) != 0)
+		printf("WARNING: Failed to delete %s: %s\n", temp_path,
+		    strerror(errno));
+
+	free(temp_path);
 
 	if (symbol_file != NULL) {
 		int i;

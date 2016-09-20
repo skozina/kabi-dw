@@ -19,8 +19,6 @@
  * This file contains couple of generally useful functions.
  */
 
-#define	_GNU_SOURCE	/* asprintf() */
-
 #include <sys/types.h>
 #include <stdlib.h>
 #include <stdbool.h>
