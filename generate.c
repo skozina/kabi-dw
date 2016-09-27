@@ -512,6 +512,60 @@ static bool contains(stack_t *st, char *filename) {
 	return args.ret;
 }
 
+static ssize_t getline_safe(char **lineptr, size_t *n, FILE *stream) {
+	ssize_t ret = getline(lineptr, n, stream);
+
+	if (ret == 1)
+		fail("getline failed: %s\n", strerror(errno));
+
+	return ret;
+}
+
+static char *skipheader(FILE *file, size_t *n) {
+	char *s = NULL;
+
+	getline_safe(&s, n, file);
+	if (strncmp("CU ", s, 3))
+		fail("skipheader: no compile unit\n");
+	getline_safe(&s, n, file);
+	if (strncmp("File ", s, 5))
+		fail("skipheader: no compile unit\n");
+
+	do {
+		getline_safe(&s, n, file);
+	} while (!strncmp("-> ", s, 3));
+
+	return s;
+}
+
+static bool are_same_symbol(char *path1, char *path2) {
+	FILE *file1, *file2;
+	char *s1, *s2;
+	size_t n1 = 0, n2 = 0;
+	bool ret = true;
+
+	file1 = fopen(path1, "r");
+	file2 = fopen(path2, "r");
+
+	s1 = skipheader(file1, &n1);
+	s2 = skipheader(file2, &n2);
+
+	do {
+		if (strcmp(s1, s2)){
+			ret = false;
+			goto out;
+		}
+	} while ((getline(&s1, &n1, file1) != -1) &&
+		 (getline(&s2, &n2, file2) != -1));
+
+out:
+	free(s1);
+	free(s2);
+	fclose(file1);
+	fclose(file2);
+	return ret;
+}
+
 static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
     Dwarf_Die *die, generate_config_t *conf) {
 	unsigned int tag = dwarf_tag(die);
@@ -648,13 +702,15 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	}
 
 	if (file != NULL) {
-		char *final_path;
-		char *temp;
+		char *final_path, *base_file = NULL;
+		char *temp, *dir = conf->kabi_dir;
+		int version = 0;
 
 		free(stack_pop(conf->stack));
 		fclose(fout);
 
-		asprintf_safe(&final_path, "%s/%s", conf->kabi_dir, file);
+	again:
+		asprintf_safe(&final_path, "%s/%s", dir, file);
 
 		/*
 		 * TODO Jerome compare temp_path with final_path.
@@ -671,8 +727,24 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		 *     }
 		 * }
 		 */
-		if (access(final_path, F_OK) == 0)
-			unlink(final_path);
+		if (access(final_path, F_OK) == 0) {
+			if (are_same_symbol(final_path, temp_path)) {
+				unlink(temp_path);
+				goto out;
+			} else {
+				if (!version) {
+					base_file = safe_strdup(file);
+					/* Remove .txt ending */
+					base_file[strlen(base_file) - 4] = '\0';
+				}
+				version++;
+				free(final_path);
+				free(file);
+				asprintf_safe(&file, "%s-%i.txt",
+					      base_file, version);
+				goto again;
+			}
+		}
 
 		temp = safe_strdup(final_path);
 		rec_mkdir(dirname(temp)); /* dirname() modifies its buffer! */
@@ -681,6 +753,8 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		if (rename(temp_path, final_path) != 0)
 			fail("rename() failed: %s\n", strerror(errno));
 
+	out:
+		free(base_file);
 		free(final_path);
 		free(temp_path);
 	}

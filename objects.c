@@ -227,8 +227,11 @@ static const char *typetostr(obj_t *o) {
 static char *filenametotype(char *filename) {
 	char *base = basename(filename);
 	char *prefix= NULL, *name = NULL, *type = NULL;
+	int version = 0;
 
-	if ( sscanf(base, "%m[a-z]--%m[^.].txt", &prefix, &name) != 2 )
+	if ( (sscanf(base, "%m[a-z]--%m[^.-].txt", &prefix, &name) != 2) &&
+	     (sscanf(base, "%m[a-z]--%m[^.-]-%i.txt",
+		     &prefix, &name, &version) != 3))
 		fail("Unexpected file name: %s\n", filename);
 
 	if (IS_PREFIX(prefix, TYPEDEF_FILE))
