@@ -250,6 +250,22 @@ static char *filenametotype(char *filename) {
 	return type;
 }
 
+/*
+ * Is this symbol a duplicate, i.e. is not the first version of this symbol.
+ */
+static bool is_duplicate(char *filename) {
+	char *base = basename(filename);
+	char *prefix= NULL, *name = NULL;
+	int version = 0;
+	bool ret = (sscanf(base, "%m[a-z]--%m[^.-]-%i.txt",
+			   &prefix, &name, &version) == 3);
+
+	free(prefix);
+	free(name);
+
+	return ret;
+}
+
 static int c_precedence(obj_t *o) {
 	switch (o->type) {
 	case __type_func:
@@ -956,6 +972,7 @@ typedef struct compare_config_s {
 	bool debug;
 	bool hide_kabi;
 	bool hide_kabi_new;
+	bool skip_duplicate; /* Don't show multiple version of a symbol */
 	int follow;
 	char *old_dir;
 	char *new_dir;
@@ -977,7 +994,7 @@ typedef struct compare_config_s {
 	int no_moved_files; /* file that has been moved (or removed) */
 } compare_config_t;
 
-compare_config_t compare_config = {false, false, false, 0,
+compare_config_t compare_config = {false, false, false, false, 0,
 				   NULL, NULL, NULL, NULL,
 				   0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -1209,11 +1226,11 @@ struct {
 	bool hide_kabi;
 	bool hide_kabi_new;
 	FILE *file;
-} show_config = {false, false, NULL};
+} show_config = {false, false, false, NULL};
 
 void show_usage() {
 	printf("Usage:\n"
-	       "\tcompare [options] kabi_file...\n"
+	       "\tshow [options] kabi_file...\n"
 	       "\nOptions:\n"
 	       "    -h, --help:\t\tshow this message\n"
 	       "    -k, --hide-kabi:\thide changes made by RH_KABI_REPLACE()\n"
@@ -1347,7 +1364,9 @@ void compare_usage() {
 	       "hide symbols removed from the end of a struct, union...\n"
 	       "    --no-moved-files:\thide changes caused by symbols "
 	       "definition moving to another file\n\t\t\t"
-		"Warning: it also hides symbols that are removed entirely\n");
+	       "Warning: it also hides symbols that are removed entirely\n"
+	       "    -s, --skip-duplicate:\tshow only the first version of a "
+	       "symbol when several exist\n");
 
 	exit(1);
 }
@@ -1453,6 +1472,9 @@ static bool compare_files_cb(char *kabi_path, void *arg) {
 	compare_config_t *conf = (compare_config_t *)arg;
 	char *filename;
 
+	if(compare_config.skip_duplicate && is_duplicate(kabi_path))
+		return true;
+
 	/* If conf->*_dir contains slashes, skip them */
 	filename = kabi_path + strlen(conf->old_dir);
 	while (*filename == '/')
@@ -1480,6 +1502,7 @@ int compare(int argc, char **argv) {
 		{"hide-kabi", no_argument, 0, 'k'},
 		{"hide-kabi-new", no_argument, 0, 'n'},
 		{"help", no_argument, 0, 'h'},
+		{"skip-duplicate", no_argument, 0, 's'},
 		{"follow", no_argument, &compare_config.follow, 1},
 		{"no-offset", no_argument, &display_options.no_offset, 1},
 		COMPARE_NO_OPT(replaced),
@@ -1495,7 +1518,7 @@ int compare(int argc, char **argv) {
 
 	memset(&display_options, 0, sizeof(display_options));
 
-	while ((opt = getopt_long(argc, argv, "dknh",
+	while ((opt = getopt_long(argc, argv, "dknhs",
 				  loptions, &opt_index)) != -1) {
 		switch (opt) {
 		case 0:
@@ -1507,6 +1530,9 @@ int compare(int argc, char **argv) {
 			compare_config.hide_kabi_new = true;
 		case 'k':
 			compare_config.hide_kabi = true;
+			break;
+		case 's':
+			compare_config.skip_duplicate = true;
 			break;
 		case 'h':
 		default:
