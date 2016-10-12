@@ -1124,7 +1124,7 @@ static int hide_kabi_cb(obj_t *o, void *args) {
 	bool show_new_field = (bool) args;
 
 	if (o->name) {
-		if (!strncmp(o->name, "__UNIQUE_ID_rh_kabi_hide", 24))
+		if (!strncmp(o->name, RH_KABI_HIDE, RH_KABI_HIDE_LEN))
 			fail("Missed a kabi unique ID\n");
 
 		/* Hide RH_KABI_DEPRECATE* */
@@ -1143,7 +1143,7 @@ static int hide_kabi_cb(obj_t *o, void *args) {
 	    !(l = l->next) || !(kabi_struct = l->member) ||
 	    (kabi_struct->type != __type_var) ||
 	    !kabi_struct->name ||
-	    strncmp(kabi_struct->name, "__UNIQUE_ID_rh_kabi_hide", 24))
+	    strncmp(kabi_struct->name, RH_KABI_HIDE, RH_KABI_HIDE_LEN))
 		return CB_CONT;
 
 	if (!kabi_struct->ptr || kabi_struct->ptr->type != __type_struct ||

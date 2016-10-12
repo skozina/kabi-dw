@@ -41,6 +41,9 @@
 /* Path where the type files are temporarily stored. */
 #define	TEMP_PATH		"<temp>"
 
+#define RH_KABI_HIDE		"__UNIQUE_ID_rh_kabi_hide"
+#define RH_KABI_HIDE_LEN	24
+
 typedef struct {
 	bool verbose;
 	char *kernel_dir; /* Path to  the kernel modules to process */

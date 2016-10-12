@@ -551,7 +551,9 @@ static bool are_same_symbol(char *path1, char *path2) {
 	s2 = skipheader(file2, &n2);
 
 	do {
-		if (strcmp(s1, s2)){
+		if (strcmp(s1, s2) &&
+		    strncmp(s1, RH_KABI_HIDE, RH_KABI_HIDE_LEN) &&
+		    strncmp(s2, RH_KABI_HIDE, RH_KABI_HIDE_LEN)) {
 			ret = false;
 			goto out;
 		}
