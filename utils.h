@@ -54,7 +54,7 @@ static inline void *safe_strdup(const char *s) {
 static inline ssize_t safe_getline(char **lineptr, size_t *n, FILE *stream) {
 	ssize_t ret = getline(lineptr, n, stream);
 
-	if (ret == 1)
+	if ((ret == -1) && (errno != ENOENT))
 		fail("getline failed: %s\n", strerror(errno));
 
 	return (ret);

@@ -512,39 +512,60 @@ static bool contains(stack_t *st, char *filename) {
 	return args.ret;
 }
 
-static char *skipheader(FILE *file, size_t *n) {
-	char *s = NULL;
-
-	safe_getline(&s, n, file);
-	if (strncmp("CU ", s, 3))
+static void get_header_line(FILE *file, char **s, size_t *n,
+    const char *template) {
+	safe_getline(s, n, file);
+	if (strncmp(template, *s, strlen(template)) != 0)
 		fail("skipheader: no compile unit\n");
-	safe_getline(&s, n, file);
-	if (strncmp("File ", s, 5))
-		fail("skipheader: no compile unit\n");
+}
 
+static bool check_header(FILE *file1, FILE *file2) {
+	char *s1 = NULL, *s2 = NULL;
+	size_t n1 = 0, n2 = 0;
+	bool ret = true;
+
+	/* Ignore CU line */
+	get_header_line(file1, &s1, &n1, "CU ");
+	get_header_line(file2, &s2, &n2, "CU ");
+
+	/* Check File line */
+	get_header_line(file1, &s1, &n1, "File ");
+	get_header_line(file2, &s2, &n2, "File ");
+
+	if (strcmp(s1, s2) != 0)
+		ret = false;
+
+	free(s1);
+	free(s2);
+	return (ret);
+}
+
+static void get_first_line(FILE *file, char **s, size_t *n) {
 	do {
-		safe_getline(&s, n, file);
-	} while (!strncmp("-> ", s, 3));
-
-	return s;
+		safe_getline(s, n, file);
+	} while (!strncmp("-> ", *s, 3));
 }
 
 static bool are_same_symbol(char *path1, char *path2) {
 	FILE *file1, *file2;
-	char *s1, *s2;
+	char *s1 = NULL, *s2 = NULL;
 	size_t n1 = 0, n2 = 0;
 	bool ret = true;
 
 	file1 = fopen(path1, "r");
 	file2 = fopen(path2, "r");
 
-	s1 = skipheader(file1, &n1);
-	s2 = skipheader(file2, &n2);
+	if (!(ret = check_header(file1, file2)))
+		goto out;
+
+	/* Skipt the stack */
+	get_first_line(file1, &s1, &n1);
+	get_first_line(file2, &s2, &n2);
 
 	do {
-		if (strcmp(s1, s2) &&
-		    strncmp(s1, RH_KABI_HIDE, RH_KABI_HIDE_LEN) &&
-		    strncmp(s2, RH_KABI_HIDE, RH_KABI_HIDE_LEN)) {
+		if ((strcmp(s1, s2) != 0) &&
+		    (strncmp(s1, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0) &&
+		    (strncmp(s2, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0)) {
 			ret = false;
 			goto out;
 		}
