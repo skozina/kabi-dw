@@ -18,17 +18,23 @@
 #ifndef UTILS_H_
 #define	UTILS_H_
 
+#include <stdarg.h>
+#include <errno.h>
+
 #define	fail(m...)	{			\
 	fprintf(stderr, "%s():%d ", __func__, __LINE__);	\
 	fprintf(stderr, m);				\
 	exit(1);				\
 }
 
-#define asprintf_safe(args...)					\
-do {								\
-	if (asprintf(args) == -1 )				\
-		fail("asprintf failed: %s", strerror(errno));	\
-} while(0)
+static inline void safe_asprintf(char **strp, const char *fmt, ...) {
+	va_list arglist;
+
+	va_start(arglist, fmt);
+	if (vasprintf(strp, fmt, arglist) == -1)
+		fail("asprintf failed: %s", strerror(errno));
+	va_end(arglist);
+}
 
 static inline void *safe_malloc(size_t size) {
 	void *result = malloc(size);
@@ -43,6 +49,15 @@ static inline void *safe_strdup(const char *s) {
 	if (result == NULL)
 		fail("strdup() of \"%s\" failed", s);
 	return (result);
+}
+
+static inline ssize_t safe_getline(char **lineptr, size_t *n, FILE *stream) {
+	ssize_t ret = getline(lineptr, n, stream);
+
+	if (ret == 1)
+		fail("getline failed: %s\n", strerror(errno));
+
+	return (ret);
 }
 
 extern void walk_dir(char *, bool, bool (*)(char *, void *), void *);

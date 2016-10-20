@@ -192,7 +192,7 @@ static void generate(int argc, char **argv) {
 	}
 
 	/* Create a place for temporary files */
-	asprintf_safe(&temp_path, "%s/%s", conf->kabi_dir, TEMP_PATH);
+	safe_asprintf(&temp_path, "%s/%s", conf->kabi_dir, TEMP_PATH);
 	rec_mkdir(temp_path);
 
 	generate_symbol_defs(conf);

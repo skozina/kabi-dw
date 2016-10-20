@@ -202,7 +202,7 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 	 * Pretend like it's in other, non existent file.
 	 */
 	if (is_declaration(die)) {
-		asprintf_safe(&file_name, DECLARATION_PATH "/%s%s.txt",
+		safe_asprintf(&file_name, DECLARATION_PATH "/%s%s.txt",
 		    file_prefix, name);
 
 		return (file_name);
@@ -230,7 +230,7 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 	dec_file = get_file(cu_die, die);
 	assert(dec_file != NULL);
 
-	asprintf_safe(&file_name, "%s/%s%s.txt", dec_file, file_prefix, name);
+	safe_asprintf(&file_name, "%s/%s%s.txt", dec_file, file_prefix, name);
 
 	return (file_name);
 }
@@ -239,7 +239,7 @@ static FILE * open_temp_file(generate_config_t *conf, char **temp_path) {
 	FILE *file;
 	int fd;
 
-	asprintf_safe(temp_path, "%s/%s/kabi-dw.XXXXXX", conf->kabi_dir,
+	safe_asprintf(temp_path, "%s/%s/kabi-dw.XXXXXX", conf->kabi_dir,
 	    TEMP_PATH);
 	if ((fd = mkstemp(*temp_path)) == -1)
 		fail("mkstemp() failed: %s\n", strerror(errno));
@@ -512,27 +512,18 @@ static bool contains(stack_t *st, char *filename) {
 	return args.ret;
 }
 
-static ssize_t getline_safe(char **lineptr, size_t *n, FILE *stream) {
-	ssize_t ret = getline(lineptr, n, stream);
-
-	if (ret == 1)
-		fail("getline failed: %s\n", strerror(errno));
-
-	return ret;
-}
-
 static char *skipheader(FILE *file, size_t *n) {
 	char *s = NULL;
 
-	getline_safe(&s, n, file);
+	safe_getline(&s, n, file);
 	if (strncmp("CU ", s, 3))
 		fail("skipheader: no compile unit\n");
-	getline_safe(&s, n, file);
+	safe_getline(&s, n, file);
 	if (strncmp("File ", s, 5))
 		fail("skipheader: no compile unit\n");
 
 	do {
-		getline_safe(&s, n, file);
+		safe_getline(&s, n, file);
 	} while (!strncmp("-> ", s, 3));
 
 	return s;
@@ -557,8 +548,8 @@ static bool are_same_symbol(char *path1, char *path2) {
 			ret = false;
 			goto out;
 		}
-	} while ((getline(&s1, &n1, file1) != -1) &&
-		 (getline(&s2, &n2, file2) != -1));
+	} while ((safe_getline(&s1, &n1, file1) != -1) &&
+		 (safe_getline(&s2, &n2, file2) != -1));
 
 out:
 	free(s1);
@@ -712,7 +703,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		fclose(fout);
 
 	again:
-		asprintf_safe(&final_path, "%s/%s", dir, file);
+		safe_asprintf(&final_path, "%s/%s", dir, file);
 
 		/*
 		 * TODO Jerome compare temp_path with final_path.
@@ -742,7 +733,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 				version++;
 				free(final_path);
 				free(file);
-				asprintf_safe(&file, "%s-%i.txt",
+				safe_asprintf(&file, "%s-%i.txt",
 					      base_file, version);
 				goto again;
 			}

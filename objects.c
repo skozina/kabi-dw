@@ -239,7 +239,7 @@ static char *filenametotype(char *filename) {
 	else if (IS_PREFIX(prefix, STRUCT_FILE)||
 		 IS_PREFIX(prefix, UNION_FILE) ||
 		 IS_PREFIX(prefix, ENUM_FILE))
-		asprintf_safe(&type, "%s %s", prefix, name);
+		safe_asprintf(&type, "%s %s", prefix, name);
 	else
 		fail("Unexpected file prefix: %s\n", prefix);
 
@@ -437,7 +437,7 @@ static char *postfix_str_free(char **s, char *p) {
 static pp_t print_base(obj_t *o, int depth, const char *prefix) {
 	pp_t ret = {NULL, NULL};
 
-	asprintf_safe(&ret.prefix, "%s ", o->base_type);
+	safe_asprintf(&ret.prefix, "%s ", o->base_type);
 
 	return ret;
 }
@@ -445,7 +445,7 @@ static pp_t print_base(obj_t *o, int depth, const char *prefix) {
 static pp_t print_constant(obj_t *o, int depth, const char *prefix) {
 	pp_t ret = {NULL, NULL};
 
-	asprintf_safe(&ret.prefix, "%s = %li", o->name, (long)o->constant);
+	safe_asprintf(&ret.prefix, "%s = %li", o->name, (long)o->constant);
 
 	return ret;
 }
@@ -469,9 +469,9 @@ static pp_t print_structlike(obj_t *o, int depth, const char *prefix) {
 	char *s, *margin;
 
 	if (o->name)
-		asprintf_safe(&s, "%s %s {\n", typetostr(o), o->name);
+		safe_asprintf(&s, "%s %s {\n", typetostr(o), o->name);
 	else
-		asprintf_safe(&s, "%s {\n", typetostr(o));
+		safe_asprintf(&s, "%s {\n", typetostr(o));
 
 	if (o->member_list)
 		list = o->member_list->first;
@@ -505,7 +505,7 @@ static pp_t print_func(obj_t *o, int depth, const char *prefix) {
 	else
 		name = "";
 
-	asprintf_safe(&s, "%s(\n", name);
+	safe_asprintf(&s, "%s(\n", name);
 
 	if (o->member_list)
 		list = o->member_list->first;
@@ -532,7 +532,7 @@ static pp_t print_array(obj_t *o, int depth, const char *prefix) {
 
 	ret = _print_tree(next, depth, false, prefix);
 
-	asprintf_safe(&s, "[%lu]", o->constant);
+	safe_asprintf(&s, "[%lu]", o->constant);
 	prefix_str_free(&ret.postfix, s);
 
 	return ret;
@@ -559,7 +559,7 @@ static pp_t print_varlike(obj_t *o, int depth, const char *prefix) {
 	char *s = NULL;
 
 	if (is_bitfield(o))
-		asprintf_safe(&s, "%s:%i",
+		safe_asprintf(&s, "%s:%i",
 			      o->name, o->last_bit - o->first_bit + 1);
 	else
 		s = o->name;
@@ -646,10 +646,10 @@ static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix) {
 	if (o->type == __type_struct_member && !display_options.no_offset) {
 		char *offstr;
 		if (is_bitfield(o))
-			asprintf_safe(&offstr, "0x%lx:%2i-%-2i ",
+			safe_asprintf(&offstr, "0x%lx:%2i-%-2i ",
 				      o->offset, o->first_bit, o->last_bit);
 		else
-			asprintf_safe(&offstr, "0x%lx ", o->offset);
+			safe_asprintf(&offstr, "0x%lx ", o->offset);
 		margin = print_margin_offset(prefix, offstr, depth);
 		free(offstr);
 	} else
@@ -1398,9 +1398,9 @@ static int compare_two_files(char *filename, char *newfile, bool follow) {
 	if (!push_file(filename))
 		return 0;
 
-	asprintf_safe(&path1, "%s/%s", old_dir, filename);
+	safe_asprintf(&path1, "%s/%s", old_dir, filename);
 	filename2 = newfile ? newfile : filename;
-	asprintf_safe(&path2, "%s/%s", new_dir, filename2);
+	safe_asprintf(&path2, "%s/%s", new_dir, filename2);
 
 	if (stat(path2, &fstat) != 0) {
 		if (errno == ENOENT) {
@@ -1581,7 +1581,7 @@ int compare(int argc, char **argv) {
 		char *path, *filename;
 
 		filename = compare_config.filename =  argv[optind++];
-		asprintf_safe(&path, "%s/%s", old_dir, filename);
+		safe_asprintf(&path, "%s/%s", old_dir, filename);
 
 		if (stat(path, &sb1) == -1) {
 			if (errno == ENOENT)
