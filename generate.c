@@ -564,8 +564,8 @@ static bool are_same_symbol(char *path1, char *path2) {
 
 	do {
 		if ((strcmp(s1, s2) != 0) &&
-		    (strncmp(s1, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0) &&
-		    (strncmp(s2, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0)) {
+		    ((strncmp(s1, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0) ||
+		    (strncmp(s2, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0))) {
 			ret = false;
 			goto out;
 		}
