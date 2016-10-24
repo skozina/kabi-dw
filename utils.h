@@ -63,6 +63,7 @@ static inline ssize_t safe_getline(char **lineptr, size_t *n, FILE *stream) {
 extern void walk_dir(char *, bool, bool (*)(char *, void *), void *);
 extern int check_is_directory(char *);
 extern void rec_mkdir(char *);
-extern int cmp_str(char *s1, char *s2);
+extern int cmp_str(char *, char *);
+extern void safe_rename(const char *, const char *);
 
 #endif /* UTILS_H */

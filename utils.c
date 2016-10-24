@@ -29,6 +29,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <assert.h>
+#include <libgen.h> /* dirname() */
 
 #include "utils.h"
 
@@ -149,4 +150,16 @@ int cmp_str(char *s1, char *s2) {
 	if (s1)
 		return strcmp(s1, s2);
 	return 0;
+}
+
+void safe_rename(const char *oldpath, const char *newpath) {
+	char *temp;
+
+	temp = safe_strdup(newpath);
+	/* dirname() modifies its buffer! */
+	rec_mkdir(dirname(temp));
+	free(temp);
+
+	if (rename(oldpath, newpath) != 0)
+		fail("rename() failed: %s\n", strerror(errno));
 }

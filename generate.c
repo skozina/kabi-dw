@@ -31,7 +31,6 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <assert.h>
-#include <libgen.h> /* dirname() */
 
 #include <elfutils/libdw.h>
 #include <elfutils/libdwfl.h>
@@ -519,65 +518,83 @@ static void get_header_line(FILE *file, char **s, size_t *n,
 		fail("skipheader: no compile unit\n");
 }
 
-static bool check_header(FILE *file1, FILE *file2) {
-	char *s1 = NULL, *s2 = NULL;
-	size_t n1 = 0, n2 = 0;
-	bool ret = true;
-
-	/* Ignore CU line */
-	get_header_line(file1, &s1, &n1, "CU ");
-	get_header_line(file2, &s2, &n2, "CU ");
-
-	/* Check File line */
-	get_header_line(file1, &s1, &n1, "File ");
-	get_header_line(file2, &s2, &n2, "File ");
-
-	if (strcmp(s1, s2) != 0)
-		ret = false;
-
-	free(s1);
-	free(s2);
-	return (ret);
-}
-
-static void get_first_line(FILE *file, char **s, size_t *n) {
-	do {
+static void get_first_line(FILE *file, char **s, size_t *n, FILE *ofile) {
+	while (true) {
 		safe_getline(s, n, file);
-	} while (!strncmp("-> ", *s, 3));
+		if (strncmp("-> ", *s, 3) != 0)
+			break;
+		if (ofile != NULL)
+			fprintf(ofile, "%s", *s);
+	}
 }
 
-static bool are_same_symbol(char *path1, char *path2) {
-	FILE *file1, *file2;
+static bool merge_files(char *path1, char *path2, char **opath,
+    generate_config_t *conf) {
+	FILE *file1, *file2, *ofile;
 	char *s1 = NULL, *s2 = NULL;
 	size_t n1 = 0, n2 = 0;
 	bool ret = true;
 
 	file1 = fopen(path1, "r");
 	file2 = fopen(path2, "r");
+	ofile = open_temp_file(conf, opath);
 
-	if (!(ret = check_header(file1, file2)))
+	/* Ignore CU line */
+	get_header_line(file1, &s1, &n1, "CU ");
+	get_header_line(file2, &s2, &n2, "CU ");
+	fprintf(ofile, "%s", s1);
+
+	/* Check File line */
+	get_header_line(file1, &s1, &n1, "File ");
+	get_header_line(file2, &s2, &n2, "File ");
+
+	if (strcmp(s1, s2) != 0) {
+		ret = false;
 		goto out;
+	}
+	fprintf(ofile, "%s", s1);
 
 	/* Skipt the stack */
-	get_first_line(file1, &s1, &n1);
-	get_first_line(file2, &s2, &n2);
+	get_first_line(file1, &s1, &n1, ofile);
+	get_first_line(file2, &s2, &n2, NULL);
 
 	do {
+		bool is_s1_declaration = (strstr(s1, DECLARATION_PATH) != NULL);
+		bool is_s2_declaration = (strstr(s2, DECLARATION_PATH) != NULL);
+
+		/*
+		 * We can merge the two lines if:
+		 *  - they are the same, or
+		 *  - they are both RH_KABI_HIDE, or
+		 *  - at least one of them is a declaration
+		 * The condition below is just the negation of the above.
+		 */
 		if ((strcmp(s1, s2) != 0) &&
 		    ((strncmp(s1, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0) ||
-		    (strncmp(s2, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0))) {
+		    (strncmp(s2, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0)) &&
+		    !is_s1_declaration && !is_s2_declaration) {
 			ret = false;
 			goto out;
 		}
+		if (is_s1_declaration)
+			fprintf(ofile, "%s", s2);
+		else
+			fprintf(ofile, "%s", s1);
 	} while ((safe_getline(&s1, &n1, file1) != -1) &&
 		 (safe_getline(&s2, &n2, file2) != -1));
 
 out:
+	fclose(ofile);
+	if (ret == false) {
+		unlink(*opath);
+		free(*opath);
+		*opath = NULL;
+	}
 	free(s1);
 	free(s2);
 	fclose(file1);
 	fclose(file2);
-	return ret;
+	return (ret);
 }
 
 static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
@@ -717,7 +734,8 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 
 	if (file != NULL) {
 		char *final_path, *base_file = NULL;
-		char *temp, *dir = conf->kabi_dir;
+		char *merged_path = NULL;
+		char *dir = conf->kabi_dir;
 		int version = 0;
 
 		free(stack_pop(conf->stack));
@@ -727,45 +745,52 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		safe_asprintf(&final_path, "%s/%s", dir, file);
 
 		/*
-		 * TODO Jerome compare temp_path with final_path.
+		 * Now we need to put the new type file we've just generated
+		 * (in temp_path) to its final destination (final_path).
 		 *
-		 * again:
-		 * if (doesn_exist(final_path) {
-		 *     rename(temp_path, final_path);
-		 * } else {
-		 *     if (are_the_same(final_path, temp_path)) {
-		 *         unlink(temp_path);
-		 *     } else {
-		 *         final_path += "x";
-		 *         goto again;
-		 *     }
-		 * }
+		 * Often the only difference between these files are some
+		 * fields which are fully defined in one file (because the
+		 * respective header file has been included for the CU
+		 * compilation) while these are mere declarations in the other
+		 * (because the header file was not used). We detect this case
+		 * and if this is the only difference we just merge these two
+		 * files into one using the full definitions where available.
+		 *
+		 * But of course two types (eg. structures) of the same name
+		 * might be completely different types. In such case we try to
+		 * store them under different names using increasing number as
+		 * a suffix.
 		 */
-		if (access(final_path, F_OK) == 0) {
-			if (are_same_symbol(final_path, temp_path)) {
-				unlink(temp_path);
-				goto out;
-			} else {
-				if (!version) {
-					base_file = safe_strdup(file);
-					/* Remove .txt ending */
-					base_file[strlen(base_file) - 4] = '\0';
-				}
-				version++;
-				free(final_path);
-				free(file);
-				safe_asprintf(&file, "%s-%i.txt",
-					      base_file, version);
-				goto again;
-			}
+		if (access(final_path, F_OK) != 0) {
+			/* Target file doesn't exist, trivial */
+			if (errno != ENOENT)
+				fail("access() failed: %s\n", strerror(errno));
+
+			safe_rename(temp_path, final_path);
+			goto out;
 		}
 
-		temp = safe_strdup(final_path);
-		rec_mkdir(dirname(temp)); /* dirname() modifies its buffer! */
-		free(temp);
+		if (merge_files(final_path, temp_path, &merged_path, conf)) {
+			/* We managed to merge the files, drop the old one */
+			unlink(temp_path);
+			unlink(final_path);
+			safe_rename(merged_path, final_path);
+			free(merged_path);
+			goto out;
+		}
 
-		if (rename(temp_path, final_path) != 0)
-			fail("rename() failed: %s\n", strerror(errno));
+		/* Two different types detected, bump the name version */
+		if (version == 0) {
+			base_file = safe_strdup(file);
+			/* Remove .txt ending */
+			base_file[strlen(base_file) - 4] = '\0';
+		}
+		version++;
+		free(final_path);
+		free(file);
+		safe_asprintf(&file, "%s-%i.txt",
+				base_file, version);
+		goto again;
 
 	out:
 		free(base_file);
