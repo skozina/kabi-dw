@@ -89,7 +89,7 @@ source_file:
 	;
 
 stack_list:
-	%empty
+	/* empty */
 	| stack_list stack_elt NEWLINE
 	;
 
@@ -244,7 +244,7 @@ func_type:
 	;
 
 arg_list:
-	%empty
+	/* empty */
 	{
 	    $$ = NULL;
 	}

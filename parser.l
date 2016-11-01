@@ -28,6 +28,7 @@ HEX		[a-fA-F0-9]
 %}
 
 %option nounput
+%option noyywrap
 %x IN_STRING
 
 %%
