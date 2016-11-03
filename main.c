@@ -21,7 +21,7 @@
  * builds.
  *
  * For both builds the kabi information first needs to be stored in a text
- * files, see generate(). The the two dumps can be compared, see check().
+ * files, see generate(). The the two dumps can be compared, see compare().
  * The format of the kabi information loosely follow the syntax of the Go
  * programming language for its ease of parsing.
  */
@@ -41,7 +41,6 @@
 #include "main.h"
 #include "utils.h"
 #include "generate.h"
-#include "check.h"
 #include "objects.h"
 
 static char *progname;
@@ -49,10 +48,9 @@ static char *progname;
 void usage(void) {
 	printf("Usage:\n"
 	    "\t %s generate [options] kernel_dir\n"
-	    "\t %s check [-v] kabi_dir_old kabi_dir_new\n"
 	    "\t %s show [options] kabi_file...\n"
 	    "\t %s compare [options] kabi_dir kabi_dir...\n",
-	       progname, progname, progname, progname);
+	       progname, progname, progname);
 	exit(1);
 }
 
@@ -216,43 +214,6 @@ static void generate(int argc, char **argv) {
 	free(conf);
 }
 
-static void parse_check_opts(int argc, char **argv, check_config_t *conf) {
-	conf->verbose = false;
-	int rv;
-
-	while ((argc > 0) && (*argv[0] == '-')) {
-		if (strcmp(*argv, "-v") == 0) {
-			argc--; argv++;
-			conf->verbose = true;
-		} else {
-			usage();
-		}
-	}
-
-	if (argc != 2)
-		usage();
-
-	conf->kabi_dir_old = *argv;
-	argc--; argv++;
-	conf->kabi_dir_new = *argv;
-	argc--; argv++;
-
-	if ((rv = check_is_directory(conf->kabi_dir_old)) != 0)
-		fail("%s: %s\n", strerror(rv), conf->kabi_dir_old);
-	if ((rv = check_is_directory(conf->kabi_dir_new)) != 0)
-		fail("%s: %s\n", strerror(rv), conf->kabi_dir_new);
-}
-
-static void check(int argc, char **argv) {
-	check_config_t *conf = safe_malloc(sizeof (*conf));
-
-	parse_check_opts(argc, argv, conf);
-
-	check_symbol_defs(conf);
-
-	free(conf);
-}
-
 int main(int argc, char **argv) {
 	int ret = 0;
 
@@ -265,9 +226,6 @@ int main(int argc, char **argv) {
 
 	if (strcmp(argv[0], "generate") == 0) {
 		generate(argc, argv);
-	} else if (strcmp(argv[0], "check") == 0) {
-		argv++; argc--;
-		check(argc, argv);
 	} else if (strcmp(argv[0], "compare") == 0) {
 		ret = compare(argc, argv);
 	} else if (strcmp(argv[0], "show") == 0) {
