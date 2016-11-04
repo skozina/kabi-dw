@@ -916,17 +916,75 @@ static int cmp_nodes(obj_t *o1, obj_t *o2) {
 	return _cmp_nodes(o1, o2, false);
 }
 
-obj_list_t *find_object(obj_t *o, obj_list_t *l) {
-	obj_list_t *list = l;
-	int ret;
+typedef enum {
+	DIFF_INSERT,
+	DIFF_DELETE,
+	DIFF_REPLACE,
+	DIFF_CONT,
+} diff_ret_t;
 
-	while (list) {
-		ret = _cmp_nodes(o, list->member, true);
-		if (ret == CMP_SAME || ret == CMP_OFFSET)
-			return list;
-		list = list->next;
+/*
+ * When field are changed or moved around, there can be several diff
+ * representations for the change.  We are trying to keep the diff as
+ * small as possible, while keeping most significant changes in term
+ * of kABI (mainly shifted fields, which most likely indicate that
+ * some change to the ABI have been overlooked).
+ *
+ * This function compare two lists whose first member diverge. We're
+ * looking at four different scenarios:
+ * - N fields appears only in list2, then the lists rejoined (insertion)
+ * - P fields appears only in list1, then the lists rejoined (deletion)
+ * - Q fields diverges, then the lists rejoined (replacement)
+ * - the lists never rejoined
+ *
+ * Since for the same change, several of the scenarios above might
+ * represent the change, we choose the one that minimize the diff
+ * (min(N,P,Q)). So we're looking for the first element of list1 in
+ * list2, the first element of list2 in list1 or the first line where
+ * list1 and list2 do not differ, whichever comes first.
+ */
+static diff_ret_t list_diff(obj_list_t *list1, obj_list_t **next1,
+			    obj_list_t *list2, obj_list_t **next2) {
+	obj_t *o1 = list2->member, *o2 = list1->member, *o = o1;
+	int d1 = 0, d2 = 0, ret;
+	obj_list_t *next;
+
+	next = *next1 = list1;
+	*next2 = list2;
+
+	while (next) {
+		ret = _cmp_nodes(o, next->member, true);
+		if (ret == CMP_SAME || ret == CMP_OFFSET) {
+			if (o == o1)
+				/* We find the first element of list2
+				   on list1, that is d1 elements have
+				   been removed from list1 */
+				return DIFF_DELETE;
+			else
+				return DIFF_INSERT;
+		}
+
+		if (d1 == d2)  {
+			ret = _cmp_nodes((*next1)->member, (*next2)->member,
+					 true);
+			if (ret == CMP_SAME || ret == CMP_OFFSET) {
+				/* d1 fields have been replaced */
+				return DIFF_REPLACE;
+			}
+
+		}
+
+		if ( !(*next1) || !((*next1)->next) || (d2  < d1) ) {
+			next = *next2 = (*next2)->next;
+			o = o2;
+			d2++;
+		} else {
+			next = *next1 = (*next1)->next;
+			o = o1;
+			d1++;
+		}
 	}
-	return NULL;
+	return DIFF_CONT;
 }
 
 /*
@@ -999,7 +1057,7 @@ compare_config_t compare_config = {false, false, false, false, 0,
 				   0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
-	obj_list_t *list1 = NULL, *list2 = NULL, *next;
+	obj_list_t *list1 = NULL, *list2 = NULL;
 	int ret = COMP_SAME, tmp;
 
 	tmp = cmp_nodes(o1, o2);
@@ -1025,22 +1083,39 @@ int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 
 	while ( list1 && list2 ) {
 		if (cmp_nodes(list1->member, list2->member) == CMP_DIFF) {
-			if ((next = find_object(list1->member, list2))) {
+			int index;
+			obj_list_t *next1, *next2;
+
+			index = list_diff(list1, &next1, list2, &next2);
+
+			switch (index) {
+			case DIFF_INSERT:
 				/* Insertion */
 				if (!compare_config.no_inserted) {
 					_print_node_list("Inserted", ADD_PREFIX,
-							 list2, next, stream);
+							 list2, next2, stream);
 					ret = COMP_DIFF;
 				}
-				list2 = next;
-			} else if ((next = find_object(list2->member, list1))) {
+				list2 = next2;
+				break;
+			case DIFF_DELETE:
 				/* Removal */
 				if (!compare_config.no_deleted) {
 					_print_node_list("Deleted", DEL_PREFIX,
-							 list1, next, stream);
+							 list1, next1, stream);
 					ret = COMP_DIFF;
 				}
-				list1 = next;
+				list1 = next1;
+				break;
+			case DIFF_REPLACE:
+				/*
+				 * We could print the diff here, but relying on
+				 * the next calls to _compare_tree() to display
+				 * the replaced fields individually works too.
+				 */
+			case DIFF_CONT:
+				/* Nothing to do */
+				;
 			}
 		}
 
