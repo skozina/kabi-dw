@@ -44,7 +44,7 @@ Generate the type information for both kernels based on the current whitelist
 Compare the two type dumps:
 
 ~~~
-./kabi-dw check -s symbols kabi-4.5 kabi-4.6
+./kabi-dw compare kabi-4.5 kabi-4.6
 ~~~
 
 ## Motivation
