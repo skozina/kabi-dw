@@ -138,7 +138,8 @@ char **read_ksymtab(char *filename, size_t *ksymtab_len) {
 	if (memcmp(&ehdr.e_ident, ELFMAG, SELFMAG) != 0)
 		goto done;
 
-	if ((class = gelf_getclass(elf)) != ELFCLASS64)
+	class = gelf_getclass(elf);
+	if (class != ELFCLASS64 && class != ELFCLASS32)
 		fail("Unsupported elf class: %d\n", class);
 
 	if (elf_getshdrstrndx(elf, &shstrndx) != 0)
