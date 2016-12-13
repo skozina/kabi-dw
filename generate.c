@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -128,9 +129,9 @@ static const char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 	if (get_file_replace_path) {
 		int len = strlen(get_file_replace_path);
 
-		if (!strncmp(filename, get_file_replace_path, len)){
+		if (strncmp(filename, get_file_replace_path, len) != 0) {
 			filename = filename + len;
-			while(*filename == '/')
+			while (*filename == '/')
 				filename++;
 		}
 	}
@@ -508,7 +509,7 @@ static bool contains(stack_t *st, char *filename) {
 
 	walk_stack(st, contains_cb, &args);
 
-	return args.ret;
+	return (args.ret);
 }
 
 static void get_header_line(FILE *file, char **s, size_t *n,
@@ -581,7 +582,7 @@ static bool merge_files(char *path1, char *path2, char **opath,
 		else
 			fprintf(ofile, "%s", s1);
 	} while ((safe_getline(&s1, &n1, file1) != -1) &&
-		 (safe_getline(&s2, &n2, file2) != -1));
+	    (safe_getline(&s2, &n2, file2) != -1));
 
 out:
 	fclose(ofile);
@@ -1027,11 +1028,24 @@ static bool process_symbol_file(char *path, void *arg) {
  * Returns true if the definition was printed, otherwise false.
  */
 void generate_symbol_defs(generate_config_t *conf) {
+	struct stat st;
 	size_t i;
+
+	if (stat(conf->kernel_dir, &st) != 0)
+		fail("Failed to stat %s: %s\n", conf->kernel_dir,
+		    strerror(errno));
 
 	/* Lets walk the normal modules */
 	printf("Generating symbol defs from %s...\n", conf->kernel_dir);
-	walk_dir(conf->kernel_dir, false, process_symbol_file, conf);
+	if (S_ISDIR(st.st_mode)) {
+		walk_dir(conf->kernel_dir, false, process_symbol_file, conf);
+	} else if (S_ISREG(st.st_mode)) {
+		char *path = conf->kernel_dir;
+		conf->kernel_dir = "";
+		process_symbol_file(path, conf);
+	} else {
+		fail("Not a file or directory: %s\n", conf->kernel_dir);
+	}
 
 	for (i = 0; i < conf->symbol_cnt; i++) {
 		if (conf->symbols_found[i] == false) {
