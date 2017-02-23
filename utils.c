@@ -179,12 +179,12 @@ static char *last_slash(char *str, char *end)
 	for (; end > str; end--) {
 		if (*end == c) {
 			if (met)
-				return end;
+				return (end);
 			else
 				met = 1;
 		}
 	}
-	return NULL;
+	return (NULL);
 }
 
 typedef void *(*state_t)(struct norm_ctx *);
@@ -203,17 +203,18 @@ static void *initial(struct norm_ctx *ctx)
 	switch (c) {
 	case '\0':
 		*ctx->outp = c;
-		return end;
+		return (end);
 	case '/':
 		*ctx->outp++ = c;
-		return slash;
+		return (slash);
 	case '.':
-		return one_dot;
+		return (one_dot);
 	default:
 		*ctx->outp++ = c;
 	}
-	return normal;
+	return (normal);
 }
+
 static void *normal(struct norm_ctx *ctx)
 {
 	char c = *ctx->p++;
@@ -221,54 +222,51 @@ static void *normal(struct norm_ctx *ctx)
 	switch (c) {
 	case '\0':
 		*ctx->outp++ = c;
-		return end;
+		return (end);
 	case '/':
 		*ctx->outp++ = c;
-		return slash;
+		return (slash);
 	default:
 		*ctx->outp++ = c;
 	}
-	return normal;
+	return (normal);
 }
 
-static void *slash(struct norm_ctx *ctx)
-{
+static void *slash(struct norm_ctx *ctx) {
 	char c = *ctx->p++;
 
 	switch (c) {
 	case '\0':
 		fail("Cannot normalize path %s", ctx->path);
 	case '/':
-		return slash;
+		return (slash);
 	case '.':
-		return one_dot;
+		return (one_dot);
 	default:
 		*ctx->outp++ = c;
 	}
-	return normal;
+	return (normal);
 }
 
-static void *one_dot(struct norm_ctx *ctx)
-{
+static void *one_dot(struct norm_ctx *ctx) {
 	char c = *ctx->p++;
 
 	switch (c) {
 	case '\0':
 		*--ctx->outp = c;
-		return end;
+		return (end);
 	case '/':
-		return slash;
+		return (slash);
 	case '.':
-		return two_dots;
+		return (two_dots);
 	default:
 		*ctx->outp++ = '.';
 		*ctx->outp++ = c;
 	}
-	return normal;
+	return (normal);
 }
 
-static void *two_dots(struct norm_ctx *ctx)
-{
+static void *two_dots(struct norm_ctx *ctx) {
 	char c = *ctx->p++;
 	char *p;
 
@@ -278,30 +276,28 @@ static void *two_dots(struct norm_ctx *ctx)
 		if (p == NULL)
 			p = ctx->path;
 		*p = c;
-		return end;
+		return (end);
 	case '/':
 		p = last_slash(ctx->path, ctx->outp);
 		if (p == NULL) {
 			ctx->outp = ctx->path;
-			return normal;
+			return (normal);
 		}
 		ctx->outp = ++p;
-		return slash;
+		return (slash);
 	default:
 		*ctx->outp++ = '.';
 		*ctx->outp++ = '.';
 		*ctx->outp++ = c;
 	}
-	return normal;
+	return (normal);
 }
 
-static void *end(struct norm_ctx *ctx)
-{
+static void *end(struct norm_ctx *ctx) {
 	fail("Cannot normalize path %s", ctx->path);
 }
 
-char *path_normalize(char *path)
-{
+char *path_normalize(char *path) {
 	struct norm_ctx ctx = {
 		.path = path,
 		.p = path,
@@ -312,5 +308,5 @@ char *path_normalize(char *path)
 	while (state != end)
 		state = state(&ctx);
 
-	return path;
+	return (path);
 }

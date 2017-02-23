@@ -113,7 +113,7 @@ static char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 	 * variable argument list which is defined as * struct __va_list_tag.
 	 */
 	if (is_builtin(get_die_name(die)))
-		return safe_strdup(BUILTIN_PATH);
+		return (safe_strdup(BUILTIN_PATH));
 
 	if (!dwarf_hasattr(die, DW_AT_decl_file))
 		fail("DIE missing file information: %s\n",
