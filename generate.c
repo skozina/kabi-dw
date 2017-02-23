@@ -100,19 +100,20 @@ static bool is_declaration(Dwarf_Die *die) {
 
 char *get_file_replace_path = NULL;
 
-static const char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
+static char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 	Dwarf_Files *files;
 	size_t nfiles;
 	Dwarf_Attribute attr;
 	Dwarf_Word file;
 	const char *filename;
+	char *ret;
 
 	/*
 	 * Handle types built-in in C compiler. These are for example the
 	 * variable argument list which is defined as * struct __va_list_tag.
 	 */
 	if (is_builtin(get_die_name(die)))
-		return (BUILTIN_PATH);
+		return safe_strdup(BUILTIN_PATH);
 
 	if (!dwarf_hasattr(die, DW_AT_decl_file))
 		fail("DIE missing file information: %s\n",
@@ -136,14 +137,11 @@ static const char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 		}
 	}
 
-	/* Skip current dir prefix */
-	while (strncmp(filename, "./", 2) == 0) {
-		filename += 2;
-		while (*filename == '/')
-			filename++;
-	}
 
-	return (filename);
+	ret = safe_strdup(filename);
+	path_normalize(ret);
+
+	return (ret);
 }
 
 static long get_line(Dwarf_Die *cu_die, Dwarf_Die *die) {
@@ -190,7 +188,7 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 	unsigned int tag = dwarf_tag(die);
 	char *file_prefix = NULL;
 	char *file_name = NULL;
-	const char *dec_file;
+	char *dec_file;
 
 	if ((file_prefix = get_file_prefix(tag)) == NULL) {
 		/* No need to redirect output for this type */
@@ -231,6 +229,7 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 	assert(dec_file != NULL);
 
 	safe_asprintf(&file_name, "%s/%s%s.txt", dec_file, file_prefix, name);
+	free(dec_file);
 
 	return (file_name);
 }
@@ -618,7 +617,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 	file = get_symbol_file(die, cu_die);
 
 	if (file != NULL) {
-		const char *dec_file;
+		char *dec_file;
 		long dec_line;
 
 
@@ -656,6 +655,7 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		dec_file = get_file(cu_die, die);
 		dec_line = get_line(cu_die, die);
 		fprintf(fout, "File %s:%lu\n", dec_file, dec_line);
+		free(dec_file);
 
 		/* Print the stack and add then add the current file to it */
 		walk_stack(conf->stack, print_stack_cb, fout);
