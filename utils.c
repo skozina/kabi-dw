@@ -163,3 +163,154 @@ void safe_rename(const char *oldpath, const char *newpath) {
 	if (rename(oldpath, newpath) != 0)
 		fail("rename() failed: %s\n", strerror(errno));
 }
+
+struct norm_ctx {
+	char *path;
+	char *p;
+	char *outp;
+};
+
+/* actually, second last, skip the whole directory */
+static char *last_slash(char *str, char *end)
+{
+	char c = '/';
+	int met = 0;
+
+	for (; end > str; end--) {
+		if (*end == c) {
+			if (met)
+				return end;
+			else
+				met = 1;
+		}
+	}
+	return NULL;
+}
+
+typedef void *(*state_t)(struct norm_ctx *);
+
+static void *initial(struct norm_ctx *ctx);
+static void *normal(struct norm_ctx *ctx);
+static void *one_dot(struct norm_ctx *ctx);
+static void *two_dots(struct norm_ctx *ctx);
+static void *slash(struct norm_ctx *ctx);
+static void *end(struct norm_ctx *ctx);
+
+static void *initial(struct norm_ctx *ctx)
+{
+	char c = *ctx->p++;
+
+	switch (c) {
+	case '\0':
+		*ctx->outp = c;
+		return end;
+	case '/':
+		*ctx->outp++ = c;
+		return slash;
+	case '.':
+		return one_dot;
+	default:
+		*ctx->outp++ = c;
+	}
+	return normal;
+}
+static void *normal(struct norm_ctx *ctx)
+{
+	char c = *ctx->p++;
+
+	switch (c) {
+	case '\0':
+		*ctx->outp++ = c;
+		return end;
+	case '/':
+		*ctx->outp++ = c;
+		return slash;
+	default:
+		*ctx->outp++ = c;
+	}
+	return normal;
+}
+
+static void *slash(struct norm_ctx *ctx)
+{
+	char c = *ctx->p++;
+
+	switch (c) {
+	case '\0':
+		fail("Cannot normalize path %s", ctx->path);
+	case '/':
+		return slash;
+	case '.':
+		return one_dot;
+	default:
+		*ctx->outp++ = c;
+	}
+	return normal;
+}
+
+static void *one_dot(struct norm_ctx *ctx)
+{
+	char c = *ctx->p++;
+
+	switch (c) {
+	case '\0':
+		*--ctx->outp = c;
+		return end;
+	case '/':
+		return slash;
+	case '.':
+		return two_dots;
+	default:
+		*ctx->outp++ = '.';
+		*ctx->outp++ = c;
+	}
+	return normal;
+}
+
+static void *two_dots(struct norm_ctx *ctx)
+{
+	char c = *ctx->p++;
+	char *p;
+
+	switch (c) {
+	case '\0':
+		p = last_slash(ctx->path, ctx->outp);
+		if (p == NULL)
+			p = ctx->path;
+		*p = c;
+		return end;
+	case '/':
+		p = last_slash(ctx->path, ctx->outp);
+		if (p == NULL) {
+			ctx->outp = ctx->path;
+			return normal;
+		}
+		ctx->outp = ++p;
+		return slash;
+	default:
+		*ctx->outp++ = '.';
+		*ctx->outp++ = '.';
+		*ctx->outp++ = c;
+	}
+	return normal;
+}
+
+static void *end(struct norm_ctx *ctx)
+{
+	fail("Cannot normalize path %s", ctx->path);
+}
+
+char *path_normalize(char *path)
+{
+	struct norm_ctx ctx = {
+		.path = path,
+		.p = path,
+		.outp = path,
+	};
+	state_t state = initial;
+
+	while (state != end)
+		state = state(&ctx);
+
+	return path;
+}
