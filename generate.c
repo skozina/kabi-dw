@@ -130,7 +130,7 @@ static char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 	if (get_file_replace_path) {
 		int len = strlen(get_file_replace_path);
 
-		if (strncmp(filename, get_file_replace_path, len) != 0) {
+		if (strncmp(filename, get_file_replace_path, len) == 0) {
 			filename = filename + len;
 			while (*filename == '/')
 				filename++;
