@@ -65,5 +65,6 @@ extern int check_is_directory(char *);
 extern void rec_mkdir(char *);
 extern int cmp_str(char *, char *);
 extern void safe_rename(const char *, const char *);
+extern char *path_normalize(char *path);
 
 #endif /* UTILS_H */
