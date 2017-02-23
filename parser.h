@@ -25,8 +25,6 @@
 /* Prevents warning: ‘input’ defined but not used  */
 #define YY_NO_INPUT
 
-/* Why can't it get it from string.h? */
-char *strdup(const char *s);
 /* Why can't it get it from stdio.h? */
 int fileno(FILE *stream);
 
