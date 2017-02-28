@@ -39,7 +39,7 @@
 
 #define	KSYMTAB_STRINGS	"__ksymtab_strings"
 
-void free_ksymtab(char **ksymtab, size_t ksymtab_len) {
+void ksymtab_free(char **ksymtab, size_t ksymtab_len) {
 	size_t i;
 
 	for (i = 0; i < ksymtab_len; i++) {
@@ -104,7 +104,7 @@ static char **print_section(Elf *elf, Elf_Scn *scn, size_t *symbol_cnt) {
 }
 
 /* Build list of exported symbols, ie. read seciton __ksymtab_strings */
-char **read_ksymtab(char *filename, size_t *ksymtab_len) {
+char **ksymtab_read(char *filename, size_t *ksymtab_len) {
 	Elf *elf;
 	int fd;
 	Elf_Kind ek;
@@ -191,7 +191,7 @@ done:
 /*
  * Return the index of symbol in the array or -1 if the symbol was not found.
  */
-int find_symbol(char **symbols, size_t symbol_cnt, const char *name) {
+int ksymtab_find(char **symbols, size_t symbol_cnt, const char *name) {
 	int i = 0;
 
 	if (name == NULL)

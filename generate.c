@@ -819,7 +819,7 @@ static int get_symbol_index(Dwarf_Die *die, generate_config_t *conf) {
 
 	/* If symbol file was provided, is the symbol on the list? */
 	if (conf->symbols != NULL) {
-		result = find_symbol(conf->symbols, conf->symbol_cnt,
+		result = ksymtab_find(conf->symbols, conf->symbol_cnt,
 		    name);
 		if (result == -1)
 			return (-1);
@@ -830,7 +830,7 @@ static int get_symbol_index(Dwarf_Die *die, generate_config_t *conf) {
 		return (-1);
 
 	/* Is this symbol exported in this module with EXPORT_SYMBOL? */
-	if (find_symbol(conf->ksymtab, conf->ksymtab_len, name) == -1)
+	if (ksymtab_find(conf->ksymtab, conf->ksymtab_len, name) == -1)
 		return (-1);
 
 	/* Anything except inlined functions should be external */
@@ -983,7 +983,7 @@ static bool all_done(generate_config_t *conf) {
 
 static bool process_symbol_file(char *path, void *arg) {
 	generate_config_t *conf = (generate_config_t *)arg;
-	conf->ksymtab = read_ksymtab(path, &conf->ksymtab_len);
+	conf->ksymtab = ksymtab_read(path, &conf->ksymtab_len);
 
 	if (conf->ksymtab_len > 0) {
 		if (conf->verbose)
@@ -997,7 +997,7 @@ static bool process_symbol_file(char *path, void *arg) {
 			printf("Skip %s (no exported symbols)\n", path);
 	}
 
-	free_ksymtab(conf->ksymtab, conf->ksymtab_len);
+	ksymtab_free(conf->ksymtab, conf->ksymtab_len);
 	conf->ksymtab = NULL;
 	conf->ksymtab_len = 0;
 

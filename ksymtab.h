@@ -18,8 +18,8 @@
 #ifndef KSYMTAB_H_
 #define	KSYMTAB_H_
 
-extern void free_ksymtab(char **, size_t);
-extern char **read_ksymtab(char *, size_t *);
-extern int find_symbol(char **symbols, size_t symbol_cnt, const char *name);
+extern void ksymtab_free(char **, size_t);
+extern char **ksymtab_read(char *, size_t *);
+extern int ksymtab_find(char **, size_t, const char *);
 
 #endif /* KSYMTAB_H_ */
