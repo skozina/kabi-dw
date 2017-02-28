@@ -819,8 +819,7 @@ static int get_symbol_index(Dwarf_Die *die, generate_config_t *conf) {
 
 	/* If symbol file was provided, is the symbol on the list? */
 	if (conf->symbols != NULL) {
-		result = ksymtab_find(conf->symbols, conf->symbol_cnt,
-		    name);
+		result = ksymtab_find(conf->symbols, name);
 		if (result == -1)
 			return (-1);
 	}
@@ -830,7 +829,7 @@ static int get_symbol_index(Dwarf_Die *die, generate_config_t *conf) {
 		return (-1);
 
 	/* Is this symbol exported in this module with EXPORT_SYMBOL? */
-	if (ksymtab_find(conf->ksymtab, conf->ksymtab_len, name) == -1)
+	if (ksymtab_find(conf->ksymtab, name) == -1)
 		return (-1);
 
 	/* Anything except inlined functions should be external */
@@ -983,9 +982,9 @@ static bool all_done(generate_config_t *conf) {
 
 static bool process_symbol_file(char *path, void *arg) {
 	generate_config_t *conf = (generate_config_t *)arg;
-	conf->ksymtab = ksymtab_read(path, &conf->ksymtab_len);
+	conf->ksymtab = ksymtab_read(path);
 
-	if (conf->ksymtab_len > 0) {
+	if (ksymtab_len(conf->ksymtab) > 0) {
 		if (conf->verbose)
 			printf("Processing %s\n", path);
 
@@ -997,13 +996,20 @@ static bool process_symbol_file(char *path, void *arg) {
 			printf("Skip %s (no exported symbols)\n", path);
 	}
 
-	ksymtab_free(conf->ksymtab, conf->ksymtab_len);
+	ksymtab_free(conf->ksymtab);
 	conf->ksymtab = NULL;
-	conf->ksymtab_len = 0;
 
 	if (all_done(conf))
 		return (false);
 	return (true);
+}
+
+static void print_not_found(const char *s, size_t i, void *ctx)
+{
+	bool *symbols_found = ctx;
+
+	if (!symbols_found[i])
+		printf("%s not found!\n", s);
 }
 
 /*
@@ -1012,7 +1018,6 @@ static bool process_symbol_file(char *path, void *arg) {
  */
 void generate_symbol_defs(generate_config_t *conf) {
 	struct stat st;
-	size_t i;
 
 	if (stat(conf->kernel_dir, &st) != 0)
 		fail("Failed to stat %s: %s\n", conf->kernel_dir,
@@ -1030,9 +1035,5 @@ void generate_symbol_defs(generate_config_t *conf) {
 		fail("Not a file or directory: %s\n", conf->kernel_dir);
 	}
 
-	for (i = 0; i < conf->symbol_cnt; i++) {
-		if (conf->symbols_found[i] == false) {
-			printf("%s not found!\n", conf->symbols[i]);
-		}
-	}
+	ksymtab_for_each(conf->symbols, print_not_found, conf->symbols_found);
 }

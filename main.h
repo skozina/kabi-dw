@@ -19,6 +19,7 @@
 #define	MAIN_H_
 
 #include "stack.h"
+#include "ksymtab.h"
 
 #define	DEFAULT_OUTPUT_DIR	"./output"
 #define	MODULE_DIR		"/usr/lib/modules"
@@ -48,12 +49,11 @@ typedef struct {
 	bool verbose;
 	char *kernel_dir; /* Path to  the kernel modules to process */
 	char *kabi_dir; /* Where to put the output */
-	char **symbols; /* List of symbols to generate */
+	struct ksymtab *symbols; /* List of symbols to generate */
 	size_t symbol_cnt;
 	bool *symbols_found;
 	char *module; /* current kernel module to process */
-	char **ksymtab; /* ksymtab of the current kernel module */
-	size_t ksymtab_len;
+	struct ksymtab *ksymtab; /* ksymtab of the current kernel module */
 	stack_t *stack; /* Current stack of symbol we're parsing */
 	stack_t *processed; /* Set of processed types for this CU */
 } generate_config_t;

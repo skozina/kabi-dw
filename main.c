@@ -71,29 +71,24 @@ static void strip(char *buf) {
 }
 
 /* Get list of symbols to generate. */
-static void read_symbols(char *filename, char ***symbolsp, size_t *cntp) {
+static struct ksymtab *read_symbols(char *filename)
+{
 	FILE *fp = fopen(filename, "r");
 	char *line = NULL;
 	size_t len = 0;
-	size_t symbols_len = DEFAULT_BUFSIZE;
-	char **symbols = safe_malloc(symbols_len * sizeof (*symbols));
 	size_t i = 0;
+	struct ksymtab *symbols;
+
+	symbols = ksymtab_new(DEFAULT_BUFSIZE);
 
 	if (fp == NULL)
 		fail("Failed to open symbol file: %s\n", strerror(errno));
 
 	errno = 0;
 	while ((getline(&line, &len, fp)) != -1) {
-		if (i == symbols_len) {
-			symbols_len *= 2;
-			symbols = realloc(symbols,
-			    symbols_len * sizeof (*symbols));
-		}
-		symbols[i] = line;
-		strip(symbols[i]);
+		strip(line);
+		ksymtab_add_sym(symbols, line, len, i);
 		i++;
-		line = NULL;
-		len = 0;
 	}
 
 	if (errno != 0)
@@ -105,8 +100,7 @@ static void read_symbols(char *filename, char ***symbolsp, size_t *cntp) {
 
 	fclose(fp);
 
-	*symbolsp = symbols;
-	*cntp = i;
+	return symbols;
 }
 
 void generate_usage() {
@@ -179,12 +173,13 @@ static void generate(int argc, char **argv) {
 	if (symbol_file != NULL) {
 		int i;
 
-		read_symbols(symbol_file, &conf->symbols, &conf->symbol_cnt);
+		conf->symbols = read_symbols(symbol_file);
+		conf->symbol_cnt = ksymtab_len(conf->symbols);
 
 		if (conf->verbose)
 			printf("Loaded %ld symbols\n", conf->symbol_cnt);
 		conf->symbols_found = safe_malloc(conf->symbol_cnt *
-		    sizeof (bool *));
+						  sizeof (*conf->symbols_found));
 		for (i = 0; i < conf->symbol_cnt; i++)
 			conf->symbols_found[i] = false;
 	}
@@ -203,12 +198,8 @@ static void generate(int argc, char **argv) {
 	free(temp_path);
 
 	if (symbol_file != NULL) {
-		int i;
-
 		free(conf->symbols_found);
-		for (i = 0; i < conf->symbol_cnt; i++)
-			free(conf->symbols[i]);
-		free(conf->symbols);
+		ksymtab_free(conf->symbols);
 	}
 
 	free(conf);
