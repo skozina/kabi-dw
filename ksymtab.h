@@ -20,5 +20,6 @@
 
 extern void free_ksymtab(char **, size_t);
 extern char **read_ksymtab(char *, size_t *);
+extern int find_symbol(char **symbols, size_t symbol_cnt, const char *name);
 
 #endif /* KSYMTAB_H_ */

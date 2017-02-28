@@ -808,23 +808,6 @@ done:
 }
 
 /*
- * Return the index of symbol in the array or -1 if the symbol was not found.
- */
-static int find_symbol(char **symbols, size_t symbol_cnt, const char *name) {
-	int i = 0;
-
-	if (name == NULL)
-		return (-1);
-
-	for (i = 0; i < symbol_cnt; i++) {
-		if (strcmp(symbols[i], name) == 0)
-			return (i);
-	}
-
-	return (-1);
-}
-
-/*
  * Validate if this is the symbol we should print.
  * Returns index into the symbol array if this is symbol to print.
  * Otherwise returns -1.
