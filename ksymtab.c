@@ -36,40 +36,37 @@
 #include <gelf.h>
 #include "main.h"
 #include "utils.h"
+#include "hash.h"
 
 #define	KSYMTAB_STRINGS	"__ksymtab_strings"
 
-struct ksymtab {
-	char **ksymtab;
-	size_t ksymtab_len;
-	size_t max_size;
+#define KSYMTAB_SIZE 8192
+
+struct ksymtab;
+
+struct ksym {
+	size_t idx;
+	char key[];
 };
 
 void ksymtab_free(struct ksymtab *ksymtab)
 {
-	size_t i;
+	struct hash *h = (struct hash *)ksymtab;
 
-	if (ksymtab == NULL)
+	if (h == NULL)
 		return;
 
-	for (i = 0; i < ksymtab->ksymtab_len; i++) {
-		free(ksymtab->ksymtab[i]);
-		ksymtab->ksymtab[i] = NULL;
-	}
-
-	free(ksymtab->ksymtab);
-	free(ksymtab);
+	hash_free(h);
 }
 
 struct ksymtab *ksymtab_new(size_t size)
 {
-	struct ksymtab *k;
+	struct hash *h;
 
-	k = safe_malloc(sizeof(*k));
-	k->ksymtab = safe_malloc(size * sizeof(*k->ksymtab));
-	k->max_size = size;
+	h = hash_new(size, free);
+	assert(h != NULL);
 
-	return k;
+	return (struct ksymtab *)h;
 }
 
 void ksymtab_add_sym(struct ksymtab *ksymtab,
@@ -77,37 +74,25 @@ void ksymtab_add_sym(struct ksymtab *ksymtab,
 		     size_t len,
 		     size_t idx)
 {
-	char *ksym;
-	size_t max_size = ksymtab->max_size;
-	char **k = ksymtab->ksymtab;
+	struct hash *h = (struct hash *)ksymtab;
+	struct ksym *ksym;
 
-	if (idx >= max_size) {
-	        max_size *= 2;
-		if (idx >= max_size)
-			fail("ksymtab: index too big: %zd\n", idx);
-
-		k = realloc(k, max_size * sizeof (*k));
-		ksymtab->max_size = max_size;
-		ksymtab->ksymtab = k;
-	}
-
-	ksym = safe_malloc(len + 1);
-	memcpy(ksym, str, len);
-	ksym[len] = '\0';
-
-	ksymtab->ksymtab[idx] = ksym;
-	/* just reimplement previous code, will be changed to hash */
-	ksymtab->ksymtab_len = idx + 1;
+	ksym = safe_malloc(sizeof(*ksym) + len + 1);
+	memcpy(ksym->key, str, len);
+	ksym->key[len] = '\0';
+	ksym->idx = idx;
+	hash_add(h, ksym->key, ksym);
 }
 
 static struct ksymtab *print_section(Elf *elf, Elf_Scn *scn) {
 	GElf_Shdr shdr;
 	Elf_Data *data;
 	char *p, *oldp;
-	size_t size = 0, i = 0;
+	size_t size = 0;
+	size_t i = 0;
 	struct ksymtab *res;
 
-	res = ksymtab_new(DEFAULT_BUFSIZE);
+	res = ksymtab_new(KSYMTAB_SIZE);
 
 	if (gelf_getshdr(scn, &shdr) != &shdr)
 		fail("getshdr() failed: %s\n", elf_errmsg(-1));
@@ -230,35 +215,43 @@ done:
  * Return the index of symbol in the array or -1 if the symbol was not found.
  */
 int ksymtab_find(struct ksymtab *ksymtab, const char *name) {
-	int i = 0;
+	struct ksym *v;
+	struct hash *h = (struct hash *)ksymtab;
 
 	if (name == NULL)
 		return (-1);
 
-	for (i = 0; i < ksymtab->ksymtab_len; i++) {
-		if (strcmp(ksymtab->ksymtab[i], name) == 0)
-			return (i);
-	}
+	v = hash_find(h, name);
+	if (v == NULL)
+		return -1;
 
-	return (-1);
+	return v->idx;
 }
 
 size_t ksymtab_len(struct ksymtab *ksymtab)
 {
-	if (ksymtab == NULL)
+	struct hash *h = (struct hash *)ksymtab;
+
+	if (h == NULL)
 		return 0;
-	return ksymtab->ksymtab_len;
+	return hash_get_count(h);
 }
 
 void ksymtab_for_each(struct ksymtab *ksymtab,
 		      void (*f)(const char *, size_t, void *),
 		      void *ctx)
 {
-	int i;
+	struct hash *h = (struct hash *)ksymtab;
+	struct hash_iter iter;
+	const void *v;
+	const struct ksym *vv;
 
-	if (ksymtab == NULL)
+	if (h == NULL)
 		return;
 
-	for (i = 0; i < ksymtab->ksymtab_len; i++)
-		f(ksymtab->ksymtab[i], i, ctx);
+	hash_iter_init(h, &iter);
+        while (hash_iter_next(&iter, NULL, &v)) {
+		vv = (const struct ksym *)v;
+		f(vv->key, vv->idx, ctx);
+	}
 }
