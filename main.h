@@ -52,6 +52,7 @@ typedef struct {
 	struct ksymtab *symbols; /* List of symbols to generate */
 	size_t symbol_cnt;
 	bool *symbols_found;
+	size_t symbols_found_cnt;
 	char *module; /* current kernel module to process */
 	struct ksymtab *ksymtab; /* ksymtab of the current kernel module */
 	stack_t *stack; /* Current stack of symbol we're parsing */

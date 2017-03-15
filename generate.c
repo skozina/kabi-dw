@@ -891,8 +891,13 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 
 			/* Print both the CU DIE and symbol DIE */
 			print_die(dbg, NULL, cu_die, &child_die, conf);
-			if (conf->symbols != NULL)
-				conf->symbols_found[index] = true;
+
+			if (conf->symbols != NULL) {
+				if (!conf->symbols_found[index]) {
+					conf->symbols_found[index] = true;
+					conf->symbols_found_cnt++;
+				}
+			}
 
 			/* And clear the stack again */
 			while ((data = stack_pop(conf->stack)) != NULL)
@@ -966,18 +971,12 @@ static void generate_type_info(char *filepath, generate_config_t *conf) {
 	dwfl_end(dwfl);
 }
 
-static bool all_done(generate_config_t *conf) {
-	size_t i;
-
+static bool is_all_done(generate_config_t *conf) {
 	if (conf->symbols == NULL)
 		return (false);
 
-	for (i = 0; i < conf->symbol_cnt; i++) {
-		if (conf->symbols_found[i] == false)
-			return (false);
-	}
-
-	return (true);
+	assert(conf->symbols_found_cnt <= conf->symbol_cnt);
+	return conf->symbols_found_cnt == conf->symbol_cnt;
 }
 
 static bool process_symbol_file(char *path, void *arg) {
@@ -999,7 +998,7 @@ static bool process_symbol_file(char *path, void *arg) {
 	ksymtab_free(conf->ksymtab);
 	conf->ksymtab = NULL;
 
-	if (all_done(conf))
+	if (is_all_done(conf))
 		return (false);
 	return (true);
 }
