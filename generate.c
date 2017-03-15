@@ -33,6 +33,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <getopt.h>
+#include <limits.h>
 
 #include <elfutils/libdw.h>
 #include <elfutils/libdwfl.h>
@@ -44,11 +45,19 @@
 #include "ksymtab.h"
 #include "stack.h"
 #include "hash.h"
+#include "objects.h"
 
 #define	EMPTY_NAME	"(NULL)"
 #define PROCESSED_SIZE 1024
+/*
+  DB size is number of hash buckets, do not have to be exact,
+  but since now we have ~20K records, make it this
+*/
+#define DB_SIZE (20 * 1024)
+#define INITIAL_RECORD_SIZE 512
 
 struct set;
+struct record_db;
 
 typedef struct {
 	bool verbose;
@@ -58,6 +67,7 @@ typedef struct {
 	size_t symbol_cnt;
 	bool *symbols_found;
 	size_t symbols_found_cnt;
+	struct record_db *db;
 } generate_config_t;
 
 struct cu_ctx {
@@ -69,7 +79,7 @@ struct cu_ctx {
 
 struct file_ctx {
 	generate_config_t *conf;
-	struct ksymtab *ksymtab;
+	struct ksymtab *ksymtab; /* ksymtab of the current kernel module */
 };
 
 struct dwarf_type {
@@ -83,6 +93,58 @@ struct dwarf_type {
 	{ DW_TAG_structure_type, STRUCT_FILE },
 	{ DW_TAG_union_type, UNION_FILE },
 	{ 0, NULL }
+};
+
+
+/*
+ * Structure of the database record:
+ *
+ * key: record key, usually includes path the file, where the type is
+ *      defined (may include pseudo path, like <declaration>);
+ *
+ * version: type's version, used when we need to add another type of the same
+ *	    name. It may happend, for example, when because of defines the same
+ *          structure has changed for different compilation units.
+ *
+ *          It is not for the case, when the same structure defined in
+ *	    different files -- it will have different keys, since it includes
+ *	    the path;
+ *
+ * ref_count: reference counter, needed since the ownership is shared with the
+ *            internal database;
+ *
+ * base_file: base part of the key (without version), used to generate the
+ *            unique key for the new version;
+ *
+ * cu: compilation unit, where the type for the record defined;
+ *
+ * origin: "File <file>:<line>" string, describing the source, where the type
+ *         for the record defined;
+ *
+ * stack: stack of types to reach this one.
+ *         Ex.: on the toplevel
+ *              struct A {
+ *                        struct B fieldA;
+ *              }
+ *         in another file:
+ *              struct B {
+ *                        basetype fieldB;
+ *              }
+ *         the "struct B" description will contain key of the "struct A"
+ *         description record in the stack;
+ *
+ * obj: pointer to the abstract type object, representing the toplevel type of
+ *      the record.
+*/
+struct record {
+	char *key;
+	int version;
+	int ref_count;
+	char *base_file;
+	char *cu;
+	char *origin;
+	stack_t *stack;
+	obj_t *obj;
 };
 
 /* List of types built-in the compiler */
@@ -186,7 +248,7 @@ static long get_line(Dwarf_Die *cu_die, Dwarf_Die *die) {
 	return (line);
 }
 
-static void print_die(struct cu_ctx *, FILE *, Dwarf_Die *);
+static obj_t *print_die(struct cu_ctx *, struct record *, Dwarf_Die *);
 
 static const char * dwarf_tag_string(unsigned int tag) {
 	switch (tag)
@@ -261,23 +323,6 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 	return (file_name);
 }
 
-static FILE * open_temp_file(generate_config_t *conf, char **temp_path) {
-	FILE *file;
-	int fd;
-
-	safe_asprintf(temp_path, "%s/%s/kabi-dw.XXXXXX", conf->kabi_dir,
-	    TEMP_PATH);
-	if ((fd = mkstemp(*temp_path)) == -1)
-		fail("mkstemp() failed: %s\n", strerror(errno));
-
-	file = fdopen(fd, "w");
-	if (file == NULL)
-		fail("Failed to open file %s: %s\n", *temp_path,
-		    strerror(errno));
-
-	return (file);
-}
-
 /* Check if given DIE has DW_AT_external attribute */
 static bool is_external(Dwarf_Die *die) {
 	Dwarf_Attribute attr;
@@ -342,22 +387,122 @@ static void set_free(struct set *set)
 	hash_free(h);
 }
 
-static void print_stack_cb(void *data, void *arg) {
-	char *symbol = (char *)data;
-	FILE *fp = (FILE *)arg;
+static struct record *record_alloc(void)
+{
+	struct record *rec;
 
-	fprintf(fp, "-> \"%s\"\n", symbol);
+	rec = safe_malloc(sizeof(*rec));
+	return rec;
 }
 
-static FILE *record_start(struct cu_ctx *ctx,
-			  Dwarf_Die *die,
-			  char *key,
-			  char **temp_path)
+static void record_free(struct record *rec)
 {
-	const char *dec_file;
+	void *data;
+
+	free(rec->key);
+	free(rec->base_file);
+	free(rec->cu);
+	free(rec->origin);
+
+	while ((data = stack_pop(rec->stack)) != NULL)
+		free(data);
+	stack_destroy(rec->stack);
+
+	obj_free(rec->obj);
+
+	free(rec);
+}
+
+static void record_put(struct record *rec)
+{
+	assert(rec->ref_count > 0);
+
+	if (--rec->ref_count == 0)
+		record_free(rec);
+}
+
+static void record_get(struct record *rec)
+{
+	rec->ref_count++;
+}
+
+static struct record *record_new(char *key)
+{
+	struct record *rec;
+
+	rec = record_alloc();
+	rec->key = safe_strdup(key);
+	rec->stack = stack_init();
+	record_get(rec);
+	return rec;
+}
+
+static obj_t *record_obj(struct record *rec)
+{
+	return rec->obj;
+}
+
+static obj_t *record_obj_exchange(struct record *rec, obj_t *o)
+{
+	obj_t *old;
+
+	old = rec->obj;
+	rec->obj = o;
+	return old;
+}
+
+static const char *record_origin(struct record *rec)
+{
+	return rec->origin;
+}
+
+static void copy_stack_cb(void *data, void *arg)
+{
+	char *symbol = (char *)data;
+	struct record *fp = (struct record *)arg;
+	char *copy;
+
+	copy = safe_strdup(symbol);
+	stack_push(fp->stack, copy);
+}
+
+static void record_add_stack(struct record *rec, stack_t *stack)
+{
+	walk_stack_backward(stack, copy_stack_cb, rec);
+}
+
+static void record_add_cu(struct record *rec, Dwarf_Die *cu_die)
+{
+	const char *name;
+
+	if (cu_die == NULL)
+		return;
+
+	name = dwarf_diename(cu_die);
+	safe_asprintf(&rec->cu, "CU \"%s\"\n", name);
+}
+
+static void record_add_origin(struct record *rec,
+			      Dwarf_Die *cu_die,
+			      Dwarf_Die *die)
+{
+	char *dec_file;
 	long dec_line;
-	FILE *fout = NULL;
+
+	dec_file = get_file(cu_die, die);
+	dec_line = get_line(cu_die, die);
+
+	safe_asprintf(&rec->origin, "File %s:%lu\n", dec_file, dec_line);
+	free(dec_file);
+}
+
+static struct record *record_start(struct cu_ctx *ctx,
+				   Dwarf_Die *die,
+				   char *key)
+{
+	struct record *rec = NULL;
 	generate_config_t *conf = ctx->conf;
+	Dwarf_Die *cu_die = ctx->cu_die;
 
 	/*
 	 * Don't try to reenter a file that we have seen already for
@@ -383,193 +528,229 @@ static FILE *record_start(struct cu_ctx *ctx,
 
 	if (conf->verbose)
 		printf("Generating %s\n", key);
-	fout = open_temp_file(conf, temp_path);
 
-	/* Print the CU die on the first line of each file */
-	fprintf(fout, "CU \"%s\"\n", dwarf_diename(ctx->cu_die));
+	rec = record_new(key);
 
-	/* Then print the source file & line */
-	dec_file = get_file(ctx->cu_die, die);
-	dec_line = get_line(ctx->cu_die, die);
-	fprintf(fout, "File %s:%lu\n", dec_file, dec_line);
-
-	/* Print the stack and add then add the current file to it */
-	walk_stack(ctx->stack, print_stack_cb, fout);
+	record_add_cu(rec, cu_die);
+	record_add_origin(rec, cu_die, die);
+	record_add_stack(rec, ctx->stack);
 done:
-	return fout;
+	return rec;
 }
 
-static void record_close(FILE *fout, char *fname)
+static void record_inc_version(struct record *rec)
+{
+	char *base_file = rec->base_file;
+	char *key = NULL;
+
+	if (rec->version == 0) {
+		base_file = safe_strdup(rec->key);
+		/* Remove .txt ending */
+		base_file[strlen(base_file) - 4] = '\0';
+		rec->base_file = base_file;
+	}
+	rec->version++;
+	safe_asprintf(&key, "%s-%i.txt", base_file, rec->version);
+	free(rec->key);
+	rec->key = key;
+}
+
+static void record_close(struct record *rec, obj_t *obj)
+{
+	obj_fill_parent(obj);
+	rec->obj = obj;
+}
+
+static void record_stack_dump_and_clear(struct record *rec, FILE *f)
+{
+	char *data;
+
+	while ((data = stack_pop(rec->stack)) != NULL) {
+		fprintf(f, "-> \"%s\"\n", data);
+		free(data);
+	}
+}
+
+static void record_dump(struct record *rec, const char *dir)
+{
+	char path[PATH_MAX];
+	FILE *f;
+	int rc;
+	char *slash;
+
+	snprintf(path, sizeof(path), "%s/%s", dir, rec->key);
+
+	slash = strrchr(path, '/');
+	assert (slash != NULL);
+	*slash = '\0';
+	rec_mkdir(path);
+	*slash = '/';
+
+	f = fopen(path, "w");
+	if (f == NULL)
+		fail("Cannot create record file '%s': %m", path);
+
+	rc = fputs(rec->cu, f);
+	if (rc == EOF)
+		fail("Could not put CU name");
+	rc = fputs(rec->origin, f);
+	if (rc == EOF)
+		fail("Could not put origin");
+
+	record_stack_dump_and_clear(rec, f);
+	obj_dump(rec->obj, f);
+
+	fclose(f);
+}
+
+static struct record *record_db_lookup(struct record_db *_db, char *key)
+{
+	struct record *rec;
+	struct hash *db = (struct hash *)_db;
+
+	rec = hash_find(db, key);
+	if (rec != NULL)
+		record_get(rec);
+
+	return rec;
+}
+
+static void record_db_push(struct record_db *_db, struct record *rec)
 {
 	int rc;
+	struct hash *db = (struct hash *)_db;
 
-	rc = fclose(fout);
-	if (rc != 0)
-		fail("Could not close file '%s': %m\n", fname);
+	rc = hash_add_unique(db, rec->key, rec);
+	assert(rc == 0);
+	record_get(rec);
 }
 
-static void get_header_line(FILE *file, char **s, size_t *n,
-    const char *template) {
-	safe_getline(s, n, file);
-	if (strncmp(template, *s, strlen(template)) != 0)
-		fail("skipheader: no compile unit\n");
-}
 
-static void get_first_line(FILE *file, char **s, size_t *n, FILE *ofile) {
-	while (true) {
-		safe_getline(s, n, file);
-		if (strncmp("-> ", *s, 3) != 0)
-			break;
-		if (ofile != NULL)
-			fprintf(ofile, "%s", *s);
-	}
-}
+/*
+ * merge rec_src to the record rec_dst
+ */
+static bool record_merge(struct record *rec_dst, struct record *rec_src)
+{
+	const char *s1;
+	const char *s2;
+	obj_t *o1;
+	obj_t *o2;
+	obj_t *o;
 
-static bool record_merge(char *path1, char *path2, char **opath,
-    generate_config_t *conf) {
-	FILE *file1, *file2, *ofile;
-	char *s1 = NULL, *s2 = NULL;
-	size_t n1 = 0, n2 = 0;
-	bool ret = true;
+	s1 = record_origin(rec_dst);
+	s2 = record_origin(rec_src);
 
-	file1 = fopen(path1, "r");
-	file2 = fopen(path2, "r");
-	ofile = open_temp_file(conf, opath);
-
-	/* Ignore CU line */
-	get_header_line(file1, &s1, &n1, "CU ");
-	get_header_line(file2, &s2, &n2, "CU ");
-	fprintf(ofile, "%s", s1);
-
-	/* Check File line */
-	get_header_line(file1, &s1, &n1, "File ");
-	get_header_line(file2, &s2, &n2, "File ");
-
-	if (strcmp(s1, s2) != 0) {
-		ret = false;
+	if (strcmp(s1, s2) != 0)
 		goto out;
-	}
-	fprintf(ofile, "%s", s1);
 
-	/* Skipt the stack */
-	get_first_line(file1, &s1, &n1, ofile);
-	get_first_line(file2, &s2, &n2, NULL);
+	o1 = record_obj(rec_dst);
+	o2 = record_obj(rec_src);
 
-	do {
-		bool is_s1_declaration = (strstr(s1, DECLARATION_PATH) != NULL);
-		bool is_s2_declaration = (strstr(s2, DECLARATION_PATH) != NULL);
+	o = obj_merge(o1, o2);
+	if (o == NULL)
+		goto out;
 
-		/*
-		 * We can merge the two lines if:
-		 *  - they are the same, or
-		 *  - they are both RH_KABI_HIDE, or
-		 *  - at least one of them is a declaration
-		 * The condition below is just the negation of the above.
-		 */
-		if ((strcmp(s1, s2) != 0) &&
-		    ((strncmp(s1, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0) ||
-		    (strncmp(s2, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0)) &&
-		    !is_s1_declaration && !is_s2_declaration) {
-			ret = false;
-			goto out;
-		}
-		if (is_s1_declaration)
-			fprintf(ofile, "%s", s2);
-		else
-			fprintf(ofile, "%s", s1);
-	} while ((safe_getline(&s1, &n1, file1) != -1) &&
-	    (safe_getline(&s2, &n2, file2) != -1));
+	obj_fill_parent(o);
+	o = record_obj_exchange(rec_dst, o);
+	obj_free(o);
+
+	return true;
 
 out:
-	fclose(ofile);
-	if (ret == false) {
-		unlink(*opath);
-		free(*opath);
-		*opath = NULL;
-	}
-	free(s1);
-	free(s2);
-	fclose(file1);
-	fclose(file2);
-	return (ret);
+	return false;
 }
 
-static char *record_db_add(struct cu_ctx *ctx,
-			   char *key,
-			   char *temp_path)
+static char *record_db_add(struct record_db *db, struct record *rec)
 {
-	char *final_path, *base_file = NULL;
-	char *merged_path = NULL;
-	generate_config_t *conf = ctx->conf;
-	char *dir = conf->kabi_dir;
-	int version = 0;
-
-	/* to allow print_die() free it without check */
-	key = safe_strdup(key);
+	struct record *tmp_rec;
+	char *key;
 
 	for (;;) {
-		safe_asprintf(&final_path, "%s/%s", dir, key);
 
 		/*
-		 * Now we need to put the new type file we've just generated
-		 * (in temp_path) to its final destination (final_path).
+		 * Now we need to put the new type record we've just generated
+		 * to the db.
 		 *
-		 * Often the only difference between these files are some
+		 * Often the only difference between these records are some
 		 * fields which are fully defined in one file (because the
 		 * respective header file has been included for the CU
 		 * compilation) while these are mere declarations in the other
 		 * (because the header file was not used). We detect this case
 		 * and if this is the only difference we just merge these two
-		 * files into one using the full definitions where available.
+		 * records into one using the full definitions where available.
 		 *
 		 * But of course two types (eg. structures) of the same name
 		 * might be completely different types. In such case we try to
 		 * store them under different names using increasing number as
 		 * a suffix.
 		 */
-		if (access(final_path, F_OK) != 0) {
-			/* Target file doesn't exist, trivial */
-			if (errno != ENOENT)
-				fail("access() failed: %s\n", strerror(errno));
 
-			safe_rename(temp_path, final_path);
+		tmp_rec = record_db_lookup(db, rec->key);
+		if (tmp_rec == NULL) {
+			record_db_push(db, rec);
+			key = safe_strdup(rec->key);
 			break;
 		}
 
-		if (record_merge(final_path, temp_path, &merged_path, conf)) {
-			/* We managed to merge the files, drop the old one */
-			unlink(temp_path);
-			unlink(final_path);
-			safe_rename(merged_path, final_path);
-			free(merged_path);
+		if (record_merge(tmp_rec, rec)) {
+			key = safe_strdup(tmp_rec->key);
+			record_put(tmp_rec);
 			break;
 		}
 
+		record_put(tmp_rec);
 		/* Two different types detected, bump the name version */
-		if (version == 0) {
-			base_file = safe_strdup(key);
-			/* Remove .txt ending */
-			base_file[strlen(base_file) - 4] = '\0';
-		}
-		version++;
-		free(final_path);
-		free(key); /* ok with initial NULL */
-		safe_asprintf(&key, "%s-%i.txt", base_file, version);
+		record_inc_version(rec);
 	}
 
-	free(base_file);
-	free(final_path);
-	free(temp_path);
 	return key;
 }
 
-static void print_die_type(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die) {
+static void hash_record_free(void *value)
+{
+	struct record *rec = value;
+
+	record_put(rec);
+}
+
+static struct record_db *record_db_init(void)
+{
+	struct hash *db;
+
+	db = hash_new(DB_SIZE, hash_record_free);
+	if (db == NULL)
+		fail("Could not create db (hash)\n");
+
+	return (struct record_db*)db;
+}
+
+static void record_db_dump(struct record_db *_db, char *dir)
+{
+	struct hash_iter iter;
+	const void *v;
+	struct hash *db = (struct hash *)_db;
+
+	hash_iter_init(db, &iter);
+        while (hash_iter_next(&iter, NULL, &v))
+		record_dump((struct record *)v, dir);
+}
+
+static void record_db_free(struct record_db *_db)
+{
+	struct hash *db = (struct hash *)_db;
+
+	hash_free(db);
+}
+
+static obj_t *print_die_type(struct cu_ctx *ctx,
+			     struct record *rec,
+			     Dwarf_Die *die)
+{
 	Dwarf_Die type_die;
 	Dwarf_Attribute attr;
 
 	if (!dwarf_hasattr(die, DW_AT_type)) {
-		fprintf(fout, "\"void\"\n");
-		return;
+		return obj_basetype_new(safe_strdup("void"));
 	}
 
 	(void) dwarf_attr(die, DW_AT_type, &attr);
@@ -578,19 +759,27 @@ static void print_die_type(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die) {
 		    dwarf_diename(die));
 
 	/* Print the type of the die */
-	print_die(ctx, fout, &type_die);
+	return print_die(ctx, rec, &type_die);
 }
 
-static void print_die_struct_member(struct cu_ctx *ctx, FILE *fout,
-				    Dwarf_Die *die, const char *name) {
+static obj_t *print_die_struct_member(struct cu_ctx *ctx,
+				      struct record *rec,
+				      Dwarf_Die *die,
+				      const char *name)
+{
 	Dwarf_Attribute attr;
 	Dwarf_Word value;
+	obj_t *type;
+	obj_t *obj;
 
 	if (dwarf_attr(die, DW_AT_data_member_location, &attr) == NULL)
 		fail("Offset of member %s missing!\n", name);
 
 	(void) dwarf_formudata(&attr, &value);
-	fprintf(fout, "0x%lx", value);
+
+	type = print_die_type(ctx, rec, die);
+	obj = obj_struct_member_new_add(safe_strdup(name), type);
+	obj->offset = value;
 
 	if (dwarf_hasattr(die, DW_AT_bit_offset)) {
 		Dwarf_Word offset, size;
@@ -605,19 +794,25 @@ static void print_die_struct_member(struct cu_ctx *ctx, FILE *fout,
 		if (dwarf_attr(die, DW_AT_bit_size, &attr) == NULL)
 			fail("Bit size of member %s missing!\n", name);
 		(void) dwarf_formudata(&attr, &size);
-		fprintf(fout, ":%ld-%ld", offset, offset + size - 1);
-	}
 
-	fprintf(fout, " %s ", name);
-	print_die_type(ctx, fout, die);
+		obj->is_bitfield = 1;
+		obj->first_bit = offset;
+		obj->last_bit = offset + size - 1;
+	}
+	return obj;
 }
 
-static void print_die_structure(struct cu_ctx *ctx, FILE *fout,
-				Dwarf_Die *die) {
+static obj_t *print_die_structure(struct cu_ctx *ctx,
+				  struct record *rec,
+				  Dwarf_Die *die)
+{
 	unsigned int tag = dwarf_tag(die);
 	const char *name = get_die_name(die);
+	obj_list_head_t *members = NULL;
+	obj_t *obj;
+	obj_t *member;
 
-	fprintf(fout, "struct %s {\n", name);
+	obj = obj_struct_new(safe_strdup(name));
 
 	if (!dwarf_haschildren(die))
 		goto done;
@@ -629,29 +824,49 @@ static void print_die_structure(struct cu_ctx *ctx, FILE *fout,
 		if (tag != DW_TAG_member)
 			fail("Unexpected tag for structure type children: "
 			    "%s\n", dwarf_tag_string(tag));
-		print_die_struct_member(ctx, fout, die, name);
+
+		member = print_die_struct_member(ctx, rec, die, name);
+		if (members == NULL)
+			members = obj_list_head_new(member);
+		else
+			obj_list_add(members, member);
+
 	} while (dwarf_siblingof(die, die) == 0);
 
+	obj->member_list = members;
 done:
-	fprintf(fout, "}\n");
+	return obj;
 }
 
-static void print_die_enumerator(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die,
-    const char *name) {
+static obj_t *print_die_enumerator(struct cu_ctx *ctx,
+				   struct record *rec,
+				   Dwarf_Die *die,
+				   const char *name)
+{
 	Dwarf_Attribute attr;
 	Dwarf_Word value;
+	obj_t *obj;
 
 	if (dwarf_attr(die, DW_AT_const_value, &attr) == NULL)
 		fail("Value of enumerator %s missing!\n", name);
 
 	(void) dwarf_formudata(&attr, &value);
-	fprintf(fout, "%s = 0x%lx\n", name, value);
+
+	obj = obj_constant_new(safe_strdup(name));
+	obj->constant = value;
+
+	return obj;
 }
 
-static void print_die_enumeration(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die) {
+static obj_t *print_die_enumeration(struct cu_ctx *ctx,
+				    struct record *rec,
+				    Dwarf_Die *die) {
 	const char *name = get_die_name(die);
+	obj_list_head_t *members = NULL;
+	obj_t *member;
+	obj_t *obj;
 
-	fprintf(fout, "enum %s {\n", name);
+	obj = obj_enum_new(safe_strdup(name));
 
 	if (!dwarf_haschildren(die))
 		goto done;
@@ -659,18 +874,31 @@ static void print_die_enumeration(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die
 	dwarf_child(die, die);
 	do {
 		name = get_die_name(die);
-		print_die_enumerator(ctx, fout, die, name);
+		member = print_die_enumerator(ctx, rec, die, name);
+		if (members == NULL)
+			members = obj_list_head_new(member);
+		else
+			obj_list_add(members, member);
 	} while (dwarf_siblingof(die, die) == 0);
 
+	members->object = obj;
+	obj->member_list = members;
 done:
-	fprintf(fout, "}\n");
+	return obj;
 }
 
-static void print_die_union(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die) {
+static obj_t *print_die_union(struct cu_ctx *ctx,
+			      struct record *rec,
+			      Dwarf_Die *die)
+{
 	const char *name = get_die_name(die);
 	unsigned int tag = dwarf_tag(die);
+	obj_list_head_t *members = NULL;
+	obj_t *member;
+	obj_t *type;
+	obj_t *obj;
 
-	fprintf(fout, "union %s {\n", name);
+	obj = obj_union_new(safe_strdup(name));
 
 	if (!dwarf_haschildren(die))
 		goto done;
@@ -682,20 +910,34 @@ static void print_die_union(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die) {
 		if (tag != DW_TAG_member)
 			fail("Unexpected tag for union type children: %s\n",
 			    dwarf_tag_string(tag));
-		fprintf(fout, "%s ", name);
-		print_die_type(ctx, fout, die);
+
+		type = print_die_type(ctx, rec, die);
+		member = obj_var_new_add(safe_strdup(name), type);
+
+		if (members == NULL)
+			members = obj_list_head_new(member);
+		else
+			obj_list_add(members, member);
+
 	} while (dwarf_siblingof(die, die) == 0);
 
+	members->object = obj;
+	obj->member_list = members;
 done:
-	fprintf(fout, "}\n");
+	return obj;
 }
 
-static void print_subprogram_arguments(struct cu_ctx *ctx, FILE *fout,
-    Dwarf_Die *die) {
+static obj_list_head_t *print_subprogram_arguments(struct cu_ctx *ctx,
+						   struct record *rec,
+						   Dwarf_Die *die)
+{
 	Dwarf_Die child_die;
+	obj_t *arg_type;
+	obj_t *arg;
+	obj_list_head_t *arg_list = NULL;
 
 	if (!dwarf_haschildren(die))
-		return;
+		return NULL;
 
 	/* Grab the first argument */
 	dwarf_child(die, &child_die);
@@ -704,124 +946,163 @@ static void print_subprogram_arguments(struct cu_ctx *ctx, FILE *fout,
 	while ((dwarf_tag(&child_die) == DW_TAG_formal_parameter) ||
 	    (dwarf_tag(&child_die) == DW_TAG_unspecified_parameters)) {
 		const char *name = get_die_name(&child_die);
-		fprintf(fout, "%s ", name);
 
-		/*
-		 * Print type of the argument.
-		 * If there are unspecified arguments (... in C) print the DIE
-		 * itself.
-		 */
 		if (dwarf_tag(&child_die) != DW_TAG_unspecified_parameters)
-			print_die_type(ctx, fout, &child_die);
+			arg_type = print_die_type(ctx, rec, &child_die);
 		else
-			print_die(ctx, fout, &child_die);
+			arg_type = obj_basetype_new(safe_strdup("..."));
+
+		arg = obj_var_new_add(safe_strdup(name), arg_type);
+		if (arg_list == NULL)
+			arg_list = obj_list_head_new(arg);
+		else
+			obj_list_add(arg_list, arg);
 
 		if (dwarf_siblingof(&child_die, &child_die) != 0)
 			break;
 	}
+	return arg_list;
 }
 
-static void print_die_subprogram(struct cu_ctx *ctx, FILE *fout,
-    Dwarf_Die *die) {
-	fprintf(fout, "func %s (\n", get_die_name(die));
-	print_subprogram_arguments(ctx, fout, die);
-	fprintf(fout, ")\n");
+static obj_t *print_die_subprogram(struct cu_ctx *ctx,
+				   struct record *rec,
+				   Dwarf_Die *die)
+{
+	char *name;
+	obj_list_head_t *arg_list;
+	obj_t *ret_type;
+	obj_t *obj;
 
-	/* Print return value */
-	print_die_type(ctx, fout, die);
+	arg_list = print_subprogram_arguments(ctx, rec, die);
+	ret_type = print_die_type(ctx, rec, die);
+	name = safe_strdup(get_die_name(die));
+
+	obj = obj_func_new_add(name, ret_type);
+	if (arg_list)
+		arg_list->object = obj;
+	obj->member_list = arg_list;
+
+	return obj;
 }
 
-static void print_die_array_type(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die) {
-	Dwarf_Attribute attr;
+static obj_t *_print_die_array_type(struct cu_ctx *ctx,
+				    struct record *rec,
+				    Dwarf_Die *child,
+				    obj_t *base_type)
+{
+	Dwarf_Die next_child;
 	Dwarf_Word value;
+	Dwarf_Attribute attr;
+	int rc;
+	unsigned int tag;
+	unsigned long arr_idx;
+	obj_t *obj;
+	obj_t *sub;
+
+	if (child == NULL)
+		return base_type;
+
+	tag = dwarf_tag(child);
+	if (tag != DW_TAG_subrange_type)
+		fail("Unexpected tag for array type children: %s\n",
+		     dwarf_tag_string(tag));
+
+	if (dwarf_hasattr(child, DW_AT_upper_bound)) {
+		(void) dwarf_attr(child, DW_AT_upper_bound, &attr);
+		(void) dwarf_formudata(&attr, &value);
+		/* Get the UPPER bound, so add 1 */
+		arr_idx = value + 1;
+	} else if (dwarf_hasattr(child, DW_AT_count)) {
+		(void) dwarf_attr(child, DW_AT_count, &attr);
+		(void) dwarf_formudata(&attr, &value);
+		arr_idx = value;
+	} else {
+		arr_idx = 0;
+	}
+
+	rc = dwarf_siblingof(child, &next_child);
+	child = rc == 0 ? &next_child : NULL;
+
+	sub = _print_die_array_type(ctx, rec, child, base_type);
+	obj = obj_array_new_add(sub);
+	obj->index = arr_idx;
+
+	return obj;
+}
+
+static obj_t *print_die_array_type(struct cu_ctx *ctx,
+				   struct record *rec,
+				   Dwarf_Die *die)
+{
 	Dwarf_Die child;
+	obj_t *base_type;
 
 	/* There should be one child of DW_TAG_subrange_type */
 	if (!dwarf_haschildren(die))
 		fail("Array type missing children!\n");
 
+	base_type = print_die_type(ctx, rec, die);
+
 	/* Grab the child */
 	dwarf_child(die, &child);
 
-	do {
-		unsigned int tag = dwarf_tag(&child);
-		if (tag != DW_TAG_subrange_type)
-			fail("Unexpected tag for array type children: %s\n",
-			    dwarf_tag_string(tag));
-
-		if (dwarf_hasattr(&child, DW_AT_upper_bound)) {
-			(void) dwarf_attr(&child, DW_AT_upper_bound, &attr);
-			(void) dwarf_formudata(&attr, &value);
-			/* Get the UPPER bound, so add 1 */
-			fprintf(fout, "[%lu]", value + 1);
-		} else if (dwarf_hasattr(&child, DW_AT_count)) {
-			(void) dwarf_attr(&child, DW_AT_count, &attr);
-			(void) dwarf_formudata(&attr, &value);
-			fprintf(fout, "[%lu]", value);
-		} else {
-			fprintf(fout, "[0]");
-		}
-	} while (dwarf_siblingof(&child, &child) == 0);
+	return _print_die_array_type(ctx, rec, &child, base_type);
 }
 
-static void print_die_tag(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die)
+static obj_t *print_die_tag(struct cu_ctx *ctx,
+			    struct record *rec,
+			    Dwarf_Die *die)
 {
 	unsigned int tag = dwarf_tag(die);
 	const char *name = dwarf_diename(die);
+	obj_t *obj = NULL;
 
 	if (tag == DW_TAG_invalid)
 		fail("DW_TAG_invalid: %s\n", name);
 
 	switch (tag) {
 	case DW_TAG_subprogram:
-		print_die_subprogram(ctx, fout, die);
+		obj = print_die_subprogram(ctx, rec, die);
 		break;
 	case DW_TAG_variable:
-		fprintf(fout, "var %s ", name);
-		print_die_type(ctx, fout, die);
+		obj = print_die_type(ctx, rec, die);
+		obj = obj_var_new_add(safe_strdup(name), obj);
 		break;
 	case DW_TAG_base_type:
-		fprintf(fout, "\"%s\"\n", name);
+		obj = obj_basetype_new(safe_strdup(name));
 		break;
 	case DW_TAG_pointer_type:
-		fprintf(fout, "* ");
-		print_die_type(ctx, fout, die);
+		obj = print_die_type(ctx, rec, die);
+		obj = obj_ptr_new_add(obj);
 		break;
 	case DW_TAG_structure_type:
-		print_die_structure(ctx, fout, die);
+		obj = print_die_structure(ctx, rec, die);
 		break;
 	case DW_TAG_enumeration_type:
-		print_die_enumeration(ctx, fout, die);
+		obj = print_die_enumeration(ctx, rec, die);
 		break;
 	case DW_TAG_union_type:
-		print_die_union(ctx, fout, die);
+		obj = print_die_union(ctx, rec, die);
 		break;
 	case DW_TAG_typedef:
-		fprintf(fout, "typedef %s\n", name);
-		print_die_type(ctx, fout, die);
-		break;
-	case DW_TAG_formal_parameter:
-		if (name != NULL)
-			fprintf(fout, "%s\n", name);
-		print_die_type(ctx, fout, die);
-		break;
-	case DW_TAG_unspecified_parameters:
-		fprintf(fout, "...\n");
+		obj = print_die_type(ctx, rec, die);
+		obj = obj_typedef_new_add(safe_strdup(name), obj);
 		break;
 	case DW_TAG_subroutine_type:
-		print_die_subprogram(ctx, fout, die);
+		obj = print_die_subprogram(ctx, rec, die);
 		break;
 	case DW_TAG_volatile_type:
-		fprintf(fout, "volatile ");
-		print_die_type(ctx, fout, die);
+		obj = print_die_type(ctx, rec, die);
+		obj = obj_qualifier_new_add(obj);
+		obj->base_type = safe_strdup("volatile");
 		break;
 	case DW_TAG_const_type:
-		fprintf(fout, "const ");
-		print_die_type(ctx, fout, die);
+		obj = print_die_type(ctx, rec, die);
+		obj = obj_qualifier_new_add(obj);
+		obj->base_type = safe_strdup("const");
 		break;
 	case DW_TAG_array_type:
-		print_die_array_type(ctx, fout, die);
-		print_die_type(ctx, fout, die);
+		obj = print_die_array_type(ctx, rec, die);
 		break;
 	default: {
 		const char *tagname = dwarf_tag_string(tag);
@@ -832,13 +1113,19 @@ static void print_die_tag(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die)
 		break;
 	}
 	}
+	return obj;
 }
 
-static void print_die(struct cu_ctx *ctx, FILE *parent_file, Dwarf_Die *die) {
+static obj_t *print_die(struct cu_ctx *ctx,
+			struct record *parent_file,
+			Dwarf_Die *die)
+{
 	char *file;
-	char *temp_path = NULL;
-	FILE *fout;
+	struct record *rec;
 	char *old_file;
+	obj_t *obj;
+	obj_t *ref_obj;
+	generate_config_t *conf = ctx->conf;
 
 	/*
 	 * Sigh. The type of some fields (eg. struct member as a pointer to
@@ -853,33 +1140,33 @@ static void print_die(struct cu_ctx *ctx, FILE *parent_file, Dwarf_Die *die) {
 	if (file == NULL) {
 		/* no need for new record, output to the current one */
 		assert(parent_file != NULL);
-		print_die_tag(ctx, parent_file, die);
-		return;
+		obj = print_die_tag(ctx, parent_file, die);
+		return obj;
 	}
 
 	/* else handle new record */
-	fout = record_start(ctx, die, file, &temp_path);
-	if (fout == NULL)
-		goto done;
+	rec = record_start(ctx, die, file);
+	if (rec == NULL)
+		/* declaration or already processed */
+		goto out;
 
 	stack_push(ctx->stack, safe_strdup(file));
-	print_die_tag(ctx, fout, die);
+	obj = print_die_tag(ctx, rec, die);
 	free(stack_pop(ctx->stack));
 
-	record_close(fout, temp_path);
+	record_close(rec, obj);
 
 	old_file = file;
 	/* if it creates new version, key/file name can change */
-	file = record_db_add(ctx, file, temp_path);
-        /* record_db_add() returns allocated string */
+	file = record_db_add(conf->db, rec);
+	record_put(rec);
+	/* record_db_add() returns allocated string */
 	free(old_file);
 
-done:
-	/* Put the link to the new file in the old file */
-	if (parent_file != NULL)
-		fprintf(parent_file, "@\"%s\"\n", file);
-
-	free(file);
+out:
+	ref_obj = obj_reffile_new();
+	ref_obj->base_type = file;
+	return ref_obj;
 }
 
 /*
@@ -939,10 +1226,12 @@ static int get_symbol_index(Dwarf_Die *die, struct file_ctx *fctx) {
  * Walk all DIEs in a CU.
  * Returns true if the given symbol_name was found, otherwise false.
  */
-static void process_cu_die(Dwarf_Die *cu_die, struct file_ctx *fctx) {
-	generate_config_t *conf = fctx->conf;
+static void process_cu_die(Dwarf_Die *cu_die, struct file_ctx *fctx)
+{
 	Dwarf_Die child_die;
 	bool cu_printed = false;
+	obj_t *ref;
+	generate_config_t *conf = fctx->conf;
 
 	if (!dwarf_haschildren(cu_die))
 		return;
@@ -963,15 +1252,18 @@ static void process_cu_die(Dwarf_Die *cu_die, struct file_ctx *fctx) {
 
 			ctx.conf = conf;
 			ctx.cu_die = cu_die;
+
 			/* Grab a fresh stack of symbols */
 			ctx.stack = stack_init();
 			/* And a set of all processed symbols */
 			ctx.processed = set_init(PROCESSED_SIZE);
 
 			/* Print both the CU DIE and symbol DIE */
-			print_die(&ctx, NULL, &child_die);
+			ref = print_die(&ctx, NULL, &child_die);
+			obj_free(ref);
 
 			if (conf->symbols != NULL) {
+				/* possible race if symbol in several CUs */
 				if (!conf->symbols_found[index]) {
 					conf->symbols_found[index] = true;
 					conf->symbols_found_cnt++;
@@ -1099,6 +1391,9 @@ static void generate_symbol_defs(generate_config_t *conf) {
 
 	/* Lets walk the normal modules */
 	printf("Generating symbol defs from %s...\n", conf->kernel_dir);
+
+	conf->db = record_db_init();
+
 	if (S_ISDIR(st.st_mode)) {
 		walk_dir(conf->kernel_dir, false, process_symbol_file, conf);
 	} else if (S_ISREG(st.st_mode)) {
@@ -1110,6 +1405,9 @@ static void generate_symbol_defs(generate_config_t *conf) {
 	}
 
 	ksymtab_for_each(conf->symbols, print_not_found, conf->symbols_found);
+
+	record_db_dump(conf->db, conf->kabi_dir);
+	record_db_free(conf->db);
 }
 
 #define	WHITESPACE	" \t\n"
