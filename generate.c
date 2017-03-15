@@ -43,8 +43,12 @@
 #include "generate.h"
 #include "ksymtab.h"
 #include "stack.h"
+#include "hash.h"
 
 #define	EMPTY_NAME	"(NULL)"
+#define PROCESSED_SIZE 1024
+
+struct set;
 
 typedef struct {
 	bool verbose;
@@ -57,7 +61,7 @@ typedef struct {
 	char *module; /* current kernel module to process */
 	struct ksymtab *ksymtab; /* ksymtab of the current kernel module */
 	stack_t *stack; /* Current stack of symbol we're parsing */
-	stack_t *processed; /* Set of processed types for this CU */
+	struct set *processed; /* Set of processed types for this CU */
 } generate_config_t;
 
 
@@ -296,6 +300,42 @@ static bool is_inline(Dwarf_Die *die) {
 		return (false);
 }
 
+struct set *set_init(size_t size)
+{
+	struct hash *h;
+
+	h = hash_new(size, free);
+	if (h == NULL)
+		fail("Cannot create hash");
+
+	return (struct set *)h;
+}
+
+static void set_add(struct set *set, const char *key)
+{
+	char *storage;
+	struct hash *h = (struct hash *)set;
+
+	storage = safe_strdup(key);
+	hash_add(h, storage, storage);
+}
+
+static bool set_contains(struct set *set, const char *key)
+{
+	void *v;
+	struct hash *h = (struct hash *)set;
+
+	v = hash_find(h, key);
+	return v != NULL;
+}
+
+static void set_free(struct set *set)
+{
+	struct hash *h = (struct hash *)set;
+
+	hash_free(h);
+}
+
 static void print_die_type(Dwarf *dbg, FILE *fout, Dwarf_Die *cu_die,
     Dwarf_Die *die, generate_config_t *conf) {
 	Dwarf_Die type_die;
@@ -506,28 +546,6 @@ static void print_stack_cb(void *data, void *arg) {
 	fprintf(fp, "-> \"%s\"\n", symbol);
 }
 
-
-typedef struct {
-	char *filename;
-	bool ret;
-} contains_cb_t;
-
-static void contains_cb(void *data, void *arg) {
-	char *s = (char *)data;
-	contains_cb_t *args = (contains_cb_t *)arg;
-
-	if (!cmp_str(s, args->filename))
-		args->ret = true;
-}
-
-static bool contains(stack_t *st, char *filename) {
-	contains_cb_t args = {filename, false};
-
-	walk_stack(st, contains_cb, &args);
-
-	return (args.ret);
-}
-
 static void get_header_line(FILE *file, char **s, size_t *n,
     const char *template) {
 	safe_getline(s, n, file);
@@ -648,10 +666,10 @@ static void print_die(Dwarf *dbg, FILE *parent_file, Dwarf_Die *cu_die,
 		 * of its full tree, thus the difference in speed is many orders
 		 * of magnitude!
 		 */
-		if (contains(conf->processed, file))
+		if (set_contains(conf->processed, file))
 			goto done;
 
-		stack_push(conf->processed, safe_strdup(file));
+		set_add(conf->processed, file);
 
 		if (is_declaration(die)) {
 			if (conf->verbose)
@@ -904,7 +922,7 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 			/* Grab a fresh stack of symbols */
 			conf->stack = stack_init();
 			/* And a set of all processed symbols */
-			conf->processed = stack_init();
+			conf->processed = set_init(PROCESSED_SIZE);
 
 			/* Print both the CU DIE and symbol DIE */
 			print_die(dbg, NULL, cu_die, &child_die, conf);
@@ -922,9 +940,7 @@ static void process_cu_die(Dwarf *dbg, Dwarf_Die *cu_die,
 			stack_destroy(conf->stack);
 			conf->stack = NULL;
 
-			while ((data = stack_pop(conf->processed)) != NULL)
-				free(data);
-			stack_destroy(conf->processed);
+			set_free(conf->processed);
 			conf->processed = NULL;
 		}
 	} while (dwarf_siblingof(&child_die, &child_die) == 0);
