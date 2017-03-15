@@ -65,7 +65,7 @@ static void _print_node_list(const char *s, const char *prefix,
 
 	fprintf(stream, "%s:\n", s);
 	while (l && l != last) {
-		print_tree_prefix(l->member, prefix, stream);
+		obj_print_tree__prefix(l->member, prefix, stream);
 		l = l->next;
 	}
 }
@@ -248,8 +248,8 @@ static void print_two_nodes(const char *s, obj_t *o1, obj_t *o2, FILE *stream) {
 			fail("No ancestor worthy of print\n");
 	}
 	fprintf(stream, "%s:\n", s);
-	print_tree_prefix(o1, DEL_PREFIX, stream);
-	print_tree_prefix(o2, ADD_PREFIX, stream);
+	obj_print_tree__prefix(o1, DEL_PREFIX, stream);
+	obj_print_tree__prefix(o2, ADD_PREFIX, stream);
 }
 
 typedef struct compare_config_s {
@@ -508,17 +508,17 @@ static int compare_two_files(char *filename, char *newfile, bool follow) {
 	free(path1);
 	free(path2);
 
-	root1 = parse(file1);
-	root2 = parse(file2);
+	root1 = obj_parse(file1);
+	root2 = obj_parse(file2);
 
 	if (compare_config.hide_kabi) {
-		hide_kabi(root1, compare_config.hide_kabi_new);
-		hide_kabi(root2, compare_config.hide_kabi_new);
+		obj_hide_kabi(root1, compare_config.hide_kabi_new);
+		obj_hide_kabi(root2, compare_config.hide_kabi_new);
 	}
 
 	if (compare_config.debug && !follow) {
-		debug_tree(root1);
-		debug_tree(root2);
+		obj_debug_tree(root1);
+		obj_debug_tree(root2);
 	}
 
 	if (follow)
@@ -537,8 +537,8 @@ static int compare_two_files(char *filename, char *newfile, bool follow) {
 		ret = EXIT_KABI_CHANGE;
 	}
 
-	free_obj(root1);
-	free_obj(root2);
+	obj_free(root1);
+	obj_free(root2);
 	fclose(file1);
 	fclose(file2);
 	fclose(stream);

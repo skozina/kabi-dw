@@ -43,7 +43,7 @@
 #define C_INDENT_OFFSET   8
 #define DBG_INDENT_OFFSET 4
 
-obj_list_t *new_list(obj_t *obj) {
+obj_list_t *obj_list_new(obj_t *obj) {
 	obj_list_t *list = malloc(sizeof(obj_list_t));
 	list->member = obj;
 	list->next = NULL;
@@ -51,11 +51,11 @@ obj_list_t *new_list(obj_t *obj) {
 }
 
 static void list_init(obj_list_head_t *head, obj_t *obj) {
-	obj_list_t *list = new_list(obj);
+	obj_list_t *list = obj_list_new(obj);
 	head->first = head->last = list;
 }
 
-obj_list_head_t *new_list_head(obj_t *obj) {
+obj_list_head_t *obj_list_head_new(obj_t *obj) {
 	obj_list_head_t *h = malloc(sizeof(obj_list_head_t));
 
 	list_init(h, obj);
@@ -67,14 +67,14 @@ static bool list_empty(obj_list_head_t *head) {
 	return head->first == NULL;
 }
 
-void list_add(obj_list_head_t *head, obj_t *obj) {
+void obj_list_add(obj_list_head_t *head, obj_t *obj) {
 	obj_list_t *list;
 
 	if (list_empty(head)) {
 		list_init(head, obj);
 		return;
 	}
-	list = new_list(obj);
+	list = obj_list_new(obj);
 
 	if (head->last->next)
 		fprintf(stderr, "head->last is not the last\n");
@@ -83,7 +83,7 @@ void list_add(obj_list_head_t *head, obj_t *obj) {
 	head->last = list;
 }
 
-bool list_remove(obj_list_head_t *head, obj_t *obj) {
+bool obj_list_remove(obj_list_head_t *head, obj_t *obj) {
 	obj_list_t *l = head->first, *previous = NULL;
 
 	while (l) {
@@ -102,7 +102,7 @@ bool list_remove(obj_list_head_t *head, obj_t *obj) {
 }
 
 
-obj_t *new_obj(obj_types type, char *name) {
+obj_t *obj_new(obj_types type, char *name) {
 	obj_t *new = malloc(sizeof(obj_t));
 	bzero(new, sizeof(obj_t));
 
@@ -115,7 +115,7 @@ obj_t *new_obj(obj_types type, char *name) {
 /*
  * Free the tree o, but keep the subtree skip.
  */
-static void _free_obj(obj_t *o, obj_t *skip) {
+static void _obj_free(obj_t *o, obj_t *skip) {
 	obj_list_t *list = NULL, *next;
 
 	if (!o || (o == skip))
@@ -131,14 +131,14 @@ static void _free_obj(obj_t *o, obj_t *skip) {
 	}
 
 	while ( list ) {
-		_free_obj(list->member, skip);
+		_obj_free(list->member, skip);
 		next = list->next;
 		free(list);
 		list = next;
 	}
 
 	if(o->ptr)
-		_free_obj(o->ptr, skip);
+		_obj_free(o->ptr, skip);
 
 	free(o);
 }
@@ -146,33 +146,33 @@ static void _free_obj(obj_t *o, obj_t *skip) {
 /*
  * Free the all object
  */
-void free_obj(obj_t *o) {
-	_free_obj(o, NULL);
+void obj_free(obj_t *o) {
+	_obj_free(o, NULL);
 }
 
-#define _CREATE_NEW_FUNC(type, prefix)			\
-obj_t *prefix##_##type(char *name) {			\
-	obj_t *new = new_obj(__type_##type, name);	\
+#define _CREATE_NEW_FUNC(type, suffix)			\
+obj_t *obj_##type##_##suffix(char *name) {			\
+	obj_t *new = obj_new(__type_##type, name);	\
 	return new;					\
 }
 #define CREATE_NEW_FUNC(type) _CREATE_NEW_FUNC(type, new)
 #define CREATE_NEW_FUNC_NONAME(type)			\
-_CREATE_NEW_FUNC(type, _new)				\
-obj_t *new_##type() {					\
-	return _new_##type(NULL);			\
+_CREATE_NEW_FUNC(type, new_)				\
+obj_t *obj_##type##_new() {					\
+	return obj_##type##_new_(NULL);			\
 }
 
-#define _CREATE_NEW_ADD_FUNC(type, prefix)		\
-obj_t *prefix##_##type##_add(char *name, obj_t *obj) {	\
-	obj_t *new = new_obj(__type_##type, name);	\
+#define _CREATE_NEW_ADD_FUNC(type, infix)		\
+obj_t *obj_##type##_##infix##_##add(char *name, obj_t *obj) {	\
+	obj_t *new = obj_new(__type_##type, name);	\
 	new->ptr = obj;					\
 	return new;					\
 }
 #define CREATE_NEW_ADD_FUNC(type) _CREATE_NEW_ADD_FUNC(type, new)
 #define CREATE_NEW_ADD_FUNC_NONAME(type)		\
-_CREATE_NEW_ADD_FUNC(type, _new)			\
-obj_t *new_##type##_add(obj_t *obj) {			\
-	return _new_##type##_add(NULL, obj);		\
+_CREATE_NEW_ADD_FUNC(type, new_)			\
+obj_t *obj_##type##_new_add(obj_t *obj) {			\
+	return obj_##type##_new__add(NULL, obj);		\
 }
 
 CREATE_NEW_FUNC(struct)
@@ -188,8 +188,8 @@ CREATE_NEW_ADD_FUNC_NONAME(ptr)
 CREATE_NEW_ADD_FUNC_NONAME(array)
 CREATE_NEW_ADD_FUNC_NONAME(qualifier)
 
-obj_t *new_base(char *base_type) {
-	obj_t *new = new_obj(__type_base, NULL);
+obj_t *obj_basetype_new(char *base_type) {
+	obj_t *new = obj_new(__type_base, NULL);
 
 	new->base_type = base_type;
 
@@ -613,7 +613,7 @@ static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix) {
 	return ret;
 }
 
-void print_tree_prefix(obj_t *root, const char *prefix, FILE *stream) {
+void obj_print_tree__prefix(obj_t *root, const char *prefix, FILE *stream) {
 	pp_t s = _print_tree(root, 0, true, prefix);
 
 	fprintf(stream, "%s%s;\n",
@@ -622,8 +622,8 @@ void print_tree_prefix(obj_t *root, const char *prefix, FILE *stream) {
 	free_pp(s);
 }
 
-void print_tree(obj_t *root) {
-	print_tree_prefix(root, NULL, stdout);
+void obj_print_tree(obj_t *root) {
+	obj_print_tree__prefix(root, NULL, stdout);
 }
 
 static void fill_parent_rec(obj_t *o, obj_t *parent) {
@@ -646,7 +646,7 @@ static void fill_parent_rec(obj_t *o, obj_t *parent) {
 /*
  * Walk the tree and fill all the parents field
  */
-void fill_parent(obj_t *root) {
+void obj_fill_parent(obj_t *root) {
 	fill_parent_rec(root, NULL);
 }
 
@@ -655,7 +655,7 @@ static int walk_list(obj_list_t *list, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 	int ret = CB_CONT;
 
 	while ( list ) {
-		ret = walk_tree3(list->member, cb_pre, cb_in, cb_post,
+		ret = obj_walk_tree3(list->member, cb_pre, cb_in, cb_post,
 				 args, ptr_first);
 		if (ret == CB_FAIL)
 			return ret;
@@ -672,7 +672,7 @@ static int walk_ptr(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 	int ret = CB_CONT;
 
 	if (o->ptr) {
-		ret = walk_tree3(o->ptr, cb_pre, cb_in, cb_post,
+		ret = obj_walk_tree3(o->ptr, cb_pre, cb_in, cb_post,
 				 args, ptr_first);
 		if (ret == CB_FAIL)
 			return ret;
@@ -693,7 +693,7 @@ static int walk_ptr(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
  * args:      argument passed to the callbacks
  * ptr_first: whether we walk member_list of ptr first
  */
-int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
+int obj_walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 	       void *args, bool ptr_first) {
 	obj_list_t *list = NULL;
 	int ret = CB_CONT;
@@ -733,8 +733,8 @@ int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
  *
  * It walks the member_list subtree first.
  */
-int walk_tree(obj_t *root, cb_t cb, void *args) {
-	return walk_tree3(root, cb, NULL, NULL, args, false);
+int obj_walk_tree(obj_t *root, cb_t cb, void *args) {
+	return obj_walk_tree3(root, cb, NULL, NULL, args, false);
 }
 
 static void _show_node(FILE *f, obj_t *o, int margin) {
@@ -772,10 +772,10 @@ static int dec_depth(obj_t *node, void *args) {
 /*
  * Print a raw representation of the internal object tree
  */
-int debug_tree(obj_t *root) {
+int obj_debug_tree(obj_t *root) {
 	int depth = 0;
 
-	return walk_tree3(root, debug_node, NULL, dec_depth, &depth, false);
+	return obj_walk_tree3(root, debug_node, NULL, dec_depth, &depth, false);
 }
 
 /*
@@ -895,14 +895,14 @@ static int hide_kabi_cb(obj_t *o, void *args) {
 	parent->name = keeper->name;
 	parent->ptr = keeper->ptr;
 	parent->ptr->parent = parent;
-	_free_obj(o, keeper);
+	_obj_free(o, keeper);
 	free(keeper);
 
 	return CB_SKIP;
 }
 
-int hide_kabi(obj_t *root, bool show_new_field) {
-	return walk_tree(root, hide_kabi_cb, (void *)show_new_field);
+int obj_hide_kabi(obj_t *root, bool show_new_field) {
+	return obj_walk_tree(root, hide_kabi_cb, (void *)show_new_field);
 }
 
 

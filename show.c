@@ -84,19 +84,19 @@ int show(int argc, char **argv) {
 	while (optind < argc) {
 		show_config.file = safe_fopen(argv[optind++]);
 
-		root = parse(show_config.file);
+		root = obj_parse(show_config.file);
 
 		if (show_config.hide_kabi)
-			hide_kabi(root, show_config.hide_kabi_new);
+			obj_hide_kabi(root, show_config.hide_kabi_new);
 
 		if (show_config.debug)
-			debug_tree(root);
+			obj_debug_tree(root);
 
-		print_tree(root);
+		obj_print_tree(root);
 		if (optind < argc)
 			putchar('\n');
 
-		free_obj(root);
+		obj_free(root);
 		fclose(show_config.file);
 	}
 
