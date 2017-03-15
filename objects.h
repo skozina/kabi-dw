@@ -201,5 +201,6 @@ int obj_walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 int obj_hide_kabi(obj_t *root, bool show_new_field);
 
 obj_t *obj_parse(FILE *file);
+obj_t *obj_merge(obj_t *o1, obj_t *o2);
 
 #endif

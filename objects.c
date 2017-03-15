@@ -101,7 +101,6 @@ bool obj_list_remove(obj_list_head_t *head, obj_t *obj) {
 	return false;
 }
 
-
 obj_t *obj_new(obj_types type, char *name) {
 	obj_t *new = malloc(sizeof(obj_t));
 	bzero(new, sizeof(obj_t));
@@ -112,23 +111,18 @@ obj_t *obj_new(obj_types type, char *name) {
 	return new;
 }
 
-/*
- * Free the tree o, but keep the subtree skip.
- */
-static void _obj_free(obj_t *o, obj_t *skip) {
-	obj_list_t *list = NULL, *next;
+static void _obj_free(obj_t *o, obj_t *skip);
 
-	if (!o || (o == skip))
+static void _obj_list_free(obj_list_head_t *l, obj_t *skip)
+{
+	obj_list_t *list;
+	obj_list_t *next;
+
+	if (l == NULL)
 		return;
-	if(o->name)
-		free(o->name);
-	if(o->base_type)
-		free(o->base_type);
 
-	if (o->member_list) {
-		list = o->member_list->first;
-		free(o->member_list);
-	}
+	list = l->first;
+	free(l);
 
 	while ( list ) {
 		_obj_free(list->member, skip);
@@ -136,6 +130,25 @@ static void _obj_free(obj_t *o, obj_t *skip) {
 		free(list);
 		list = next;
 	}
+}
+
+static void obj_list_free(obj_list_head_t *l)
+{
+	_obj_list_free(l, NULL);
+}
+
+/*
+ * Free the tree o, but keep the subtree skip.
+ */
+static void _obj_free(obj_t *o, obj_t *skip) {
+	if (!o || (o == skip))
+		return;
+	if(o->name)
+		free(o->name);
+	if(o->base_type)
+		free(o->base_type);
+
+	_obj_list_free(o->member_list, skip);
 
 	if(o->ptr)
 		_obj_free(o->ptr, skip);
@@ -905,4 +918,155 @@ int obj_hide_kabi(obj_t *root, bool show_new_field) {
 	return obj_walk_tree(root, hide_kabi_cb, (void *)show_new_field);
 }
 
+static bool obj_is_declaration(obj_t *obj)
+{
+	size_t len;
 
+	if (obj->base_type == NULL)
+		return false;
+
+	len = strlen(DECLARATION_PATH);
+	return strncmp(obj->base_type, DECLARATION_PATH, len) == 0;
+}
+
+static bool obj_is_kabi_hide(obj_t *obj)
+{
+	if (obj->name == NULL)
+		return false;
+
+	return strncmp(obj->name, RH_KABI_HIDE, RH_KABI_HIDE_LEN) == 0;
+}
+
+static bool obj_eq(obj_t *o1, obj_t *o2)
+{
+	/* borrow parts from cmp_nodes */
+	if ((o1->type != o2->type) ||
+	    cmp_str(o1->name, o2->name) ||
+	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
+	    (has_constant(o1) && (o1->constant != o2->constant)) ||
+	    (has_index(o1) && (o1->index != o2->index)) ||
+	    (is_bitfield(o1) != is_bitfield(o2)))
+		return false;
+
+	/* just compare bitfields */
+	if (is_bitfield(o1) &&
+	    ((o1->last_bit !=  o2->last_bit) ||
+	     (o1->first_bit != o2->first_bit)))
+	    return false;
+
+	if ((o1->member_list == NULL) !=
+	    (o2->member_list == NULL))
+		return false;
+
+	if (cmp_str(o1->base_type, o2->base_type))
+		return false;
+
+	return true;
+}
+
+static obj_t *obj_copy(obj_t *o1)
+{
+	obj_t *o;
+
+	o = safe_malloc(sizeof(*o));
+	*o = *o1;
+
+	o->type = o1->type;
+	o->name = safe_strdup_or_null(o1->name);
+	o->base_type = safe_strdup_or_null(o1->base_type);
+
+	o->ptr = NULL;
+	o->member_list = NULL;
+
+	return o;
+}
+
+obj_t *obj_merge(obj_t *o1, obj_t *o2);
+
+static obj_list_head_t *obj_members_merge(obj_list_head_t *list1,
+					  obj_list_head_t *list2)
+{
+	obj_list_head_t *res = NULL;
+	obj_list_t *l1;
+	obj_list_t *l2;
+	obj_t *o;
+
+	if (list1 == NULL || list2 == NULL)
+		return NULL;
+
+	l1 = list1->first;
+	l2 = list2->first;
+
+	while (l1 && l2) {
+		o = obj_merge(l1->member, l2->member);
+		if (o == NULL)
+			goto cleanup;
+
+		if (res == NULL)
+			res = obj_list_head_new(o);
+		else
+			obj_list_add(res, o);
+
+		l1 = l1->next;
+		l2 = l2->next;
+	};
+
+	if (l1 || l2)
+		goto cleanup;
+
+	return res;
+
+cleanup:
+	obj_list_free(res);
+	return NULL;
+}
+
+obj_t *obj_merge(obj_t *o1, obj_t *o2)
+{
+	obj_t *merged_ptr;
+	obj_list_head_t *merged_members;
+	obj_t *res = NULL;
+
+	if (o1 == NULL || o2 == NULL)
+		return NULL;
+
+	/*
+	 * We can merge the two lines if:
+	 *  - they are the same, or
+	 *  - they are both RH_KABI_HIDE, or
+	 *  - at least one of them is a declaration
+	 */
+	if ((!obj_eq(o1, o2)) &&
+	    (!obj_is_kabi_hide(o1) || !obj_is_kabi_hide(o2)) &&
+	    !obj_is_declaration(o1) && !obj_is_declaration(o2))
+		goto no_merge;
+
+	merged_ptr = obj_merge(o1->ptr, o2->ptr);
+	if (o1->ptr && !merged_ptr)
+		goto no_merge_ptr;
+
+	merged_members = obj_members_merge(o1->member_list,
+					   o2->member_list);
+	if (o1->member_list && !merged_members)
+		goto no_merge_members;
+
+	if (obj_is_declaration(o1))
+		res = obj_copy(o2);
+	else
+		res = obj_copy(o1);
+
+	res->ptr = merged_ptr;
+
+	if (merged_members != NULL)
+		merged_members->object = res;
+	res->member_list = merged_members;
+
+	return res;
+
+no_merge_members:
+	obj_list_free(merged_members);
+no_merge_ptr:
+	obj_free(merged_ptr);
+no_merge:
+	return NULL;
+}
