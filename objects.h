@@ -202,5 +202,6 @@ int obj_hide_kabi(obj_t *root, bool show_new_field);
 
 obj_t *obj_parse(FILE *file);
 obj_t *obj_merge(obj_t *o1, obj_t *o2);
+void obj_dump(obj_t *o, FILE *f);
 
 #endif

@@ -1070,3 +1070,155 @@ no_merge_ptr:
 no_merge:
 	return NULL;
 }
+
+static void dump_reffile(obj_t *o, FILE *f)
+{
+	fprintf(f, "@\"%s\"\n", o->base_type);
+}
+
+static void _dump_members(obj_t *o, FILE *f, void (*dumper)(obj_t *, FILE *))
+{
+	obj_list_head_t *l = o->member_list;
+	obj_list_t *list;
+
+	if (l == NULL)
+		return;
+
+	list = l->first;
+
+	while (list) {
+		dumper(list->member, f);
+		list = list->next;
+	}
+}
+
+static void dump_arg(obj_t *o, FILE *f)
+{
+	fprintf(f, "%s ", o->name);
+	obj_dump(o->ptr, f);
+}
+
+static void dump_members(obj_t *o, FILE *f)
+{
+	_dump_members(o, f, obj_dump);
+}
+
+static void dump_args(obj_t *o, FILE *f)
+{
+	_dump_members(o, f, dump_arg);
+}
+
+static void dump_struct(obj_t *o, FILE *f)
+{
+	fprintf(f, "struct %s {\n", o->name);
+	dump_members(o, f);
+	fprintf(f, "}\n");
+}
+static void dump_union(obj_t *o, FILE *f)
+{
+	fprintf(f, "union %s {\n", o->name);
+	dump_args(o, f);
+	fprintf(f, "}\n");
+}
+
+static void dump_enum(obj_t *o, FILE *f)
+{
+	fprintf(f, "enum %s {\n", o->name);
+	dump_members(o, f);
+	fprintf(f, "}\n");
+}
+
+static void dump_func(obj_t *o, FILE *f)
+{
+	fprintf(f, "func %s (\n", o->name);
+	dump_args(o, f);
+	fprintf(f, ")\n");
+
+	obj_dump(o->ptr, f);
+}
+
+static void dump_ptr(obj_t *o, FILE *f)
+{
+	fprintf(f, "* ");
+	obj_dump(o->ptr, f);
+}
+
+static void dump_typedef(obj_t *o, FILE *f)
+{
+	fprintf(f, "typedef %s\n", o->name);
+	obj_dump(o->ptr, f);
+}
+
+static void dump_array(obj_t *o, FILE *f)
+{
+	fprintf(f, "[%lu]", o->index);
+	obj_dump(o->ptr, f);
+}
+
+static void dump_var(obj_t *o, FILE *f)
+{
+	fprintf(f, "var %s ", o->name);
+	obj_dump(o->ptr, f);
+}
+
+static void dump_struct_member(obj_t *o, FILE *f)
+{
+	fprintf(f, "0x%lx", o->offset);
+	if (o->is_bitfield)
+		fprintf(f, ":%d-%d", o->first_bit, o->last_bit);
+	fprintf(f, " %s ", o->name);
+	obj_dump(o->ptr, f);
+}
+
+static void dump_qualifier(obj_t *o, FILE *f)
+{
+	fprintf(f, "%s ", o->base_type);
+	obj_dump(o->ptr, f);
+}
+
+static void dump_base(obj_t *o, FILE *f)
+{
+	char *type = o->base_type;
+
+	/* variable args (...) is a special base case */
+	if (type[0] == '.')
+		fprintf(f, "%s\n", o->base_type);
+	else
+		fprintf(f, "\"%s\"\n", o->base_type);
+}
+
+static void dump_constant(obj_t *o, FILE *f)
+{
+	fprintf(f, "%s = 0x%lx\n", o->name, o->constant);
+}
+
+struct dumper {
+	void (*dumper)(obj_t *o, FILE *f);
+};
+
+static struct dumper dumpers[] = {
+	[__type_reffile].dumper = dump_reffile,
+	[__type_struct].dumper = dump_struct,
+	[__type_union].dumper = dump_union,
+	[__type_enum].dumper = dump_enum,
+	[__type_func].dumper = dump_func,
+	[__type_ptr].dumper = dump_ptr,
+	[__type_typedef].dumper = dump_typedef,
+	[__type_array].dumper = dump_array,
+	[__type_var].dumper = dump_var,
+	[__type_struct_member].dumper = dump_struct_member,
+	[__type_qualifier].dumper = dump_qualifier,
+	[__type_base].dumper = dump_base,
+	[__type_constant].dumper = dump_constant,
+};
+
+void obj_dump(obj_t *o, FILE *f)
+{
+	if (o == NULL)
+		return;
+
+	if (o->type >= NR_OBJ_TYPES)
+		fail("Wrong object type %d", o->type);
+
+	dumpers[o->type].dumper(o, f);
+}
