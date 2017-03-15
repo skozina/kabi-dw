@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <assert.h>
+#include <getopt.h>
 
 #include <elfutils/libdw.h>
 #include <elfutils/libdwfl.h>
@@ -41,8 +42,24 @@
 #include "utils.h"
 #include "generate.h"
 #include "ksymtab.h"
+#include "stack.h"
 
 #define	EMPTY_NAME	"(NULL)"
+
+typedef struct {
+	bool verbose;
+	char *kernel_dir; /* Path to  the kernel modules to process */
+	char *kabi_dir; /* Where to put the output */
+	struct ksymtab *symbols; /* List of symbols to generate */
+	size_t symbol_cnt;
+	bool *symbols_found;
+	size_t symbols_found_cnt;
+	char *module; /* current kernel module to process */
+	struct ksymtab *ksymtab; /* ksymtab of the current kernel module */
+	stack_t *stack; /* Current stack of symbol we're parsing */
+	stack_t *processed; /* Set of processed types for this CU */
+} generate_config_t;
+
 
 struct dwarf_type {
 	unsigned int dwarf_tag;
@@ -98,7 +115,7 @@ static bool is_declaration(Dwarf_Die *die) {
 	return (true);
 }
 
-char *get_file_replace_path = NULL;
+static char *get_file_replace_path = NULL;
 
 static char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 	Dwarf_Files *files;
@@ -1015,7 +1032,7 @@ static void print_not_found(const char *s, size_t i, void *ctx)
  * Print symbol definition by walking all DIEs in a .debug_info section.
  * Returns true if the definition was printed, otherwise false.
  */
-void generate_symbol_defs(generate_config_t *conf) {
+static void generate_symbol_defs(generate_config_t *conf) {
 	struct stat st;
 
 	if (stat(conf->kernel_dir, &st) != 0)
@@ -1035,4 +1052,155 @@ void generate_symbol_defs(generate_config_t *conf) {
 	}
 
 	ksymtab_for_each(conf->symbols, print_not_found, conf->symbols_found);
+}
+
+#define	WHITESPACE	" \t\n"
+
+/* Remove white characters from given buffer */
+static void strip(char *buf) {
+	size_t i = 0, j = 0;
+	while (buf[j] != '\0') {
+		if (strchr(WHITESPACE, buf[j]) == NULL) {
+			if (i != j)
+				buf[i] = buf[j];
+			i++;
+		}
+		j++;
+	}
+	buf[i] = '\0';
+}
+
+/* Get list of symbols to generate. */
+static struct ksymtab *read_symbols(char *filename)
+{
+	FILE *fp = fopen(filename, "r");
+	char *line = NULL;
+	size_t len = 0;
+	size_t i = 0;
+	struct ksymtab *symbols;
+
+	symbols = ksymtab_new(DEFAULT_BUFSIZE);
+
+	if (fp == NULL)
+		fail("Failed to open symbol file: %s\n", strerror(errno));
+
+	errno = 0;
+	while ((getline(&line, &len, fp)) != -1) {
+		strip(line);
+		ksymtab_add_sym(symbols, line, len, i);
+		i++;
+	}
+
+	if (errno != 0)
+		fail("getline() failed for %s: %s\n", filename,
+		    strerror(errno));
+
+	if (line != NULL)
+		free(line);
+
+	fclose(fp);
+
+	return symbols;
+}
+
+static void generate_usage() {
+	printf("Usage:\n"
+	       "\tgenerate [options] kernel_dir\n"
+	       "\nOptions:\n"
+	       "    -h, --help:\t\tshow this message\n"
+	       "    -v, --verbose:\tdisplay debug information\n"
+	       "    -o, --output kabi_dir:\n\t\t\t"
+	       "where to write kabi files (default: \"output\")\n"
+	       "    -s, --symbols symbol_file:\n\t\t\ta file containing the"
+	       " list of symbols of interest (e.g. whitelisted)\n"
+	       "    -r, --replace-path abs_path:\n\t\t\t"
+	       "replace the absolute path by a relative path\n");
+	exit(1);
+}
+
+static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
+    char **symbol_file) {
+	*symbol_file = NULL;
+	conf->verbose = false;
+	conf->kabi_dir = DEFAULT_OUTPUT_DIR;
+	int opt, opt_index;
+	struct option loptions[] = {
+		{"help", no_argument, 0, 'h'},
+		{"verbose", no_argument, 0, 'v'},
+		{"output", required_argument, 0, 'o'},
+		{"symbols", required_argument, 0, 's'},
+		{"replace-path", required_argument, 0, 'r'},
+		{0, 0, 0, 0}
+	};
+
+	while ((opt = getopt_long(argc, argv, "hvo:s:r:m:",
+				  loptions, &opt_index)) != -1) {
+		switch (opt) {
+		case 'h':
+			generate_usage();
+		case 'v':
+			conf->verbose = true;
+			break;
+		case 'o':
+			conf->kabi_dir = optarg;
+			break;
+		case 's':
+			*symbol_file = optarg;
+			break;
+		case 'r':
+			get_file_replace_path = optarg;
+			break;
+		default:
+			generate_usage();
+		}
+	}
+
+	if (optind != argc - 1)
+		generate_usage();
+
+	conf->kernel_dir = argv[optind];
+
+	rec_mkdir(conf->kabi_dir);
+}
+
+void generate(int argc, char **argv) {
+	char *temp_path;
+	char *symbol_file;
+	generate_config_t *conf = safe_malloc(sizeof (*conf));
+
+	parse_generate_opts(argc, argv, conf, &symbol_file);
+
+	if (symbol_file != NULL) {
+		int i;
+
+		conf->symbols = read_symbols(symbol_file);
+		conf->symbol_cnt = ksymtab_len(conf->symbols);
+
+		if (conf->verbose)
+			printf("Loaded %ld symbols\n", conf->symbol_cnt);
+		conf->symbols_found = safe_malloc(conf->symbol_cnt *
+						  sizeof (*conf->symbols_found));
+		for (i = 0; i < conf->symbol_cnt; i++)
+			conf->symbols_found[i] = false;
+	}
+
+	/* Create a place for temporary files */
+	safe_asprintf(&temp_path, "%s/%s", conf->kabi_dir, TEMP_PATH);
+	rec_mkdir(temp_path);
+
+	generate_symbol_defs(conf);
+
+	/* Delete the temporary space again */
+	if (rmdir(temp_path) != 0)
+		printf("WARNING: Failed to delete %s: %s\n", temp_path,
+		    strerror(errno));
+
+	free(temp_path);
+
+	if (symbol_file != NULL) {
+		free(conf->symbols_found);
+		ksymtab_free(conf->symbols);
+	}
+
+	free(conf);
 }

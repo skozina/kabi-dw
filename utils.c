@@ -31,6 +31,7 @@
 #include <assert.h>
 #include <libgen.h> /* dirname() */
 
+#include "main.h"
 #include "utils.h"
 
 /*
@@ -309,4 +310,38 @@ char *path_normalize(char *path) {
 		state = state(&ctx);
 
 	return (path);
+}
+
+/* Removes the two dashes at the end of the prefix */
+#define IS_PREFIX(s, prefix) !strncmp(s, prefix, strlen(prefix) - 2)
+
+/*
+ * Get the type of a symbol from the name of the kabi file
+ *
+ * It allocates the string which must be freed by the caller.
+ */
+char *filenametotype(char *filename) {
+	char *base = basename(filename);
+	char *prefix= NULL, *name = NULL, *type = NULL;
+	int version = 0;
+
+	if ( (sscanf(base, "%m[a-z]--%m[^.-].txt", &prefix, &name) != 2) &&
+	     (sscanf(base, "%m[a-z]--%m[^.-]-%i.txt",
+		     &prefix, &name, &version) != 3))
+		fail("Unexpected file name: %s\n", filename);
+
+	if (IS_PREFIX(prefix, TYPEDEF_FILE))
+		type = name;
+	else if (IS_PREFIX(prefix, STRUCT_FILE)||
+		 IS_PREFIX(prefix, UNION_FILE) ||
+		 IS_PREFIX(prefix, ENUM_FILE))
+		safe_asprintf(&type, "%s %s", prefix, name);
+	else
+		fail("Unexpected file prefix: %s\n", prefix);
+
+	free(prefix);
+	if (name != type)
+		free(name);
+
+	return type;
 }

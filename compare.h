@@ -1,5 +1,5 @@
 /*
-	Copyright(C) 2016, Red Hat, Inc., Stanislav Kozina
+	Copyright(C) 2017, Red Hat, Inc.
 
 	This program is free software: you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -15,11 +15,12 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef GENERATE_H_
-#define	GENERATE_H_
+#ifndef KABI_DW_COMAPRE_H_
+#define KABI_DW_COMAPRE_H_
 
-#include "main.h"
+/* Return value when we detect a kABI change */
+#define EXIT_KABI_CHANGE 2
 
-void generate(int argc, char **argv);
+int compare(int argc, char **argv);
 
-#endif /* GENERATE_H_ */
+#endif

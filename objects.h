@@ -22,22 +22,14 @@
 #ifndef _OBJECTS_H
 #define _OBJECTS_H
 
+#include <stdbool.h>
+#include <stdio.h>
+
 #ifdef DEBUG
 #define debug(args...) do { printf(args); } while(0)
 #else
 #define debug(args...)
 #endif
-
-/* Return value when we detect a kABI change */
-#define EXIT_KABI_CHANGE 2
-
-/* Indentation offset for c-style and tree debug outputs */
-#define C_INDENT_OFFSET   8
-#define DBG_INDENT_OFFSET 4
-
-/* diff -u style prefix for tree comparison */
-#define ADD_PREFIX "+"
-#define DEL_PREFIX "-"
 
 typedef enum {
 	__type_reffile,
@@ -205,15 +197,9 @@ int walk_tree(obj_t *root, cb_t cb, void *args);
 int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 	       void *args, bool ptr_first);
 
-/* Return values for the (_)compare_tree functions */
-enum {
-	COMP_SAME = 0,	/* Subtree are equal */
-	COMP_DIFF,	/* Subtree differs */
-};
-int compare_tree(obj_t *o1, obj_t *o2, FILE *stream);
 int hide_kabi(obj_t *root, bool show_new_field);
 
-int show(int argc, char **argv);
-int compare(int argc, char **argv);
+obj_t *parse(FILE *file);
+void print_tree_prefix(obj_t *root, const char *prefix, FILE *stream);
 
 #endif

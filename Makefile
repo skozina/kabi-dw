@@ -15,6 +15,7 @@
 
 PROG=kabi-dw
 SRCS=generate.c ksymtab.c utils.c main.c stack.c objects.c hash.c
+SRCS += compare.c show.c
 
 CC=gcc
 CFLAGS=-Wall -O0 -g --std=gnu99 -D_GNU_SOURCE -c

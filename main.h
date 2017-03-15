@@ -18,9 +18,6 @@
 #ifndef MAIN_H_
 #define	MAIN_H_
 
-#include "stack.h"
-#include "ksymtab.h"
-
 #define	DEFAULT_OUTPUT_DIR	"./output"
 #define	MODULE_DIR		"/usr/lib/modules"
 #define	DEBUG_MODULE_DIR	"/usr/lib/debug/lib/modules"
@@ -44,26 +41,5 @@
 
 #define RH_KABI_HIDE		"__UNIQUE_ID_rh_kabi_hide"
 #define RH_KABI_HIDE_LEN	24
-
-typedef struct {
-	bool verbose;
-	char *kernel_dir; /* Path to  the kernel modules to process */
-	char *kabi_dir; /* Where to put the output */
-	struct ksymtab *symbols; /* List of symbols to generate */
-	size_t symbol_cnt;
-	bool *symbols_found;
-	size_t symbols_found_cnt;
-	char *module; /* current kernel module to process */
-	struct ksymtab *ksymtab; /* ksymtab of the current kernel module */
-	stack_t *stack; /* Current stack of symbol we're parsing */
-	stack_t *processed; /* Set of processed types for this CU */
-} generate_config_t;
-
-typedef struct {
-	bool verbose;
-	char *kabi_dir_old; /* Path to the stored kabi information */
-	char *kabi_dir_new; /* Path to the new kabi information */
-	char *file_name; /* Currently processing file */
-} check_config_t;
 
 #endif /* MAIN_H_ */

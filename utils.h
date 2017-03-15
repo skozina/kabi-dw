@@ -19,6 +19,8 @@
 #define	UTILS_H_
 
 #include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
 #include <errno.h>
 
 #define	fail(m...)	{			\
@@ -60,11 +62,22 @@ static inline ssize_t safe_getline(char **lineptr, size_t *n, FILE *stream) {
 	return (ret);
 }
 
+static inline FILE *safe_fopen(char *filename) {
+	FILE *file;
+
+	file = fopen(filename, "r");
+	if (!file)
+		fail("Failed to open kABI file: %s\n", filename);
+
+	return (file);
+}
+
 extern void walk_dir(char *, bool, bool (*)(char *, void *), void *);
 extern int check_is_directory(char *);
 extern void rec_mkdir(char *);
 extern int cmp_str(char *, char *);
 extern void safe_rename(const char *, const char *);
-extern char *path_normalize(char *path);
+extern char *path_normalize(char *);
+extern char *filenametotype(char *);
 
 #endif /* UTILS_H */
