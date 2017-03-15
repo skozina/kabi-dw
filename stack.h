@@ -30,5 +30,6 @@ extern void stack_push(stack_t *, void *);
 extern void *stack_pop(stack_t *);
 extern void *stack_head(stack_t *);
 extern void walk_stack(stack_t *, void (*)(void *, void *), void *);
+extern void walk_stack_backward(stack_t *, void (*cb)(void *, void *), void *);
 
 #endif /* STACK_H_ */
