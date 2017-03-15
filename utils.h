@@ -53,6 +53,12 @@ static inline void *safe_strdup(const char *s) {
 	return (result);
 }
 
+static inline void *safe_strdup_or_null(const char *s) {
+	if (s == NULL)
+		return NULL;
+	return (safe_strdup(s));
+}
+
 static inline ssize_t safe_getline(char **lineptr, size_t *n, FILE *stream) {
 	ssize_t ret = getline(lineptr, n, stream);
 
