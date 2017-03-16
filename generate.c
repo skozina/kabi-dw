@@ -636,9 +636,77 @@ out:
 	return (ret);
 }
 
-static void print_die(struct cu_ctx *ctx, FILE *parent_file, Dwarf_Die *die) {
+static void print_die_tag(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die)
+{
 	unsigned int tag = dwarf_tag(die);
 	const char *name = dwarf_diename(die);
+
+	if (tag == DW_TAG_invalid)
+		fail("DW_TAG_invalid: %s\n", name);
+
+	switch (tag) {
+	case DW_TAG_subprogram:
+		print_die_subprogram(ctx, fout, die);
+		break;
+	case DW_TAG_variable:
+		fprintf(fout, "var %s ", name);
+		print_die_type(ctx, fout, die);
+		break;
+	case DW_TAG_base_type:
+		fprintf(fout, "\"%s\"\n", name);
+		break;
+	case DW_TAG_pointer_type:
+		fprintf(fout, "* ");
+		print_die_type(ctx, fout, die);
+		break;
+	case DW_TAG_structure_type:
+		print_die_structure(ctx, fout, die);
+		break;
+	case DW_TAG_enumeration_type:
+		print_die_enumeration(ctx, fout, die);
+		break;
+	case DW_TAG_union_type:
+		print_die_union(ctx, fout, die);
+		break;
+	case DW_TAG_typedef:
+		fprintf(fout, "typedef %s\n", name);
+		print_die_type(ctx, fout, die);
+		break;
+	case DW_TAG_formal_parameter:
+		if (name != NULL)
+			fprintf(fout, "%s\n", name);
+		print_die_type(ctx, fout, die);
+		break;
+	case DW_TAG_unspecified_parameters:
+		fprintf(fout, "...\n");
+		break;
+	case DW_TAG_subroutine_type:
+		print_die_subprogram(ctx, fout, die);
+		break;
+	case DW_TAG_volatile_type:
+		fprintf(fout, "volatile ");
+		print_die_type(ctx, fout, die);
+		break;
+	case DW_TAG_const_type:
+		fprintf(fout, "const ");
+		print_die_type(ctx, fout, die);
+		break;
+	case DW_TAG_array_type:
+		print_die_array_type(ctx, fout, die);
+		print_die_type(ctx, fout, die);
+		break;
+	default: {
+		const char *tagname = dwarf_tag_string(tag);
+		if (tagname == NULL)
+			tagname = "<NO TAG>";
+
+		fail("Unexpected tag for symbol %s: %s\n", name, tagname);
+		break;
+	}
+	}
+}
+
+static void print_die(struct cu_ctx *ctx, FILE *parent_file, Dwarf_Die *die) {
 	char *file;
 	char *temp_path = NULL;
 	FILE *fout;
@@ -704,69 +772,7 @@ static void print_die(struct cu_ctx *ctx, FILE *parent_file, Dwarf_Die *die) {
 
 	assert(fout != NULL);
 
-	if (tag == DW_TAG_invalid)
-		fail("DW_TAG_invalid: %s\n", name);
-
-	switch (tag) {
-	case DW_TAG_subprogram:
-		print_die_subprogram(ctx, fout, die);
-		break;
-	case DW_TAG_variable:
-		fprintf(fout, "var %s ", name);
-		print_die_type(ctx, fout, die);
-		break;
-	case DW_TAG_base_type:
-		fprintf(fout, "\"%s\"\n", name);
-		break;
-	case DW_TAG_pointer_type:
-		fprintf(fout, "* ");
-		print_die_type(ctx, fout, die);
-		break;
-	case DW_TAG_structure_type:
-		print_die_structure(ctx, fout, die);
-		break;
-	case DW_TAG_enumeration_type:
-		print_die_enumeration(ctx, fout, die);
-		break;
-	case DW_TAG_union_type:
-		print_die_union(ctx, fout, die);
-		break;
-	case DW_TAG_typedef:
-		fprintf(fout, "typedef %s\n", name);
-		print_die_type(ctx, fout, die);
-		break;
-	case DW_TAG_formal_parameter:
-		if (name != NULL)
-			fprintf(fout, "%s\n", name);
-		print_die_type(ctx, fout, die);
-		break;
-	case DW_TAG_unspecified_parameters:
-		fprintf(fout, "...\n");
-		break;
-	case DW_TAG_subroutine_type:
-		print_die_subprogram(ctx, fout, die);
-		break;
-	case DW_TAG_volatile_type:
-		fprintf(fout, "volatile ");
-		print_die_type(ctx, fout, die);
-		break;
-	case DW_TAG_const_type:
-		fprintf(fout, "const ");
-		print_die_type(ctx, fout, die);
-		break;
-	case DW_TAG_array_type:
-		print_die_array_type(ctx, fout, die);
-		print_die_type(ctx, fout, die);
-		break;
-	default: {
-		const char *tagname = dwarf_tag_string(tag);
-		if (tagname == NULL)
-			tagname = "<NO TAG>";
-
-		fail("Unexpected tag for symbol %s: %s\n", name, tagname);
-		break;
-	}
-	}
+	print_die_tag(ctx, fout, die);
 
 	if (file != NULL) {
 		char *final_path, *base_file = NULL;
