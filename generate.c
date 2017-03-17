@@ -342,6 +342,227 @@ static void set_free(struct set *set)
 	hash_free(h);
 }
 
+static void print_stack_cb(void *data, void *arg) {
+	char *symbol = (char *)data;
+	FILE *fp = (FILE *)arg;
+
+	fprintf(fp, "-> \"%s\"\n", symbol);
+}
+
+static FILE *record_start(struct cu_ctx *ctx,
+			  Dwarf_Die *die,
+			  char *key,
+			  char **temp_path)
+{
+	const char *dec_file;
+	long dec_line;
+	FILE *fout = NULL;
+	generate_config_t *conf = ctx->conf;
+
+	/*
+	 * Don't try to reenter a file that we have seen already for
+	 * this CU.
+	 * Note that this is just a pure optimization, the same file
+	 * (type) in the same CU must be identical.
+	 * But this is major optimization, without it a single
+	 * re-generation of a top file would require a full regeneration
+	 * of its full tree, thus the difference in speed is many orders
+	 * of magnitude!
+	 */
+	if (set_contains(ctx->processed, key))
+		goto done;
+
+	set_add(ctx->processed, key);
+
+	if (is_declaration(die)) {
+		if (conf->verbose)
+			printf("WARNING: Skipping following file as we "
+			       "have only declaration: %s\n", key);
+		goto done;
+	}
+
+	if (conf->verbose)
+		printf("Generating %s\n", key);
+	fout = open_temp_file(conf, temp_path);
+
+	/* Print the CU die on the first line of each file */
+	fprintf(fout, "CU \"%s\"\n", dwarf_diename(ctx->cu_die));
+
+	/* Then print the source file & line */
+	dec_file = get_file(ctx->cu_die, die);
+	dec_line = get_line(ctx->cu_die, die);
+	fprintf(fout, "File %s:%lu\n", dec_file, dec_line);
+
+	/* Print the stack and add then add the current file to it */
+	walk_stack(ctx->stack, print_stack_cb, fout);
+done:
+	return fout;
+}
+
+static void record_close(FILE *fout, char *fname)
+{
+	int rc;
+
+	rc = fclose(fout);
+	if (rc != 0)
+		fail("Could not close file '%s': %m\n", fname);
+}
+
+static void get_header_line(FILE *file, char **s, size_t *n,
+    const char *template) {
+	safe_getline(s, n, file);
+	if (strncmp(template, *s, strlen(template)) != 0)
+		fail("skipheader: no compile unit\n");
+}
+
+static void get_first_line(FILE *file, char **s, size_t *n, FILE *ofile) {
+	while (true) {
+		safe_getline(s, n, file);
+		if (strncmp("-> ", *s, 3) != 0)
+			break;
+		if (ofile != NULL)
+			fprintf(ofile, "%s", *s);
+	}
+}
+
+static bool record_merge(char *path1, char *path2, char **opath,
+    generate_config_t *conf) {
+	FILE *file1, *file2, *ofile;
+	char *s1 = NULL, *s2 = NULL;
+	size_t n1 = 0, n2 = 0;
+	bool ret = true;
+
+	file1 = fopen(path1, "r");
+	file2 = fopen(path2, "r");
+	ofile = open_temp_file(conf, opath);
+
+	/* Ignore CU line */
+	get_header_line(file1, &s1, &n1, "CU ");
+	get_header_line(file2, &s2, &n2, "CU ");
+	fprintf(ofile, "%s", s1);
+
+	/* Check File line */
+	get_header_line(file1, &s1, &n1, "File ");
+	get_header_line(file2, &s2, &n2, "File ");
+
+	if (strcmp(s1, s2) != 0) {
+		ret = false;
+		goto out;
+	}
+	fprintf(ofile, "%s", s1);
+
+	/* Skipt the stack */
+	get_first_line(file1, &s1, &n1, ofile);
+	get_first_line(file2, &s2, &n2, NULL);
+
+	do {
+		bool is_s1_declaration = (strstr(s1, DECLARATION_PATH) != NULL);
+		bool is_s2_declaration = (strstr(s2, DECLARATION_PATH) != NULL);
+
+		/*
+		 * We can merge the two lines if:
+		 *  - they are the same, or
+		 *  - they are both RH_KABI_HIDE, or
+		 *  - at least one of them is a declaration
+		 * The condition below is just the negation of the above.
+		 */
+		if ((strcmp(s1, s2) != 0) &&
+		    ((strncmp(s1, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0) ||
+		    (strncmp(s2, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0)) &&
+		    !is_s1_declaration && !is_s2_declaration) {
+			ret = false;
+			goto out;
+		}
+		if (is_s1_declaration)
+			fprintf(ofile, "%s", s2);
+		else
+			fprintf(ofile, "%s", s1);
+	} while ((safe_getline(&s1, &n1, file1) != -1) &&
+	    (safe_getline(&s2, &n2, file2) != -1));
+
+out:
+	fclose(ofile);
+	if (ret == false) {
+		unlink(*opath);
+		free(*opath);
+		*opath = NULL;
+	}
+	free(s1);
+	free(s2);
+	fclose(file1);
+	fclose(file2);
+	return (ret);
+}
+
+static char *record_db_add(struct cu_ctx *ctx,
+			   char *key,
+			   char *temp_path)
+{
+	char *final_path, *base_file = NULL;
+	char *merged_path = NULL;
+	generate_config_t *conf = ctx->conf;
+	char *dir = conf->kabi_dir;
+	int version = 0;
+
+	/* to allow print_die() free it without check */
+	key = safe_strdup(key);
+
+	for (;;) {
+		safe_asprintf(&final_path, "%s/%s", dir, key);
+
+		/*
+		 * Now we need to put the new type file we've just generated
+		 * (in temp_path) to its final destination (final_path).
+		 *
+		 * Often the only difference between these files are some
+		 * fields which are fully defined in one file (because the
+		 * respective header file has been included for the CU
+		 * compilation) while these are mere declarations in the other
+		 * (because the header file was not used). We detect this case
+		 * and if this is the only difference we just merge these two
+		 * files into one using the full definitions where available.
+		 *
+		 * But of course two types (eg. structures) of the same name
+		 * might be completely different types. In such case we try to
+		 * store them under different names using increasing number as
+		 * a suffix.
+		 */
+		if (access(final_path, F_OK) != 0) {
+			/* Target file doesn't exist, trivial */
+			if (errno != ENOENT)
+				fail("access() failed: %s\n", strerror(errno));
+
+			safe_rename(temp_path, final_path);
+			break;
+		}
+
+		if (record_merge(final_path, temp_path, &merged_path, conf)) {
+			/* We managed to merge the files, drop the old one */
+			unlink(temp_path);
+			unlink(final_path);
+			safe_rename(merged_path, final_path);
+			free(merged_path);
+			break;
+		}
+
+		/* Two different types detected, bump the name version */
+		if (version == 0) {
+			base_file = safe_strdup(key);
+			/* Remove .txt ending */
+			base_file[strlen(base_file) - 4] = '\0';
+		}
+		version++;
+		free(final_path);
+		free(key); /* ok with initial NULL */
+		safe_asprintf(&key, "%s-%i.txt", base_file, version);
+	}
+
+	free(base_file);
+	free(final_path);
+	free(temp_path);
+	return key;
+}
+
 static void print_die_type(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die) {
 	Dwarf_Die type_die;
 	Dwarf_Attribute attr;
@@ -543,99 +764,6 @@ static void print_die_array_type(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die)
 	} while (dwarf_siblingof(&child, &child) == 0);
 }
 
-static void print_stack_cb(void *data, void *arg) {
-	char *symbol = (char *)data;
-	FILE *fp = (FILE *)arg;
-
-	fprintf(fp, "-> \"%s\"\n", symbol);
-}
-
-static void get_header_line(FILE *file, char **s, size_t *n,
-    const char *template) {
-	safe_getline(s, n, file);
-	if (strncmp(template, *s, strlen(template)) != 0)
-		fail("skipheader: no compile unit\n");
-}
-
-static void get_first_line(FILE *file, char **s, size_t *n, FILE *ofile) {
-	while (true) {
-		safe_getline(s, n, file);
-		if (strncmp("-> ", *s, 3) != 0)
-			break;
-		if (ofile != NULL)
-			fprintf(ofile, "%s", *s);
-	}
-}
-
-static bool merge_files(char *path1, char *path2, char **opath,
-    generate_config_t *conf) {
-	FILE *file1, *file2, *ofile;
-	char *s1 = NULL, *s2 = NULL;
-	size_t n1 = 0, n2 = 0;
-	bool ret = true;
-
-	file1 = fopen(path1, "r");
-	file2 = fopen(path2, "r");
-	ofile = open_temp_file(conf, opath);
-
-	/* Ignore CU line */
-	get_header_line(file1, &s1, &n1, "CU ");
-	get_header_line(file2, &s2, &n2, "CU ");
-	fprintf(ofile, "%s", s1);
-
-	/* Check File line */
-	get_header_line(file1, &s1, &n1, "File ");
-	get_header_line(file2, &s2, &n2, "File ");
-
-	if (strcmp(s1, s2) != 0) {
-		ret = false;
-		goto out;
-	}
-	fprintf(ofile, "%s", s1);
-
-	/* Skipt the stack */
-	get_first_line(file1, &s1, &n1, ofile);
-	get_first_line(file2, &s2, &n2, NULL);
-
-	do {
-		bool is_s1_declaration = (strstr(s1, DECLARATION_PATH) != NULL);
-		bool is_s2_declaration = (strstr(s2, DECLARATION_PATH) != NULL);
-
-		/*
-		 * We can merge the two lines if:
-		 *  - they are the same, or
-		 *  - they are both RH_KABI_HIDE, or
-		 *  - at least one of them is a declaration
-		 * The condition below is just the negation of the above.
-		 */
-		if ((strcmp(s1, s2) != 0) &&
-		    ((strncmp(s1, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0) ||
-		    (strncmp(s2, RH_KABI_HIDE, RH_KABI_HIDE_LEN) != 0)) &&
-		    !is_s1_declaration && !is_s2_declaration) {
-			ret = false;
-			goto out;
-		}
-		if (is_s1_declaration)
-			fprintf(ofile, "%s", s2);
-		else
-			fprintf(ofile, "%s", s1);
-	} while ((safe_getline(&s1, &n1, file1) != -1) &&
-	    (safe_getline(&s2, &n2, file2) != -1));
-
-out:
-	fclose(ofile);
-	if (ret == false) {
-		unlink(*opath);
-		free(*opath);
-		*opath = NULL;
-	}
-	free(s1);
-	free(s2);
-	fclose(file1);
-	fclose(file2);
-	return (ret);
-}
-
 static void print_die_tag(struct cu_ctx *ctx, FILE *fout, Dwarf_Die *die)
 {
 	unsigned int tag = dwarf_tag(die);
@@ -710,7 +838,7 @@ static void print_die(struct cu_ctx *ctx, FILE *parent_file, Dwarf_Die *die) {
 	char *file;
 	char *temp_path = NULL;
 	FILE *fout;
-	generate_config_t *conf = ctx->conf;
+	char *old_file;
 
 	/*
 	 * Sigh. The type of some fields (eg. struct member as a pointer to
@@ -722,127 +850,33 @@ static void print_die(struct cu_ctx *ctx, FILE *parent_file, Dwarf_Die *die) {
 
 	/* Check if we need to redirect output or we have a mere declaration */
 	file = get_symbol_file(die, ctx->cu_die);
-
-	if (file != NULL) {
-		char *dec_file;
-		long dec_line;
-
-
-		/*
-		 * Don't try to reenter a file that we have seen already for
-		 * this CU.
-		 * Note that this is just a pure optimization, the same file
-		 * (type) in the same CU must be identical.
-		 * But this is major optimization, without it a single
-		 * re-generation of a top file would require a full regeneration
-		 * of its full tree, thus the difference in speed is many orders
-		 * of magnitude!
-		 */
-		if (set_contains(ctx->processed, file))
-			goto done;
-
-		set_add(ctx->processed, file);
-
-		if (is_declaration(die)) {
-			if (conf->verbose)
-				printf("WARNING: Skipping following file as we "
-				    "have only declaration: %s\n", file);
-			goto done;
-		}
-
-		if (conf->verbose)
-			printf("Generating %s\n", file);
-		fout = open_temp_file(conf, &temp_path);
-
-		/* Print the CU die on the first line of each file */
-		fprintf(fout, "CU \"%s\"\n", dwarf_diename(ctx->cu_die));
-
-		/* Then print the source file & line */
-		dec_file = get_file(ctx->cu_die, die);
-		dec_line = get_line(ctx->cu_die, die);
-		fprintf(fout, "File %s:%lu\n", dec_file, dec_line);
-		free(dec_file);
-
-		/* Print the stack and add then add the current file to it */
-		walk_stack(ctx->stack, print_stack_cb, fout);
-		stack_push(ctx->stack, safe_strdup(file));
-	} else {
-		fout = parent_file;
+	if (file == NULL) {
+		/* no need for new record, output to the current one */
+		assert(parent_file != NULL);
+		print_die_tag(ctx, parent_file, die);
+		return;
 	}
 
-	assert(fout != NULL);
+	/* else handle new record */
+	fout = record_start(ctx, die, file, &temp_path);
+	if (fout == NULL)
+		goto done;
 
+	stack_push(ctx->stack, safe_strdup(file));
 	print_die_tag(ctx, fout, die);
+	free(stack_pop(ctx->stack));
 
-	if (file != NULL) {
-		char *final_path, *base_file = NULL;
-		char *merged_path = NULL;
-		char *dir = conf->kabi_dir;
-		int version = 0;
+	record_close(fout, temp_path);
 
-		free(stack_pop(ctx->stack));
-		fclose(fout);
-
-	again:
-		safe_asprintf(&final_path, "%s/%s", dir, file);
-
-		/*
-		 * Now we need to put the new type file we've just generated
-		 * (in temp_path) to its final destination (final_path).
-		 *
-		 * Often the only difference between these files are some
-		 * fields which are fully defined in one file (because the
-		 * respective header file has been included for the CU
-		 * compilation) while these are mere declarations in the other
-		 * (because the header file was not used). We detect this case
-		 * and if this is the only difference we just merge these two
-		 * files into one using the full definitions where available.
-		 *
-		 * But of course two types (eg. structures) of the same name
-		 * might be completely different types. In such case we try to
-		 * store them under different names using increasing number as
-		 * a suffix.
-		 */
-		if (access(final_path, F_OK) != 0) {
-			/* Target file doesn't exist, trivial */
-			if (errno != ENOENT)
-				fail("access() failed: %s\n", strerror(errno));
-
-			safe_rename(temp_path, final_path);
-			goto out;
-		}
-
-		if (merge_files(final_path, temp_path, &merged_path, conf)) {
-			/* We managed to merge the files, drop the old one */
-			unlink(temp_path);
-			unlink(final_path);
-			safe_rename(merged_path, final_path);
-			free(merged_path);
-			goto out;
-		}
-
-		/* Two different types detected, bump the name version */
-		if (version == 0) {
-			base_file = safe_strdup(file);
-			/* Remove .txt ending */
-			base_file[strlen(base_file) - 4] = '\0';
-		}
-		version++;
-		free(final_path);
-		free(file);
-		safe_asprintf(&file, "%s-%i.txt",
-				base_file, version);
-		goto again;
-
-	out:
-		free(base_file);
-		free(final_path);
-		free(temp_path);
-	}
+	old_file = file;
+	/* if it creates new version, key/file name can change */
+	file = record_db_add(ctx, file, temp_path);
+        /* record_db_add() returns allocated string */
+	free(old_file);
 
 done:
 	/* Put the link to the new file in the old file */
-	if (parent_file != NULL && file != NULL)
+	if (parent_file != NULL)
 		fprintf(parent_file, "@\"%s\"\n", file);
 
 	free(file);
