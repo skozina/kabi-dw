@@ -80,3 +80,10 @@ void walk_stack(stack_t *st, void (*cb)(void *, void *), void *arg) {
 	for (i = 0; i < st->st_count; i++)
 		cb(st->st_data[i], arg);
 }
+
+void walk_stack_backward(stack_t *st, void (*cb)(void *, void *), void *arg) {
+	unsigned int i;
+
+	for (i = st->st_count; i > 0; i--)
+		cb(st->st_data[i - 1], arg);
+}

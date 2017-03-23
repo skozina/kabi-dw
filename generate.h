@@ -20,8 +20,6 @@
 
 #include "main.h"
 
-extern char *get_file_replace_path;
-
-extern void generate_symbol_defs(generate_config_t *);
+void generate(int argc, char **argv);
 
 #endif /* GENERATE_H_ */

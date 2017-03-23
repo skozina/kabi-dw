@@ -64,7 +64,7 @@ kabi_dw_file:
 	cu_file source_file stack_list declaration NEWLINE
 	{
 	    $$ = *root = $declaration;
-	    fill_parent(*root);
+	    obj_fill_parent(*root);
 	}
 	;
 
@@ -113,7 +113,7 @@ declaration:
 declaration_typedef:
 	TYPEDEF IDENTIFIER NEWLINE type
 	{
-	    $$ = new_typedef_add($IDENTIFIER, $type);
+	    $$ = obj_typedef_new_add($IDENTIFIER, $type);
 	}
 	;
 
@@ -123,7 +123,7 @@ declaration_var:
 	    if (strcmp($1,"var"))
 		abort("Wrong var keyword: \"%s\"\n", $1);
 	    free($1);
-	    $$ = new_var_add($2, $type);
+	    $$ = obj_var_new_add($2, $type);
 	}
 	;
 
@@ -142,11 +142,11 @@ type:
 struct_type:
 	STRUCT IDENTIFIER '{' NEWLINE '}'
 	{
-	    $$ = new_struct($IDENTIFIER);
+	    $$ = obj_struct_new($IDENTIFIER);
 	}
 	| STRUCT IDENTIFIER '{' NEWLINE struct_list NEWLINE '}'
 	{
-	    $$ = new_struct($IDENTIFIER);
+	    $$ = obj_struct_new($IDENTIFIER);
 	    $$->member_list = $struct_list;
 	}
 	;
@@ -154,11 +154,11 @@ struct_type:
 struct_list:
 	struct_elt
 	{
-	    $$ = new_list_head($struct_elt);
+	    $$ = obj_list_head_new($struct_elt);
 	}
 	| struct_list NEWLINE struct_elt
 	{
-	    list_add($1, $struct_elt);
+	    obj_list_add($1, $struct_elt);
 	    $$ = $1;
 	}
 	;
@@ -166,14 +166,14 @@ struct_list:
 struct_elt:
 	CONSTANT IDENTIFIER type
 	{
-	    $$ = new_struct_member_add($IDENTIFIER, $type);
+	    $$ = obj_struct_member_new_add($IDENTIFIER, $type);
 	    $$->offset = $CONSTANT;
 	}
 	| CONSTANT ':' CONSTANT '-' CONSTANT IDENTIFIER type
 	{
 	    if ($5 > UCHAR_MAX || $3 > $5)
 		abort("Invalid offset: %lx:%lu:%lu\n", $1, $3, $5);
-	    $$ = new_struct_member_add($IDENTIFIER, $type);
+	    $$ = obj_struct_member_new_add($IDENTIFIER, $type);
 	    $$->offset = $1;
 	    $$->is_bitfield = 1;
 	    $$->first_bit = $3;
@@ -184,11 +184,11 @@ struct_elt:
 union_type:
 	UNION IDENTIFIER '{' NEWLINE '}'
 	{
-	    $$ = new_union($IDENTIFIER);
+	    $$ = obj_union_new($IDENTIFIER);
 	}
 	| UNION IDENTIFIER '{' NEWLINE elt_list NEWLINE '}'
 	{
-	    $$ = new_union($IDENTIFIER);
+	    $$ = obj_union_new($IDENTIFIER);
 	    $$->member_list = $elt_list;
 	    $elt_list->object = $$;
 	}
@@ -197,7 +197,7 @@ union_type:
 enum_type:
 	ENUM IDENTIFIER '{' NEWLINE enum_list NEWLINE '}'
 	{
-	    $$ = new_enum($IDENTIFIER);
+	    $$ = obj_enum_new($IDENTIFIER);
 	    $$->member_list = $enum_list;
 	    $enum_list->object = $$;
 	}
@@ -206,11 +206,11 @@ enum_type:
 enum_list:
 	enum_elt
 	{
-	    $$ = new_list_head($enum_elt);
+	    $$ = obj_list_head_new($enum_elt);
 	}
 	| enum_list NEWLINE enum_elt
 	{
-	    list_add($1, $enum_elt);
+	    obj_list_add($1, $enum_elt);
 	    $$ = $1;
 	}
 	;
@@ -218,7 +218,7 @@ enum_list:
 enum_elt:
 	IDENTIFIER '=' CONSTANT
 	{
-	    $$ = new_constant($IDENTIFIER);
+	    $$ = obj_constant_new($IDENTIFIER);
 	    $$->constant = $CONSTANT;
 	}
 	;
@@ -229,7 +229,7 @@ func_type:
 	    if (strcmp($1,"func"))
 		abort("Wrong func keyword: \"%s\"\n", $1);
 	    free($1);
-	    $$ = new_func_add($2, $type);
+	    $$ = obj_func_new_add($2, $type);
 	    $$->member_list = $arg_list;
 	    if ($arg_list)
 		    $arg_list->object = $$;
@@ -239,7 +239,7 @@ func_type:
 	    if (strcmp($IDENTIFIER,"func"))
 		abort("Wrong func keyword: \"%s\"\n", $IDENTIFIER);
 	    free($IDENTIFIER);
-	    $$ = new_func_add(NULL, $reference_file);
+	    $$ = obj_func_new_add(NULL, $reference_file);
 	}
 	;
 
@@ -254,7 +254,7 @@ arg_list:
 	}
 	| elt_list NEWLINE variable_var_list NEWLINE
 	{
-	    list_add($elt_list, $variable_var_list);
+	    obj_list_add($elt_list, $variable_var_list);
 	    $$ = $elt_list;
 	}
 	;
@@ -263,18 +263,18 @@ variable_var_list:
 	IDENTIFIER ELLIPSIS
 	{
 	    /* TODO: there may be a better solution */
-	    $$ = new_var_add(NULL, new_base(strdup("...")));
+	    $$ = obj_var_new_add(NULL, obj_basetype_new(strdup("...")));
 	}
 	;
 
 elt_list:
 	elt
 	{
-	    $$ = new_list_head($elt);
+	    $$ = obj_list_head_new($elt);
 	}
 	| elt_list NEWLINE elt
 	{
-	    list_add($1, $elt);
+	    obj_list_add($1, $elt);
 	    $$ = $1;
 	}
 	;
@@ -282,21 +282,21 @@ elt_list:
 elt:
 	IDENTIFIER type
 	{
-	    $$ = new_var_add($IDENTIFIER, $type);
+	    $$ = obj_var_new_add($IDENTIFIER, $type);
 	}
 	;
 
 ptr_type:
 	'*' type
 	{
-	    $$ = new_ptr_add($type);
+	    $$ = obj_ptr_new_add($type);
 	}
 	;
 
 array_type:
         '['CONSTANT ']' type
 	{
-	    $$ = new_array_add($type);
+	    $$ = obj_array_new_add($type);
 	    $$->index = $CONSTANT;
 	}
 	;
@@ -304,7 +304,7 @@ array_type:
 typed_type:
 	type_qualifier type
 	{
-	    $$ = new_qualifier_add($type);
+	    $$ = obj_qualifier_new_add($type);
 	    $$->base_type = $type_qualifier;
 	}
 	;
@@ -326,14 +326,14 @@ base_type:
 	STRING
 	{
 	    debug("Base type: %s\n", $STRING);
-	    $$ = new_base($STRING);
+	    $$ = obj_basetype_new($STRING);
 	}
 	;
 
 reference_file:
 	'@' STRING
 	{
-	    $$ = new_reffile();
+	    $$ = obj_reffile_new();
 	    $$->base_type = $STRING;
 	    }
 	;
@@ -342,7 +342,7 @@ reference_file:
 
 extern void usage(void);
 
-obj_t *parse(FILE *file) {
+obj_t *obj_parse(FILE *file) {
 	obj_t *root = NULL;
 
 #ifdef DEBUG

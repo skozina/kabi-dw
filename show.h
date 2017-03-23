@@ -1,5 +1,5 @@
 /*
-	Copyright(C) 2016, Red Hat, Inc., Stanislav Kozina
+	Copyright(C) 2017, Red Hat, Inc.
 
 	This program is free software: you can redistribute it and/or modify
 	it under the terms of the GNU General Public License as published by
@@ -15,21 +15,10 @@
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#ifndef STACK_H_
-#define	STACK_H_
 
-typedef struct {
-	unsigned int st_capacity; /* Total size of the stack */
-	unsigned int st_count; /* Number of items stored */
-	void **st_data; /* Stack itself */
-} stack_t;
+#ifndef KABI_DW_SHOW_H_
+#define KABI_DW_SHOW_H_
 
-extern stack_t *stack_init(void);
-extern void stack_destroy(stack_t *);
-extern void stack_push(stack_t *, void *);
-extern void *stack_pop(stack_t *);
-extern void *stack_head(stack_t *);
-extern void walk_stack(stack_t *, void (*)(void *, void *), void *);
-extern void walk_stack_backward(stack_t *, void (*cb)(void *, void *), void *);
+int show(int argc, char **argv);
 
-#endif /* STACK_H_ */
+#endif

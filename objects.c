@@ -39,7 +39,11 @@
 #include "utils.h"
 #include "main.h"
 
-obj_list_t *new_list(obj_t *obj) {
+/* Indentation offset for c-style and tree debug outputs */
+#define C_INDENT_OFFSET   8
+#define DBG_INDENT_OFFSET 4
+
+obj_list_t *obj_list_new(obj_t *obj) {
 	obj_list_t *list = malloc(sizeof(obj_list_t));
 	list->member = obj;
 	list->next = NULL;
@@ -47,11 +51,11 @@ obj_list_t *new_list(obj_t *obj) {
 }
 
 static void list_init(obj_list_head_t *head, obj_t *obj) {
-	obj_list_t *list = new_list(obj);
+	obj_list_t *list = obj_list_new(obj);
 	head->first = head->last = list;
 }
 
-obj_list_head_t *new_list_head(obj_t *obj) {
+obj_list_head_t *obj_list_head_new(obj_t *obj) {
 	obj_list_head_t *h = malloc(sizeof(obj_list_head_t));
 
 	list_init(h, obj);
@@ -63,14 +67,14 @@ static bool list_empty(obj_list_head_t *head) {
 	return head->first == NULL;
 }
 
-void list_add(obj_list_head_t *head, obj_t *obj) {
+void obj_list_add(obj_list_head_t *head, obj_t *obj) {
 	obj_list_t *list;
 
 	if (list_empty(head)) {
 		list_init(head, obj);
 		return;
 	}
-	list = new_list(obj);
+	list = obj_list_new(obj);
 
 	if (head->last->next)
 		fprintf(stderr, "head->last is not the last\n");
@@ -79,7 +83,7 @@ void list_add(obj_list_head_t *head, obj_t *obj) {
 	head->last = list;
 }
 
-bool list_remove(obj_list_head_t *head, obj_t *obj) {
+bool obj_list_remove(obj_list_head_t *head, obj_t *obj) {
 	obj_list_t *l = head->first, *previous = NULL;
 
 	while (l) {
@@ -97,8 +101,7 @@ bool list_remove(obj_list_head_t *head, obj_t *obj) {
 	return false;
 }
 
-
-obj_t *new_obj(obj_types type, char *name) {
+obj_t *obj_new(obj_types type, char *name) {
 	obj_t *new = malloc(sizeof(obj_t));
 	bzero(new, sizeof(obj_t));
 
@@ -108,12 +111,36 @@ obj_t *new_obj(obj_types type, char *name) {
 	return new;
 }
 
+static void _obj_free(obj_t *o, obj_t *skip);
+
+static void _obj_list_free(obj_list_head_t *l, obj_t *skip)
+{
+	obj_list_t *list;
+	obj_list_t *next;
+
+	if (l == NULL)
+		return;
+
+	list = l->first;
+	free(l);
+
+	while ( list ) {
+		_obj_free(list->member, skip);
+		next = list->next;
+		free(list);
+		list = next;
+	}
+}
+
+static void obj_list_free(obj_list_head_t *l)
+{
+	_obj_list_free(l, NULL);
+}
+
 /*
  * Free the tree o, but keep the subtree skip.
  */
-static void _free_obj(obj_t *o, obj_t *skip) {
-	obj_list_t *list = NULL, *next;
-
+static void _obj_free(obj_t *o, obj_t *skip) {
 	if (!o || (o == skip))
 		return;
 	if(o->name)
@@ -121,20 +148,10 @@ static void _free_obj(obj_t *o, obj_t *skip) {
 	if(o->base_type)
 		free(o->base_type);
 
-	if (o->member_list) {
-		list = o->member_list->first;
-		free(o->member_list);
-	}
-
-	while ( list ) {
-		_free_obj(list->member, skip);
-		next = list->next;
-		free(list);
-		list = next;
-	}
+	_obj_list_free(o->member_list, skip);
 
 	if(o->ptr)
-		_free_obj(o->ptr, skip);
+		_obj_free(o->ptr, skip);
 
 	free(o);
 }
@@ -142,33 +159,33 @@ static void _free_obj(obj_t *o, obj_t *skip) {
 /*
  * Free the all object
  */
-void free_obj(obj_t *o) {
-	_free_obj(o, NULL);
+void obj_free(obj_t *o) {
+	_obj_free(o, NULL);
 }
 
-#define _CREATE_NEW_FUNC(type, prefix)			\
-obj_t *prefix##_##type(char *name) {			\
-	obj_t *new = new_obj(__type_##type, name);	\
+#define _CREATE_NEW_FUNC(type, suffix)			\
+obj_t *obj_##type##_##suffix(char *name) {			\
+	obj_t *new = obj_new(__type_##type, name);	\
 	return new;					\
 }
 #define CREATE_NEW_FUNC(type) _CREATE_NEW_FUNC(type, new)
 #define CREATE_NEW_FUNC_NONAME(type)			\
-_CREATE_NEW_FUNC(type, _new)				\
-obj_t *new_##type() {					\
-	return _new_##type(NULL);			\
+_CREATE_NEW_FUNC(type, new_)				\
+obj_t *obj_##type##_new() {					\
+	return obj_##type##_new_(NULL);			\
 }
 
-#define _CREATE_NEW_ADD_FUNC(type, prefix)		\
-obj_t *prefix##_##type##_add(char *name, obj_t *obj) {	\
-	obj_t *new = new_obj(__type_##type, name);	\
+#define _CREATE_NEW_ADD_FUNC(type, infix)		\
+obj_t *obj_##type##_##infix##_##add(char *name, obj_t *obj) {	\
+	obj_t *new = obj_new(__type_##type, name);	\
 	new->ptr = obj;					\
 	return new;					\
 }
 #define CREATE_NEW_ADD_FUNC(type) _CREATE_NEW_ADD_FUNC(type, new)
 #define CREATE_NEW_ADD_FUNC_NONAME(type)		\
-_CREATE_NEW_ADD_FUNC(type, _new)			\
-obj_t *new_##type##_add(obj_t *obj) {			\
-	return _new_##type##_add(NULL, obj);		\
+_CREATE_NEW_ADD_FUNC(type, new_)			\
+obj_t *obj_##type##_new_add(obj_t *obj) {			\
+	return obj_##type##_new__add(NULL, obj);		\
 }
 
 CREATE_NEW_FUNC(struct)
@@ -184,8 +201,8 @@ CREATE_NEW_ADD_FUNC_NONAME(ptr)
 CREATE_NEW_ADD_FUNC_NONAME(array)
 CREATE_NEW_ADD_FUNC_NONAME(qualifier)
 
-obj_t *new_base(char *base_type) {
-	obj_t *new = new_obj(__type_base, NULL);
+obj_t *obj_basetype_new(char *base_type) {
+	obj_t *new = obj_new(__type_base, NULL);
 
 	new->base_type = base_type;
 
@@ -214,56 +231,6 @@ static const char *typetostr(obj_t *o) {
 	if (t >= NR_OBJ_TYPES)
 		t = NR_OBJ_TYPES;
 	return obj_type_name[t];
-}
-
-/* Removes the two dashes at the end of the prefix */
-#define IS_PREFIX(s, prefix) !strncmp(s, prefix, strlen(prefix) - 2)
-
-/*
- * Get the type of a symbol from the name of the kabi file
- *
- * It allocates the string which must be freed by the caller.
- */
-static char *filenametotype(char *filename) {
-	char *base = basename(filename);
-	char *prefix= NULL, *name = NULL, *type = NULL;
-	int version = 0;
-
-	if ( (sscanf(base, "%m[a-z]--%m[^.-].txt", &prefix, &name) != 2) &&
-	     (sscanf(base, "%m[a-z]--%m[^.-]-%i.txt",
-		     &prefix, &name, &version) != 3))
-		fail("Unexpected file name: %s\n", filename);
-
-	if (IS_PREFIX(prefix, TYPEDEF_FILE))
-		type = name;
-	else if (IS_PREFIX(prefix, STRUCT_FILE)||
-		 IS_PREFIX(prefix, UNION_FILE) ||
-		 IS_PREFIX(prefix, ENUM_FILE))
-		safe_asprintf(&type, "%s %s", prefix, name);
-	else
-		fail("Unexpected file prefix: %s\n", prefix);
-
-	free(prefix);
-	if (name != type)
-		free(name);
-
-	return type;
-}
-
-/*
- * Is this symbol a duplicate, i.e. is not the first version of this symbol.
- */
-static bool is_duplicate(char *filename) {
-	char *base = basename(filename);
-	char *prefix= NULL, *name = NULL;
-	int version = 0;
-	bool ret = (sscanf(base, "%m[a-z]--%m[^.-]-%i.txt",
-			   &prefix, &name, &version) == 3);
-
-	free(prefix);
-	free(name);
-
-	return ret;
 }
 
 static int c_precedence(obj_t *o) {
@@ -332,7 +299,7 @@ typedef struct {
 	char *postfix;
 } pp_t;
 
-void free_pp(pp_t pp) {
+static void free_pp(pp_t pp) {
 	free(pp.prefix);
 	free(pp.postfix);
 }
@@ -345,7 +312,7 @@ static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix);
  * space: add a space between p and s
  * freep: free the string p
  */
-char *_prefix_str(char **s, char *p, bool space, bool freep) {
+static char *_prefix_str(char **s, char *p, bool space, bool freep) {
 	size_t lenp = strlen(p), lens = 0, newlen;
 
 	if (*s)
@@ -659,7 +626,7 @@ static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix) {
 	return ret;
 }
 
-static void print_tree_prefix(obj_t *root, const char *prefix, FILE *stream) {
+void obj_print_tree__prefix(obj_t *root, const char *prefix, FILE *stream) {
 	pp_t s = _print_tree(root, 0, true, prefix);
 
 	fprintf(stream, "%s%s;\n",
@@ -668,8 +635,8 @@ static void print_tree_prefix(obj_t *root, const char *prefix, FILE *stream) {
 	free_pp(s);
 }
 
-void print_tree(obj_t *root) {
-	print_tree_prefix(root, NULL, stdout);
+void obj_print_tree(obj_t *root) {
+	obj_print_tree__prefix(root, NULL, stdout);
 }
 
 static void fill_parent_rec(obj_t *o, obj_t *parent) {
@@ -692,7 +659,7 @@ static void fill_parent_rec(obj_t *o, obj_t *parent) {
 /*
  * Walk the tree and fill all the parents field
  */
-void fill_parent(obj_t *root) {
+void obj_fill_parent(obj_t *root) {
 	fill_parent_rec(root, NULL);
 }
 
@@ -701,7 +668,7 @@ static int walk_list(obj_list_t *list, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 	int ret = CB_CONT;
 
 	while ( list ) {
-		ret = walk_tree3(list->member, cb_pre, cb_in, cb_post,
+		ret = obj_walk_tree3(list->member, cb_pre, cb_in, cb_post,
 				 args, ptr_first);
 		if (ret == CB_FAIL)
 			return ret;
@@ -718,7 +685,7 @@ static int walk_ptr(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 	int ret = CB_CONT;
 
 	if (o->ptr) {
-		ret = walk_tree3(o->ptr, cb_pre, cb_in, cb_post,
+		ret = obj_walk_tree3(o->ptr, cb_pre, cb_in, cb_post,
 				 args, ptr_first);
 		if (ret == CB_FAIL)
 			return ret;
@@ -739,7 +706,7 @@ static int walk_ptr(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
  * args:      argument passed to the callbacks
  * ptr_first: whether we walk member_list of ptr first
  */
-int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
+int obj_walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 	       void *args, bool ptr_first) {
 	obj_list_t *list = NULL;
 	int ret = CB_CONT;
@@ -779,8 +746,8 @@ int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
  *
  * It walks the member_list subtree first.
  */
-int walk_tree(obj_t *root, cb_t cb, void *args) {
-	return walk_tree3(root, cb, NULL, NULL, args, false);
+int obj_walk_tree(obj_t *root, cb_t cb, void *args) {
+	return obj_walk_tree3(root, cb, NULL, NULL, args, false);
 }
 
 static void _show_node(FILE *f, obj_t *o, int margin) {
@@ -818,343 +785,10 @@ static int dec_depth(obj_t *node, void *args) {
 /*
  * Print a raw representation of the internal object tree
  */
-int debug_tree(obj_t *root) {
+int obj_debug_tree(obj_t *root) {
 	int depth = 0;
 
-	return walk_tree3(root, debug_node, NULL, dec_depth, &depth, false);
-}
-
-static void _print_node_list(const char *s, const char *prefix,
-			     obj_list_t *list, obj_list_t *last, FILE *stream) {
-	obj_list_t *l = list;
-
-	fprintf(stream, "%s:\n", s);
-	while (l && l != last) {
-		print_tree_prefix(l->member, prefix, stream);
-		l = l->next;
-	}
-}
-
-static void print_node_list(const char *s, const char *prefix,
-			    obj_list_t *list, FILE *stream) {
-	_print_node_list(s, prefix, list, NULL, stream);
-}
-
-typedef enum {
-	CMP_SAME = 0,
-	CMP_OFFSET,	/* Only the offset has changed */
-	CMP_DIFF,	/* Nodes are differents */
-	CMP_REFFILE,	/* A refered symbol has changed */
-} cmp_ret_t;
-
-static int compare_two_files(char *filename, char *newfile, bool follow);
-
-static int cmp_node_reffile(obj_t *o1, obj_t *o2) {
-	char *s1 = filenametotype(o1->base_type);
-	char *s2 = filenametotype(o2->base_type);
-	int ret, len;
-
-	ret = cmp_str(s1, s2);
-	free(s1);
-	free(s2);
-
-	if (ret)
-		return CMP_DIFF;
-
-	/*
-	 * Compare the symbol referenced by file, but be careful not
-	 * to follow imaginary declaration path.
-	 *
-	 * TODO: This is quite wasteful. We reopen files and parse
-	 * them again many times.
-	 */
-	len = strlen(DECLARATION_PATH);
-	if (strncmp(o1->base_type, DECLARATION_PATH, len) &&
-	    strncmp(o1->base_type, DECLARATION_PATH, len) &&
-	    compare_two_files(o1->base_type, o2->base_type, true))
-		return CMP_REFFILE;
-
-	return CMP_SAME;
-}
-static int _cmp_nodes(obj_t *o1, obj_t *o2, bool search) {
-	if ((o1->type != o2->type) ||
-	    cmp_str(o1->name, o2->name) ||
-	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
-	    (has_constant(o1) && (o1->constant != o2->constant)) ||
-	    (has_index(o1) && (o1->index != o2->index)) ||
-	    (is_bitfield(o1) != is_bitfield(o2)) ||
-	    (is_bitfield(o1) && ((o1->last_bit - o1->first_bit) !=
-				 (o2->last_bit - o1->first_bit))))
-		return CMP_DIFF;
-
-	if (o1->type == __type_reffile) {
-		int ret;
-
-		ret = cmp_node_reffile(o1, o2);
-		if (ret)
-			return ret;
-	} else if (cmp_str(o1->base_type, o2->base_type))
-		return CMP_DIFF;
-
-	if (has_offset(o1) &&
-	    ((o1->offset != o2->offset) ||
-	     (is_bitfield(o1) && (o1->first_bit != o2->first_bit)))) {
-		if (search && o1->name == NULL)
-			/*
-			 * This field is an unnamed struct or union. When
-			 * searching for a node, avoid to consider the next
-			 * unnamed struct or union to be the same one.
-			 */
-			return CMP_DIFF;
-		return CMP_OFFSET;
-	}
-
-	return CMP_SAME;
-}
-
-static int cmp_nodes(obj_t *o1, obj_t *o2) {
-	return _cmp_nodes(o1, o2, false);
-}
-
-typedef enum {
-	DIFF_INSERT,
-	DIFF_DELETE,
-	DIFF_REPLACE,
-	DIFF_CONT,
-} diff_ret_t;
-
-/*
- * When field are changed or moved around, there can be several diff
- * representations for the change.  We are trying to keep the diff as
- * small as possible, while keeping most significant changes in term
- * of kABI (mainly shifted fields, which most likely indicate that
- * some change to the ABI have been overlooked).
- *
- * This function compare two lists whose first member diverge. We're
- * looking at four different scenarios:
- * - N fields appears only in list2, then the lists rejoined (insertion)
- * - P fields appears only in list1, then the lists rejoined (deletion)
- * - Q fields diverges, then the lists rejoined (replacement)
- * - the lists never rejoined
- *
- * Since for the same change, several of the scenarios above might
- * represent the change, we choose the one that minimize the diff
- * (min(N,P,Q)). So we're looking for the first element of list1 in
- * list2, the first element of list2 in list1 or the first line where
- * list1 and list2 do not differ, whichever comes first.
- */
-static diff_ret_t list_diff(obj_list_t *list1, obj_list_t **next1,
-			    obj_list_t *list2, obj_list_t **next2) {
-	obj_t *o1 = list2->member, *o2 = list1->member, *o = o1;
-	int d1 = 0, d2 = 0, ret;
-	obj_list_t *next;
-
-	next = *next1 = list1;
-	*next2 = list2;
-
-	while (next) {
-		ret = _cmp_nodes(o, next->member, true);
-		if (ret == CMP_SAME || ret == CMP_OFFSET) {
-			if (o == o1)
-				/* We find the first element of list2
-				   on list1, that is d1 elements have
-				   been removed from list1 */
-				return DIFF_DELETE;
-			else
-				return DIFF_INSERT;
-		}
-
-		if (d1 == d2)  {
-			ret = _cmp_nodes((*next1)->member, (*next2)->member,
-					 true);
-			if (ret == CMP_SAME || ret == CMP_OFFSET) {
-				/* d1 fields have been replaced */
-				return DIFF_REPLACE;
-			}
-
-		}
-
-		if ( !(*next1) || !((*next1)->next) || (d2  < d1) ) {
-			next = *next2 = (*next2)->next;
-			o = o2;
-			d2++;
-		} else {
-			next = *next1 = (*next1)->next;
-			o = o1;
-			d1++;
-		}
-	}
-	return DIFF_CONT;
-}
-
-/*
- * We want to show practical output to the user.  For instance if a
- * struct member type change, we want to show which struct member
- * changed type, not that somewhere a "signed int" has been changed
- * into a "unsigned bin".
- *
- * For now, we consider that a useful output should start at a named
- * object or at a struct field or var (the field/var itself may be
- * unamed, typically when it's an union or struct of alternative
- * elements but it most likely contains named element).
- */
-bool worthy_of_print(obj_t *o) {
-	return (o->name != NULL) ||
-		(o->type == __type_struct_member) ||
-		(o->type == __type_var) ;
-}
-
-static void print_two_nodes(const char *s, obj_t *o1, obj_t *o2, FILE *stream) {
-
-	while (!worthy_of_print(o1)) {
-		o1 = o1->parent;
-		o2 = o2->parent;
-		if ((o1 == NULL) || (o2 == NULL))
-			fail("No ancestor worthy of print\n");
-	}
-	fprintf(stream, "%s:\n", s);
-	print_tree_prefix(o1, DEL_PREFIX, stream);
-	print_tree_prefix(o2, ADD_PREFIX, stream);
-}
-
-obj_t *worthy_parent(obj_t *o) {
-	do {
-		if (worthy_of_print(o))
-			return o;
-	} while((o = o->parent));
-
-	fail("No ancestor worthy of print\n");
-}
-
-typedef struct compare_config_s {
-	bool debug;
-	bool hide_kabi;
-	bool hide_kabi_new;
-	bool skip_duplicate; /* Don't show multiple version of a symbol */
-	int follow;
-	char *old_dir;
-	char *new_dir;
-	char *filename;
-	char **flist;
-	int flistsz;
-	int flistcnt;
-	int ret;
-	/*
-	 * The following options allow to hide some symbol changes in
-	 * kABI comparison. Hides...
-	 */
-	int no_replaced; /* replaced symbols */
-	int no_shifted;  /* symbols whose offset shifted */ 
-	int no_inserted; /* symbols inserted in the middle of a struct/union */
-	int no_deleted;  /* symbols removed in the middle (poke a hole) */
-	int no_added;    /* symbols added at the end of a struct/union... */
-	int no_removed;  /* symbols removed at the end of a struct/union... */
-	int no_moved_files; /* file that has been moved (or removed) */
-} compare_config_t;
-
-compare_config_t compare_config = {false, false, false, false, 0,
-				   NULL, NULL, NULL, NULL,
-				   0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
-int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
-	obj_list_t *list1 = NULL, *list2 = NULL;
-	int ret = COMP_SAME, tmp;
-
-	tmp = cmp_nodes(o1, o2);
-	if (tmp) {
-		if (tmp == CMP_REFFILE) {
-			fprintf(stream, "symbol %s has changed\n",
-				o1->base_type);
-			ret = COMP_DIFF;
-		} else if ((tmp == CMP_OFFSET && !compare_config.no_shifted) ||
-			   (tmp == CMP_DIFF && !compare_config.no_replaced)) {
-			const char *s =	(tmp == CMP_OFFSET) ?
-				"Shifted" : "Replaced";
-			print_two_nodes(s, o1, o2, stream);
-			ret = COMP_DIFF;
-		}
-		return ret;
-	}
-
-	if (o1->member_list)
-		list1 = o1->member_list->first;
-	if (o2->member_list)
-		list2 = o2->member_list->first;
-
-	while ( list1 && list2 ) {
-		if (cmp_nodes(list1->member, list2->member) == CMP_DIFF) {
-			int index;
-			obj_list_t *next1, *next2;
-
-			index = list_diff(list1, &next1, list2, &next2);
-
-			switch (index) {
-			case DIFF_INSERT:
-				/* Insertion */
-				if (!compare_config.no_inserted) {
-					_print_node_list("Inserted", ADD_PREFIX,
-							 list2, next2, stream);
-					ret = COMP_DIFF;
-				}
-				list2 = next2;
-				break;
-			case DIFF_DELETE:
-				/* Removal */
-				if (!compare_config.no_deleted) {
-					_print_node_list("Deleted", DEL_PREFIX,
-							 list1, next1, stream);
-					ret = COMP_DIFF;
-				}
-				list1 = next1;
-				break;
-			case DIFF_REPLACE:
-				/*
-				 * We could print the diff here, but relying on
-				 * the next calls to _compare_tree() to display
-				 * the replaced fields individually works too.
-				 */
-			case DIFF_CONT:
-				/* Nothing to do */
-				;
-			}
-		}
-
-		if (_compare_tree(list1->member, list2->member, stream) !=
-		    COMP_SAME)
-			ret = COMP_DIFF;
-
-		list1 = list1->next;
-		list2 = list2->next;
-		if (!list1 && list2) {
-			if (!compare_config.no_added) {
-				print_node_list("Added", ADD_PREFIX,
-						list2, stream);
-				ret = COMP_DIFF;
-			}
-			return ret;
-		}
-		if (list1 && !list2) {
-			if (!compare_config.no_removed) {
-				print_node_list("Removed", DEL_PREFIX,
-						list1, stream);
-				ret = COMP_DIFF;
-			}
-			return ret;
-		}
-	}
-
-	if (o1->ptr && o2->ptr)
-		if (_compare_tree(o1->ptr, o2->ptr, stream) != COMP_SAME)
-			ret = COMP_DIFF;
-
-	return ret;
-}
-
-/*
- * Compare two symbols and show the difference in a c-like format
- */
-int compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
-	return _compare_tree(o1, o2, stream);
+	return obj_walk_tree3(root, debug_node, NULL, dec_depth, &depth, false);
 }
 
 /*
@@ -1274,405 +908,317 @@ static int hide_kabi_cb(obj_t *o, void *args) {
 	parent->name = keeper->name;
 	parent->ptr = keeper->ptr;
 	parent->ptr->parent = parent;
-	_free_obj(o, keeper);
+	_obj_free(o, keeper);
 	free(keeper);
 
 	return CB_SKIP;
 }
 
-int hide_kabi(obj_t *root, bool show_new_field) {
-	return walk_tree(root, hide_kabi_cb, (void *)show_new_field);
+int obj_hide_kabi(obj_t *root, bool show_new_field) {
+	return obj_walk_tree(root, hide_kabi_cb, (void *)show_new_field);
 }
 
-static FILE *fopen_safe(char *filename) {
-	FILE *file;
+static bool obj_is_declaration(obj_t *obj)
+{
+	size_t len;
 
-	file = fopen(filename, "r");
-	if (!file)
-		fail("Failed to open kABI file: %s\n", filename);
+	if (obj->base_type == NULL)
+		return false;
 
-	return file;
+	len = strlen(DECLARATION_PATH);
+	return strncmp(obj->base_type, DECLARATION_PATH, len) == 0;
 }
 
-extern obj_t *parse(FILE *file);
+static bool obj_is_kabi_hide(obj_t *obj)
+{
+	if (obj->name == NULL)
+		return false;
 
-struct {
-	bool debug;
-	bool hide_kabi;
-	bool hide_kabi_new;
-	FILE *file;
-} show_config = {false, false, false, NULL};
-
-void show_usage() {
-	printf("Usage:\n"
-	       "\tshow [options] kabi_file...\n"
-	       "\nOptions:\n"
-	       "    -h, --help:\t\tshow this message\n"
-	       "    -k, --hide-kabi:\thide changes made by RH_KABI_REPLACE()\n"
-	       "    -n, --hide-kabi-new:\n\t\t\thide the kabi trickery made by"
-	       " RH_KABI_REPLACE, but show the new field\n"
-
-	       "    -d, --debug:\tprint the raw tree\n"
-	       "    --no-offset:\tdon't display the offset of struct fields\n");
-	exit(1);
+	return strncmp(obj->name, RH_KABI_HIDE, RH_KABI_HIDE_LEN) == 0;
 }
 
-/*
- * Performs the show command
- */
-int show(int argc, char **argv) {
-	obj_t *root;
-	int opt, opt_index, ret = 0;
-	struct option loptions[] = {
-		{"debug", no_argument, 0, 'd'},
-		{"hide-kabi", no_argument, 0, 'k'},
-		{"hide-kabi-new", no_argument, 0, 'n'},
-		{"help", no_argument, 0, 'h'},
-		{"no-offset", no_argument, &display_options.no_offset, 1},
-		{0, 0, 0, 0}
-	};
+static bool obj_eq(obj_t *o1, obj_t *o2)
+{
+	/* borrow parts from cmp_nodes */
+	if ((o1->type != o2->type) ||
+	    cmp_str(o1->name, o2->name) ||
+	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
+	    (has_constant(o1) && (o1->constant != o2->constant)) ||
+	    (has_index(o1) && (o1->index != o2->index)) ||
+	    (is_bitfield(o1) != is_bitfield(o2)))
+		return false;
 
-	memset(&display_options, 0, sizeof(display_options));
+	/* just compare bitfields */
+	if (is_bitfield(o1) &&
+	    ((o1->last_bit !=  o2->last_bit) ||
+	     (o1->first_bit != o2->first_bit)))
+	    return false;
 
-	while ((opt = getopt_long(argc, argv, "dknh",
-				  loptions, &opt_index)) != -1) {
-		switch (opt) {
-		case 0:
-			break;
-		case 'd':
-			show_config.debug = true;
-			break;
-		case 'n':
-			show_config.hide_kabi_new = true;
-		case 'k':
-			show_config.hide_kabi = true;
-			break;
-		case 'h':
-		default:
-			show_usage();
-		}
-	}
+	if ((o1->member_list == NULL) !=
+	    (o2->member_list == NULL))
+		return false;
 
-	if (optind >= argc)
-		show_usage();
-
-	while (optind < argc) {
-		show_config.file = fopen_safe(argv[optind++]);
-
-		root = parse(show_config.file);
-
-		if (show_config.hide_kabi)
-			hide_kabi(root, show_config.hide_kabi_new);
-
-		if (show_config.debug)
-			debug_tree(root);
-
-		print_tree(root);
-		if (optind < argc)
-			putchar('\n');
-
-		free_obj(root);
-		fclose(show_config.file);
-	}
-
-	return ret;
-}
-
-static bool push_file(char *filename) {
-	int i, sz = compare_config.flistsz;
-	int cnt = compare_config.flistcnt;
-	char **flist = compare_config.flist;
-
-	for (i = 0; i < cnt; i++)
-		if (!strcmp(flist[i], filename))
-			return false;
-
-	if (!sz) {
-		compare_config.flistsz = sz = 16;
-		compare_config.flist = flist = malloc(16 * sizeof(char *));
-	}
-	if (cnt >= sz) {
-		sz *= 2;
-		compare_config.flistsz = sz;
-		compare_config.flist = flist =
-			realloc(flist, sz * sizeof(char *));
-	}
-
-	flist[cnt] = strdup(filename);
-	compare_config.flistcnt++;
+	if (cmp_str(o1->base_type, o2->base_type))
+		return false;
 
 	return true;
 }
 
-static void free_files() {
-	int i;
+static obj_t *obj_copy(obj_t *o1)
+{
+	obj_t *o;
 
-	for (i = 0; i < compare_config.flistcnt; i++)
-		free(compare_config.flist[i]);
-	free(compare_config.flist);
-	compare_config.flistcnt = compare_config.flistsz = 0;
+	o = safe_malloc(sizeof(*o));
+	*o = *o1;
+
+	o->type = o1->type;
+	o->name = safe_strdup_or_null(o1->name);
+	o->base_type = safe_strdup_or_null(o1->base_type);
+
+	o->ptr = NULL;
+	o->member_list = NULL;
+
+	return o;
 }
 
-void compare_usage() {
-	printf("Usage:\n"
-	       "\tcompare [options] kabi_dir kabi_dir [kabi_file...]\n"
-	       "\tcompare [options] kabi_file kabi_file\n"
-	       "\nOptions:\n"
-	       "    -h, --help:\t\tshow this message\n"
-	       "    -k, --hide-kabi:\thide changes made by RH_KABI_REPLACE()\n"
-	       "    -n, --hide-kabi-new:\n\t\t\thide the kabi trickery made by"
-	       " RH_KABI_REPLACE, but show the new field\n"
-	       "    -d, --debug:\tprint the raw tree\n"
-	       "    --follow:\t\tfollow referenced symbols\n"
-	       "    --no-offset:\tdon't display the offset of struct fields\n"
-	       "    --no-replaced:\thide replaced symbols"
-	       " (symbols that changed, but hasn't moved)\n"
-	       "    --no-shifted:\thide shifted symbols"
-	       " (symbol that hasn't changed, but whose offset changed)\n"
-	       "    --no-inserted:\t"
-	       "hide symbols inserted in the middle of a struct, union...\n"
-	       "    --no-deleted:\t"
-	       "hide symbols removed from the middle of a struct, union...\n"
-	       "    --no-added:\t\t"
-	       "hide symbols added at the end of a struct, union...\n"
-	       "    --no-removed:\t"
-	       "hide symbols removed from the end of a struct, union...\n"
-	       "    --no-moved-files:\thide changes caused by symbols "
-	       "definition moving to another file\n\t\t\t"
-	       "Warning: it also hides symbols that are removed entirely\n"
-	       "    -s, --skip-duplicate:\tshow only the first version of a "
-	       "symbol when several exist\n");
+obj_t *obj_merge(obj_t *o1, obj_t *o2);
 
-	exit(1);
-}
+static obj_list_head_t *obj_members_merge(obj_list_head_t *list1,
+					  obj_list_head_t *list2)
+{
+	obj_list_head_t *res = NULL;
+	obj_list_t *l1;
+	obj_list_t *l2;
+	obj_t *o;
 
-/*
- * Parse two files and compare the resulting tree.
- *
- * filename: file to compare (relative to compare_config.*_dir)
- * newfile:  if not NULL, the file to use in compare_config.new_dir,
- *           otherwise, filename is used for both.
- * follow:   Are we here because we followed a reference file? If so,
- *           don't print anything and exit immediately if follow
- *           option isn't set.
- */
-static int compare_two_files(char *filename, char *newfile, bool follow) {
-	obj_t *root1, *root2;
-	char *old_dir = compare_config.old_dir;
-	char *new_dir = compare_config.new_dir;
-	char *path1, *path2, *s = NULL, *filename2;
-	FILE *file1, *file2, *stream;
-	struct stat fstat;
-	size_t sz;
-	int ret = 0, tmp;
+	if (list1 == NULL || list2 == NULL)
+		return NULL;
 
-	if (follow && !compare_config.follow)
-		return 0;
+	l1 = list1->first;
+	l2 = list2->first;
 
-	/* Avoid infinite loop */
-	if (!push_file(filename))
-		return 0;
+	while (l1 && l2) {
+		o = obj_merge(l1->member, l2->member);
+		if (o == NULL)
+			goto cleanup;
 
-	safe_asprintf(&path1, "%s/%s", old_dir, filename);
-	filename2 = newfile ? newfile : filename;
-	safe_asprintf(&path2, "%s/%s", new_dir, filename2);
-
-	if (stat(path2, &fstat) != 0) {
-		if (errno == ENOENT) {
-			/* Don't consider an incomplete definition a change */
-			if (strncmp(filename2, DECLARATION_PATH,
-				    strlen(DECLARATION_PATH)) &&
-			    !compare_config.no_moved_files) {
-				ret = EXIT_KABI_CHANGE;
-				printf("Symbol removed or moved: %s\n",
-				       filename);
-			}
-
-			free(path1);
-			free(path2);
-
-			return ret;
-		}
+		if (res == NULL)
+			res = obj_list_head_new(o);
 		else
-			fail("Failed to stat() file%s: %s\n",
-			     path2, strerror(errno));
-	}
+			obj_list_add(res, o);
 
-	file1 = fopen_safe(path1);
-	file2 = fopen_safe(path2);
-	free(path1);
-	free(path2);
-
-	root1 = parse(file1);
-	root2 = parse(file2);
-
-	if (compare_config.hide_kabi) {
-		hide_kabi(root1, compare_config.hide_kabi_new);
-		hide_kabi(root2, compare_config.hide_kabi_new);
-	}
-
-	if (compare_config.debug && !follow) {
-		debug_tree(root1);
-		debug_tree(root2);
-	}
-
-	if (follow)
-		stream = fopen("/dev/null", "w");
-	else
-		stream = open_memstream(&s, &sz);
-	tmp = compare_tree(root1, root2, stream);
-
-	if (tmp == COMP_DIFF) {
-		if (!follow) {
-			printf("Changes detected in: %s\n", filename);
-			fflush(stream);
-			fputs(s, stdout);
-			putchar('\n');
-		}
-		ret = EXIT_KABI_CHANGE;
-	}
-
-	free_obj(root1);
-	free_obj(root2);
-	fclose(file1);
-	fclose(file2);
-	fclose(stream);
-	free(s);
-
-	return ret;
-
-}
-
-static bool compare_files_cb(char *kabi_path, void *arg) {
-	compare_config_t *conf = (compare_config_t *)arg;
-	char *filename;
-
-	if(compare_config.skip_duplicate && is_duplicate(kabi_path))
-		return true;
-
-	/* If conf->*_dir contains slashes, skip them */
-	filename = kabi_path + strlen(conf->old_dir);
-	while (*filename == '/')
-		filename++;
-
-	free_files();
-	if (compare_two_files(filename, NULL, false))
-		conf->ret = EXIT_KABI_CHANGE;
-
-	return true;
-}
-
-#define COMPARE_NO_OPT(name) \
-	{"no-"#name, no_argument, &compare_config.no_##name, 1}
-
-/*
- * Performs the compare command
- */
-int compare(int argc, char **argv) {
-	int opt, opt_index;
-	char *old_dir, *new_dir;
-	struct stat sb1, sb2;
-	struct option loptions[] = {
-		{"debug", no_argument, 0, 'd'},
-		{"hide-kabi", no_argument, 0, 'k'},
-		{"hide-kabi-new", no_argument, 0, 'n'},
-		{"help", no_argument, 0, 'h'},
-		{"skip-duplicate", no_argument, 0, 's'},
-		{"follow", no_argument, &compare_config.follow, 1},
-		{"no-offset", no_argument, &display_options.no_offset, 1},
-		COMPARE_NO_OPT(replaced),
-		COMPARE_NO_OPT(shifted),
-		COMPARE_NO_OPT(inserted),
-		COMPARE_NO_OPT(deleted),
-		COMPARE_NO_OPT(added),
-		COMPARE_NO_OPT(removed),
-		{"no-moved-files", no_argument,
-		 &compare_config.no_moved_files, 1},
-		{0, 0, 0, 0}
+		l1 = l1->next;
+		l2 = l2->next;
 	};
 
-	memset(&display_options, 0, sizeof(display_options));
+	if (l1 || l2)
+		goto cleanup;
 
-	while ((opt = getopt_long(argc, argv, "dknhs",
-				  loptions, &opt_index)) != -1) {
-		switch (opt) {
-		case 0:
-			break;
-		case 'd':
-			compare_config.debug = true;
-			break;
-		case 'n':
-			compare_config.hide_kabi_new = true;
-		case 'k':
-			compare_config.hide_kabi = true;
-			break;
-		case 's':
-			compare_config.skip_duplicate = true;
-			break;
-		case 'h':
-		default:
-			compare_usage();
-		}
+	return res;
+
+cleanup:
+	obj_list_free(res);
+	return NULL;
+}
+
+obj_t *obj_merge(obj_t *o1, obj_t *o2)
+{
+	obj_t *merged_ptr;
+	obj_list_head_t *merged_members;
+	obj_t *res = NULL;
+
+	if (o1 == NULL || o2 == NULL)
+		return NULL;
+
+	/*
+	 * We can merge the two lines if:
+	 *  - they are the same, or
+	 *  - they are both RH_KABI_HIDE, or
+	 *  - at least one of them is a declaration
+	 */
+	if ((!obj_eq(o1, o2)) &&
+	    (!obj_is_kabi_hide(o1) || !obj_is_kabi_hide(o2)) &&
+	    !obj_is_declaration(o1) && !obj_is_declaration(o2))
+		goto no_merge;
+
+	merged_ptr = obj_merge(o1->ptr, o2->ptr);
+	if (o1->ptr && !merged_ptr)
+		goto no_merge_ptr;
+
+	merged_members = obj_members_merge(o1->member_list,
+					   o2->member_list);
+	if (o1->member_list && !merged_members)
+		goto no_merge_members;
+
+	if (obj_is_declaration(o1))
+		res = obj_copy(o2);
+	else
+		res = obj_copy(o1);
+
+	res->ptr = merged_ptr;
+
+	if (merged_members != NULL)
+		merged_members->object = res;
+	res->member_list = merged_members;
+
+	return res;
+
+no_merge_members:
+	obj_list_free(merged_members);
+no_merge_ptr:
+	obj_free(merged_ptr);
+no_merge:
+	return NULL;
+}
+
+static void dump_reffile(obj_t *o, FILE *f)
+{
+	fprintf(f, "@\"%s\"\n", o->base_type);
+}
+
+static void _dump_members(obj_t *o, FILE *f, void (*dumper)(obj_t *, FILE *))
+{
+	obj_list_head_t *l = o->member_list;
+	obj_list_t *list;
+
+	if (l == NULL)
+		return;
+
+	list = l->first;
+
+	while (list) {
+		dumper(list->member, f);
+		list = list->next;
 	}
+}
 
-	if (argc < optind + 2) {
-		printf("Wrong number of argument\n");
-		compare_usage();
-	}
+static void dump_arg(obj_t *o, FILE *f)
+{
+	fprintf(f, "%s ", o->name);
+	obj_dump(o->ptr, f);
+}
 
-	old_dir = compare_config.old_dir = argv[optind++];
-	new_dir = compare_config.new_dir = argv[optind++];
+static void dump_members(obj_t *o, FILE *f)
+{
+	_dump_members(o, f, obj_dump);
+}
 
-	if ((stat(old_dir, &sb1) == -1) || (stat(new_dir, &sb2) == -1))
-		fail("stat failed: %s\n", strerror(errno));
+static void dump_args(obj_t *o, FILE *f)
+{
+	_dump_members(o, f, dump_arg);
+}
 
-	if (S_ISREG(sb1.st_mode) && S_ISREG(sb2.st_mode)) {
-		char *oldname = basename(old_dir);
-		char *newname = basename(new_dir);
+static void dump_struct(obj_t *o, FILE *f)
+{
+	fprintf(f, "struct %s {\n", o->name);
+	dump_members(o, f);
+	fprintf(f, "}\n");
+}
+static void dump_union(obj_t *o, FILE *f)
+{
+	fprintf(f, "union %s {\n", o->name);
+	dump_args(o, f);
+	fprintf(f, "}\n");
+}
 
-		if (optind != argc) {
-			printf("Too many arguments\n");
-			compare_usage();
-		}
-		compare_config.old_dir = dirname(old_dir);
-		compare_config.new_dir = dirname(new_dir);
+static void dump_enum(obj_t *o, FILE *f)
+{
+	fprintf(f, "enum %s {\n", o->name);
+	dump_members(o, f);
+	fprintf(f, "}\n");
+}
 
-		return compare_two_files(oldname, newname, false);
-	}
+static void dump_func(obj_t *o, FILE *f)
+{
+	fprintf(f, "func %s (\n", o->name);
+	dump_args(o, f);
+	fprintf(f, ")\n");
 
-	if (!S_ISDIR(sb1.st_mode) || !S_ISDIR(sb2.st_mode)) {
-		printf("Compare takes two directories or two regular"
-		       " files as arguments\n");
-		compare_usage();
-	}
+	obj_dump(o->ptr, f);
+}
 
-	if (optind == argc) {
-		walk_dir(old_dir, false, compare_files_cb, &compare_config);
+static void dump_ptr(obj_t *o, FILE *f)
+{
+	fprintf(f, "* ");
+	obj_dump(o->ptr, f);
+}
 
-		return compare_config.ret;
-	}
+static void dump_typedef(obj_t *o, FILE *f)
+{
+	fprintf(f, "typedef %s\n", o->name);
+	obj_dump(o->ptr, f);
+}
 
-	while (optind < argc) {
-		char *path, *filename;
+static void dump_array(obj_t *o, FILE *f)
+{
+	fprintf(f, "[%lu]", o->index);
+	obj_dump(o->ptr, f);
+}
 
-		filename = compare_config.filename =  argv[optind++];
-		safe_asprintf(&path, "%s/%s", old_dir, filename);
+static void dump_var(obj_t *o, FILE *f)
+{
+	fprintf(f, "var %s ", o->name);
+	obj_dump(o->ptr, f);
+}
 
-		if (stat(path, &sb1) == -1) {
-			if (errno == ENOENT)
-				fail("file does not exist: %s\n", path);
-			fail("stat failed: %s\n", strerror(errno));
-		}
+static void dump_struct_member(obj_t *o, FILE *f)
+{
+	fprintf(f, "0x%lx", o->offset);
+	if (o->is_bitfield)
+		fprintf(f, ":%d-%d", o->first_bit, o->last_bit);
+	fprintf(f, " %s ", o->name);
+	obj_dump(o->ptr, f);
+}
 
-		if (!S_ISREG(sb1.st_mode)) {
-			printf("Compare third argument must be a regular file");
-			compare_usage();
-		}
-		free(path);
+static void dump_qualifier(obj_t *o, FILE *f)
+{
+	fprintf(f, "%s ", o->base_type);
+	obj_dump(o->ptr, f);
+}
 
-		if (compare_two_files(filename, NULL, false))
-			compare_config.ret = EXIT_KABI_CHANGE;
-	}
+static void dump_base(obj_t *o, FILE *f)
+{
+	char *type = o->base_type;
 
-	return compare_config.ret;
+	/* variable args (...) is a special base case */
+	if (type[0] == '.')
+		fprintf(f, "%s\n", o->base_type);
+	else
+		fprintf(f, "\"%s\"\n", o->base_type);
+}
+
+static void dump_constant(obj_t *o, FILE *f)
+{
+	fprintf(f, "%s = 0x%lx\n", o->name, o->constant);
+}
+
+struct dumper {
+	void (*dumper)(obj_t *o, FILE *f);
+};
+
+static struct dumper dumpers[] = {
+	[__type_reffile].dumper = dump_reffile,
+	[__type_struct].dumper = dump_struct,
+	[__type_union].dumper = dump_union,
+	[__type_enum].dumper = dump_enum,
+	[__type_func].dumper = dump_func,
+	[__type_ptr].dumper = dump_ptr,
+	[__type_typedef].dumper = dump_typedef,
+	[__type_array].dumper = dump_array,
+	[__type_var].dumper = dump_var,
+	[__type_struct_member].dumper = dump_struct_member,
+	[__type_qualifier].dumper = dump_qualifier,
+	[__type_base].dumper = dump_base,
+	[__type_constant].dumper = dump_constant,
+};
+
+void obj_dump(obj_t *o, FILE *f)
+{
+	if (o == NULL)
+		return;
+
+	if (o->type >= NR_OBJ_TYPES)
+		fail("Wrong object type %d", o->type);
+
+	dumpers[o->type].dumper(o, f);
 }

@@ -22,22 +22,14 @@
 #ifndef _OBJECTS_H
 #define _OBJECTS_H
 
+#include <stdbool.h>
+#include <stdio.h>
+
 #ifdef DEBUG
 #define debug(args...) do { printf(args); } while(0)
 #else
 #define debug(args...)
 #endif
-
-/* Return value when we detect a kABI change */
-#define EXIT_KABI_CHANGE 2
-
-/* Indentation offset for c-style and tree debug outputs */
-#define C_INDENT_OFFSET   8
-#define DBG_INDENT_OFFSET 4
-
-/* diff -u style prefix for tree comparison */
-#define ADD_PREFIX "+"
-#define DEL_PREFIX "-"
 
 typedef enum {
 	__type_reffile,
@@ -178,42 +170,38 @@ typedef enum {
 
 typedef int cb_t(obj_t *o, void *args);
 
-obj_list_t *new_list(obj_t *obj);
-obj_list_head_t *new_list_head(obj_t *obj);
-void list_add(obj_list_head_t *head, obj_t *obj);
-void free_obj(obj_t *o);
+obj_list_t *obj_list_new(obj_t *obj);
+obj_list_head_t *obj_list_head_new(obj_t *obj);
+void obj_list_add(obj_list_head_t *head, obj_t *obj);
+void obj_free(obj_t *o);
 
-obj_t *new_struct(char *name);
-obj_t *new_union(char *name);
-obj_t *new_enum(char *name);
-obj_t *new_constant(char *name);
-obj_t *new_reffile();
-obj_t *new_func_add(char *name, obj_t *obj);
-obj_t *new_typedef_add(char *name, obj_t *obj);
-obj_t *new_var_add(char *name, obj_t *obj);
-obj_t *new_struct_member_add(char *name, obj_t *obj);
-obj_t *new_ptr_add(obj_t *obj);
-obj_t *new_array_add(obj_t *obj);
-obj_t *new_qualifier_add(obj_t *obj);
+obj_t *obj_struct_new(char *name);
+obj_t *obj_union_new(char *name);
+obj_t *obj_enum_new(char *name);
+obj_t *obj_constant_new(char *name);
+obj_t *obj_reffile_new();
+obj_t *obj_func_new_add(char *name, obj_t *obj);
+obj_t *obj_typedef_new_add(char *name, obj_t *obj);
+obj_t *obj_var_new_add(char *name, obj_t *obj);
+obj_t *obj_struct_member_new_add(char *name, obj_t *obj);
+obj_t *obj_ptr_new_add(obj_t *obj);
+obj_t *obj_array_new_add(obj_t *obj);
+obj_t *obj_qualifier_new_add(obj_t *obj);
 
-obj_t *new_base(char *base_type);
+obj_t *obj_basetype_new(char *base_type);
 
-void print_tree(obj_t *root);
-int debug_tree(obj_t *root);
-void fill_parent(obj_t *root);
-int walk_tree(obj_t *root, cb_t cb, void *args);
-int walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
+void obj_print_tree(obj_t *root);
+void obj_print_tree__prefix(obj_t *root, const char *prefix, FILE *stream);
+int obj_debug_tree(obj_t *root);
+void obj_fill_parent(obj_t *root);
+int obj_walk_tree(obj_t *root, cb_t cb, void *args);
+int obj_walk_tree3(obj_t *o, cb_t cb_pre, cb_t cb_in, cb_t cb_post,
 	       void *args, bool ptr_first);
 
-/* Return values for the (_)compare_tree functions */
-enum {
-	COMP_SAME = 0,	/* Subtree are equal */
-	COMP_DIFF,	/* Subtree differs */
-};
-int compare_tree(obj_t *o1, obj_t *o2, FILE *stream);
-int hide_kabi(obj_t *root, bool show_new_field);
+int obj_hide_kabi(obj_t *root, bool show_new_field);
 
-int show(int argc, char **argv);
-int compare(int argc, char **argv);
+obj_t *obj_parse(FILE *file);
+obj_t *obj_merge(obj_t *o1, obj_t *o2);
+void obj_dump(obj_t *o, FILE *f);
 
 #endif

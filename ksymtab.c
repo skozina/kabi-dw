@@ -36,30 +36,63 @@
 #include <gelf.h>
 #include "main.h"
 #include "utils.h"
+#include "hash.h"
 
 #define	KSYMTAB_STRINGS	"__ksymtab_strings"
 
-void free_ksymtab(char **ksymtab, size_t ksymtab_len) {
-	size_t i;
+#define KSYMTAB_SIZE 8192
 
-	for (i = 0; i < ksymtab_len; i++) {
-		free(ksymtab[i]);
-		ksymtab[i] = NULL;
-	}
+struct ksymtab;
 
-	free(ksymtab);
+struct ksym {
+	size_t idx;
+	char key[];
+};
+
+void ksymtab_free(struct ksymtab *ksymtab)
+{
+	struct hash *h = (struct hash *)ksymtab;
+
+	if (h == NULL)
+		return;
+
+	hash_free(h);
 }
 
-static char **print_section(Elf *elf, Elf_Scn *scn, size_t *symbol_cnt) {
+struct ksymtab *ksymtab_new(size_t size)
+{
+	struct hash *h;
+
+	h = hash_new(size, free);
+	assert(h != NULL);
+
+	return (struct ksymtab *)h;
+}
+
+void ksymtab_add_sym(struct ksymtab *ksymtab,
+		     const char *str,
+		     size_t len,
+		     size_t idx)
+{
+	struct hash *h = (struct hash *)ksymtab;
+	struct ksym *ksym;
+
+	ksym = safe_malloc(sizeof(*ksym) + len + 1);
+	memcpy(ksym->key, str, len);
+	ksym->key[len] = '\0';
+	ksym->idx = idx;
+	hash_add(h, ksym->key, ksym);
+}
+
+static struct ksymtab *print_section(Elf *elf, Elf_Scn *scn) {
 	GElf_Shdr shdr;
 	Elf_Data *data;
 	char *p, *oldp;
-	char **ksymtab;
-	size_t ksymtab_len;
-	size_t size = 0, i = 0;
+	size_t size = 0;
+	size_t i = 0;
+	struct ksymtab *res;
 
-	ksymtab_len = DEFAULT_BUFSIZE;
-	ksymtab = safe_malloc(ksymtab_len * sizeof (*ksymtab));
+	res = ksymtab_new(KSYMTAB_SIZE);
 
 	if (gelf_getshdr(scn, &shdr) != &shdr)
 		fail("getshdr() failed: %s\n", elf_errmsg(-1));
@@ -85,26 +118,17 @@ static char **print_section(Elf *elf, Elf_Scn *scn, size_t *symbol_cnt) {
 				continue;
 			}
 
-			if (i == ksymtab_len) {
-				ksymtab_len *= 2;
-				ksymtab = realloc(ksymtab,
-				    ksymtab_len * sizeof (*ksymtab));
-			}
-
-			ksymtab[i] = safe_malloc(len + 1);
-			strncpy(ksymtab[i], oldp, len + 1);
-			assert(ksymtab[i][len] == '\0');
+			ksymtab_add_sym(res, oldp, len, i);
 			i++;
 			oldp = p + 1;
 		}
 	}
 
-	*symbol_cnt = i;
-	return (ksymtab);
+	return (res);
 }
 
 /* Build list of exported symbols, ie. read seciton __ksymtab_strings */
-char **read_ksymtab(char *filename, size_t *ksymtab_len) {
+struct ksymtab *ksymtab_read(char *filename) {
 	Elf *elf;
 	int fd;
 	Elf_Kind ek;
@@ -113,10 +137,8 @@ char **read_ksymtab(char *filename, size_t *ksymtab_len) {
 	GElf_Shdr shdr;
 	size_t shstrndx;
 	char *name;
-	char **ksymtab = NULL;
 	GElf_Ehdr ehdr;
-
-	*ksymtab_len = 0;
+	struct ksymtab *res = NULL;
 
 	if (elf_version(EV_CURRENT) == EV_NONE)
 		fail("elf_version() failed: %s\n", elf_errmsg(-1));
@@ -179,11 +201,57 @@ char **read_ksymtab(char *filename, size_t *ksymtab_len) {
 		if (shdr.sh_type != SHT_PROGBITS)
 			fail("Unexpected type of section %s: %d\n",
 			    name, shdr.sh_type);
-		ksymtab = print_section(elf, scn, ksymtab_len);
+		res = print_section(elf, scn);
 	}
 
 done:
 	(void) elf_end(elf);
 	(void) close(fd);
-	return (ksymtab);
+
+	return (res);
+}
+
+/*
+ * Return the index of symbol in the array or -1 if the symbol was not found.
+ */
+int ksymtab_find(struct ksymtab *ksymtab, const char *name) {
+	struct ksym *v;
+	struct hash *h = (struct hash *)ksymtab;
+
+	if (name == NULL)
+		return (-1);
+
+	v = hash_find(h, name);
+	if (v == NULL)
+		return -1;
+
+	return v->idx;
+}
+
+size_t ksymtab_len(struct ksymtab *ksymtab)
+{
+	struct hash *h = (struct hash *)ksymtab;
+
+	if (h == NULL)
+		return 0;
+	return hash_get_count(h);
+}
+
+void ksymtab_for_each(struct ksymtab *ksymtab,
+		      void (*f)(const char *, size_t, void *),
+		      void *ctx)
+{
+	struct hash *h = (struct hash *)ksymtab;
+	struct hash_iter iter;
+	const void *v;
+	const struct ksym *vv;
+
+	if (h == NULL)
+		return;
+
+	hash_iter_init(h, &iter);
+        while (hash_iter_next(&iter, NULL, &v)) {
+		vv = (const struct ksym *)v;
+		f(vv->key, vv->idx, ctx);
+	}
 }
