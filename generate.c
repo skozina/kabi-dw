@@ -277,7 +277,6 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 	unsigned int tag = dwarf_tag(die);
 	char *file_prefix = NULL;
 	char *file_name = NULL;
-	char *dec_file;
 
 	if ((file_prefix = get_file_prefix(tag)) == NULL) {
 		/* No need to redirect output for this type */
@@ -314,11 +313,7 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 	/* We don't expect our name to be empty now */
 	assert(name != NULL);
 
-	dec_file = get_file(cu_die, die);
-	assert(dec_file != NULL);
-
-	safe_asprintf(&file_name, "%s/%s%s.txt", dec_file, file_prefix, name);
-	free(dec_file);
+	safe_asprintf(&file_name, "%s%s.txt", file_prefix, name);
 
 	return (file_name);
 }
