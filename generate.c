@@ -339,11 +339,14 @@ static bool is_external(Dwarf_Die *die) {
 static bool is_inline(Dwarf_Die *die) {
 	Dwarf_Attribute attr;
 	Dwarf_Word value;
+	int rc;
 
 	if (!dwarf_hasattr(die, DW_AT_inline))
 		return (false);
-	(void) dwarf_attr(die, DW_AT_external, &attr);
-	(void) dwarf_formudata(&attr, &value);
+	(void) dwarf_attr(die, DW_AT_inline, &attr);
+	rc = dwarf_formudata(&attr, &value);
+	if (rc == -1)
+		fail("dwarf_formudata error %d", rc);
 
 	if (value >= DW_INL_declared_not_inlined)
 		return (true);
