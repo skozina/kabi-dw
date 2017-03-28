@@ -67,6 +67,7 @@ typedef struct obj_list_head {
  * name:	name of the symbol
  * base_type:	(base type) the type of the symbol,
  *		(qualifier) the type qualifier (const or volatile)
+ *		(reffile) path to the file
  * member_list: (struct, union, enum) list of members
  *              (function) list of arguments
  * ptr:		(pointer) object pointed to
