@@ -35,6 +35,23 @@
 #include "utils.h"
 
 /*
+ * Sort function for scandir.
+ * Walk regular file first, then process subdirectories.
+ */
+int reg_first(const struct dirent **a, const struct dirent **b) {
+	if ((*a)->d_type == DT_REG && (*b)->d_type != DT_REG)
+		return -1;
+	if ((*b)->d_type == DT_REG && (*a)->d_type != DT_REG)
+		return 1;
+
+	/*
+	 * Backup to default collation
+	 * Note: the behavior depends on LC_COLLATE
+	 */
+	return alphasort(a, b);
+}
+
+/*
  * Call cb() on each node in the directory structure @path.
  * If list_dirs == true list subdirectories as well, otherwise list only files.
  * The cb() has to return true if we continue directory walk or false if we're
@@ -42,25 +59,29 @@
  */
 void walk_dir(char *path, bool list_dirs, bool (*cb)(char *, void *),
     void *arg) {
-	DIR *dir;
-	struct dirent *ent;
+	struct dirent **entlist;
 	bool proceed = true;
+	int entries, i;
 
 	assert(path != NULL && strlen(path) >= 1);
 
-	if ((dir = opendir(path)) == NULL) {
-		fail("Failed to open module directory %s: %s\n", path,
+	entries = scandir(path, &entlist, NULL, reg_first);
+	if (entries == -1) {
+		fail("Failed to scan module directory %s: %s\n", path,
 		    strerror(errno));
 	}
 
-	/* print all the files and directories within directory */
-	while (proceed && ((ent = readdir(dir)) != NULL)) {
+	/* process all the files and directories within directory */
+	for (i = 0; i < entries && proceed; i++) {
+		struct dirent *ent = entlist[i];
 		struct stat entstat;
 		char *new_path;
 
 		if ((strcmp(ent->d_name, "..") == 0) ||
-		    (strcmp(ent->d_name, ".") == 0))
+		    (strcmp(ent->d_name, ".") == 0)) {
+			free(ent);
 			continue;
+		}
 
 		if (path[strlen(path) - 1] == '/')
 			safe_asprintf(&new_path, "%s%s", path, ent->d_name);
@@ -83,9 +104,10 @@ void walk_dir(char *path, bool list_dirs, bool (*cb)(char *, void *),
 		}
 
 		free(new_path);
+		free(ent);
 	}
 
-	closedir(dir);
+	free(entlist);
 }
 
 int check_is_directory(char *dir) {
