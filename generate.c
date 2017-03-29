@@ -68,6 +68,7 @@ typedef struct {
 	size_t symbols_found_cnt;
 	struct record_db *db;
 	bool verbose;
+	bool gen_extra;
 } generate_config_t;
 
 struct cu_ctx {
@@ -145,6 +146,7 @@ struct record {
 	char *origin;
 	stack_t *stack;
 	obj_t *obj;
+	bool should_free_cu;
 };
 
 /* List of types built-in the compiler */
@@ -399,8 +401,9 @@ static void record_free(struct record *rec)
 
 	free(rec->key);
 	free(rec->base_file);
-	free(rec->cu);
 	free(rec->origin);
+	if (rec->should_free_cu)
+		free(rec->cu);
 
 	while ((data = stack_pop(rec->stack)) != NULL)
 		free(data);
@@ -431,6 +434,7 @@ static struct record *record_new(char *key)
 	rec = record_alloc();
 	rec->key = safe_strdup(key);
 	rec->stack = stack_init();
+	rec->cu = "CU \"nottracked\"\n";
 	record_get(rec);
 	return rec;
 }
@@ -478,6 +482,7 @@ static void record_add_cu(struct record *rec, Dwarf_Die *cu_die)
 
 	name = dwarf_diename(cu_die);
 	safe_asprintf(&rec->cu, "CU \"%s\"\n", name);
+	rec->should_free_cu = true;
 }
 
 static void record_add_origin(struct record *rec,
@@ -529,7 +534,8 @@ static struct record *record_start(struct cu_ctx *ctx,
 
 	rec = record_new(key);
 
-	record_add_cu(rec, cu_die);
+	if (conf->gen_extra)
+		record_add_cu(rec, cu_die);
 	record_add_origin(rec, cu_die, die);
 	record_add_stack(rec, ctx->stack);
 done:
@@ -1148,9 +1154,11 @@ static obj_t *print_die(struct cu_ctx *ctx,
 		/* declaration or already processed */
 		goto out;
 
-	stack_push(ctx->stack, safe_strdup(file));
+	if (conf->gen_extra)
+		stack_push(ctx->stack, safe_strdup(file));
 	obj = print_die_tag(ctx, rec, die);
-	free(stack_pop(ctx->stack));
+	if (conf->gen_extra)
+		free(stack_pop(ctx->stack));
 
 	record_close(rec, obj);
 
@@ -1468,7 +1476,9 @@ static void generate_usage() {
 	       "    -s, --symbols symbol_file:\n\t\t\ta file containing the"
 	       " list of symbols of interest (e.g. whitelisted)\n"
 	       "    -r, --replace-path abs_path:\n\t\t\t"
-	       "replace the absolute path by a relative path\n");
+	       "replace the absolute path by a relative path\n"
+	       "    -g, --generate-extra-info:\n\t\t\t"
+	       "generate extra information (declaration stack, compilation unit)\n");
 	exit(1);
 }
 
@@ -1484,10 +1494,11 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 		{"output", required_argument, 0, 'o'},
 		{"symbols", required_argument, 0, 's'},
 		{"replace-path", required_argument, 0, 'r'},
+		{"generate-extra-info", no_argument, 0, 'g'},
 		{0, 0, 0, 0}
 	};
 
-	while ((opt = getopt_long(argc, argv, "hvo:s:r:m:",
+	while ((opt = getopt_long(argc, argv, "hvo:s:r:m:g",
 				  loptions, &opt_index)) != -1) {
 		switch (opt) {
 		case 'h':
@@ -1503,6 +1514,9 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 			break;
 		case 'r':
 			get_file_replace_path = optarg;
+			break;
+		case 'g':
+			conf->gen_extra = true;
 			break;
 		default:
 			generate_usage();
