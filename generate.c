@@ -60,7 +60,6 @@ struct set;
 struct record_db;
 
 typedef struct {
-	bool verbose;
 	char *kernel_dir; /* Path to  the kernel modules to process */
 	char *kabi_dir; /* Where to put the output */
 	struct ksymtab *symbols; /* List of symbols to generate */
@@ -68,6 +67,7 @@ typedef struct {
 	bool *symbols_found;
 	size_t symbols_found_cnt;
 	struct record_db *db;
+	bool verbose;
 } generate_config_t;
 
 struct cu_ctx {
