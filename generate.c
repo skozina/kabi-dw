@@ -434,7 +434,7 @@ static struct record *record_new(char *key)
 	rec = record_alloc();
 	rec->key = safe_strdup(key);
 	rec->stack = stack_init();
-	rec->cu = "CU \"nottracked\"\n";
+	rec->cu = "CU \"<nottracked>\"\n";
 	record_get(rec);
 	return rec;
 }
