@@ -64,8 +64,6 @@ typedef struct {
 	char *kabi_dir; /* Where to put the output */
 	struct ksymtab *symbols; /* List of symbols to generate */
 	size_t symbol_cnt;
-	bool *symbols_found;
-	size_t symbols_found_cnt;
 	struct record_db *db;
 	bool verbose;
 	bool gen_extra;
@@ -1167,14 +1165,15 @@ out:
 
 /*
  * Validate if this is the symbol we should print.
- * Returns index into the symbol array if this is symbol to print.
- * Otherwise returns -1.
+ * Returns true if should.
  */
-static int get_symbol_index(Dwarf_Die *die, struct file_ctx *fctx) {
+static bool is_symbol_valid(struct file_ctx *fctx, Dwarf_Die *die) {
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
-	int result = -1;
+	bool result = false;
 	generate_config_t *conf = fctx->conf;
+	struct ksym *ksym1 = NULL;
+	struct ksym *ksym2;
 
 	/* Shortcut, unnamed die cannot be part of whitelist */
 	if (name == NULL)
@@ -1182,8 +1181,8 @@ static int get_symbol_index(Dwarf_Die *die, struct file_ctx *fctx) {
 
 	/* If symbol file was provided, is the symbol on the list? */
 	if (conf->symbols != NULL) {
-		result = ksymtab_find(conf->symbols, name);
-		if (result == -1)
+		ksym1 = ksymtab_find(conf->symbols, name);
+		if (ksym1 == NULL)
 			goto out;
 	}
 
@@ -1192,7 +1191,8 @@ static int get_symbol_index(Dwarf_Die *die, struct file_ctx *fctx) {
 		goto out;
 
 	/* Is this symbol exported in this module with EXPORT_SYMBOL? */
-	if (ksymtab_find(fctx->ksymtab, name) == -1)
+	ksym2 = ksymtab_find(fctx->ksymtab, name);
+	if (ksym2 == NULL)
 		goto out;
 
 	/* Anything EXPORT_SYMBOLed should be external */
@@ -1217,9 +1217,19 @@ static int get_symbol_index(Dwarf_Die *die, struct file_ctx *fctx) {
 		    dwarf_tag_string(tag));
 	}
 
-	/* do not override the index */
-	if (result == -1)
-		result = 0;
+	result = true;
+
+	/*
+	 * Mark the symbol as fully processed,
+	 * so it will not be in the subset of not found symbols.
+	 * We are talking here about kabi symbols set,
+	 * which is passed by -s switch.
+	 *
+	 * The actual processing starts later in the caller,
+	 * but the decision is made here.
+	 */
+	if (conf->symbols != NULL)
+		ksymtab_ksym_mark(ksym1);
 
 out:
 	return (result);
@@ -1242,8 +1252,7 @@ static void process_cu_die(Dwarf_Die *cu_die, struct file_ctx *fctx)
 	/* Walk all DIEs in the CU */
 	dwarf_child(cu_die, &child_die);
 	do {
-		int index = get_symbol_index(&child_die, fctx);
-		if (index != -1) {
+		if (is_symbol_valid(fctx, &child_die)) {
 			void *data;
 			struct cu_ctx ctx;
 
@@ -1264,14 +1273,6 @@ static void process_cu_die(Dwarf_Die *cu_die, struct file_ctx *fctx)
 			/* Print both the CU DIE and symbol DIE */
 			ref = print_die(&ctx, NULL, &child_die);
 			obj_free(ref);
-
-			if (conf->symbols != NULL) {
-				/* possible race if symbol in several CUs */
-				if (!conf->symbols_found[index]) {
-					conf->symbols_found[index] = true;
-					conf->symbols_found_cnt++;
-				}
-			}
 
 			/* And clear the stack again */
 			while ((data = stack_pop(ctx.stack)) != NULL)
@@ -1345,8 +1346,7 @@ static bool is_all_done(generate_config_t *conf) {
 	if (conf->symbols == NULL)
 		return (false);
 
-	assert(conf->symbols_found_cnt <= conf->symbol_cnt);
-	return conf->symbols_found_cnt == conf->symbol_cnt;
+	return ksymtab_mark_count(conf->symbols) == conf->symbol_cnt;
 }
 
 static bool process_symbol_file(char *path, void *arg) {
@@ -1375,10 +1375,7 @@ static bool process_symbol_file(char *path, void *arg) {
 
 static void print_not_found(const char *s, size_t i, void *ctx)
 {
-	bool *symbols_found = ctx;
-
-	if (!symbols_found[i])
-		printf("%s not found!\n", s);
+	printf("%s not found!\n", s);
 }
 
 /*
@@ -1407,9 +1404,7 @@ static void generate_symbol_defs(generate_config_t *conf) {
 		fail("Not a file or directory: %s\n", conf->kernel_dir);
 	}
 
-	ksymtab_for_each_unmarked(conf->symbols,
-				  print_not_found,
-				  conf->symbols_found);
+	ksymtab_for_each_unmarked(conf->symbols, print_not_found, NULL);
 
 	record_db_dump(conf->db, conf->kabi_dir);
 	record_db_free(conf->db);
@@ -1538,17 +1533,11 @@ void generate(int argc, char **argv) {
 	parse_generate_opts(argc, argv, conf, &symbol_file);
 
 	if (symbol_file != NULL) {
-		int i;
-
 		conf->symbols = read_symbols(symbol_file);
 		conf->symbol_cnt = ksymtab_len(conf->symbols);
 
 		if (conf->verbose)
 			printf("Loaded %ld symbols\n", conf->symbol_cnt);
-		conf->symbols_found = safe_malloc(conf->symbol_cnt *
-						  sizeof (*conf->symbols_found));
-		for (i = 0; i < conf->symbol_cnt; i++)
-			conf->symbols_found[i] = false;
 	}
 
 	/* Create a place for temporary files */
@@ -1564,10 +1553,8 @@ void generate(int argc, char **argv) {
 
 	free(temp_path);
 
-	if (symbol_file != NULL) {
-		free(conf->symbols_found);
+	if (symbol_file != NULL)
 		ksymtab_free(conf->symbols);
-	}
 
 	free(conf);
 }

@@ -228,18 +228,18 @@ done:
 /*
  * Return the index of symbol in the array or -1 if the symbol was not found.
  */
-int ksymtab_find(struct ksymtab *ksymtab, const char *name) {
+struct ksym *ksymtab_find(struct ksymtab *ksymtab, const char *name) {
 	struct ksym *v;
 	struct hash *h = ksymtab->hash;
 
 	if (name == NULL)
-		return (-1);
+		return NULL;
 
 	v = hash_find(h, name);
 	if (v == NULL)
-		return -1;
+		return NULL;
 
-	return v->idx;
+	return v;
 }
 
 size_t ksymtab_len(struct ksymtab *ksymtab)

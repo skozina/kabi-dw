@@ -23,7 +23,7 @@ struct ksym;
 
 extern void ksymtab_free(struct ksymtab *);
 extern struct ksymtab *ksymtab_read(char *);
-extern int ksymtab_find(struct ksymtab *, const char *);
+extern struct ksym *ksymtab_find(struct ksymtab *, const char *);
 extern size_t ksymtab_len(struct ksymtab *);
 extern struct ksymtab *ksymtab_new(size_t);
 extern void ksymtab_add_sym(struct ksymtab *, const char *, size_t, size_t);
