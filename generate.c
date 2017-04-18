@@ -1173,31 +1173,31 @@ out:
 static int get_symbol_index(Dwarf_Die *die, struct file_ctx *fctx) {
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
-	int result = 0;
+	int result = -1;
 	generate_config_t *conf = fctx->conf;
 
 	/* Shortcut, unnamed die cannot be part of whitelist */
 	if (name == NULL)
-		return (-1);
+		goto out;
 
 	/* If symbol file was provided, is the symbol on the list? */
 	if (conf->symbols != NULL) {
 		result = ksymtab_find(conf->symbols, name);
 		if (result == -1)
-			return (-1);
+			goto out;
 	}
 
 	/* We don't care about declarations */
 	if (is_declaration(die))
-		return (-1);
+		goto out;
 
 	/* Is this symbol exported in this module with EXPORT_SYMBOL? */
 	if (ksymtab_find(fctx->ksymtab, name) == -1)
-		return (-1);
+		goto out;
 
 	/* Anything EXPORT_SYMBOLed should be external */
 	if (!is_external(die))
-		return (-1);
+		goto out;
 
 	/* We expect only variables or functions on whitelist */
 	switch (tag) {
@@ -1217,6 +1217,11 @@ static int get_symbol_index(Dwarf_Die *die, struct file_ctx *fctx) {
 		    dwarf_tag_string(tag));
 	}
 
+	/* do not override the index */
+	if (result == -1)
+		result = 0;
+
+out:
 	return (result);
 }
 
