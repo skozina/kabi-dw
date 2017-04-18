@@ -406,7 +406,7 @@ static void record_get(struct record *rec)
 	rec->ref_count++;
 }
 
-static struct record *record_new(char *key)
+static struct record *record_new(const char *key)
 {
 	struct record *rec;
 
@@ -1186,14 +1186,20 @@ static bool is_symbol_valid(struct file_ctx *fctx, Dwarf_Die *die) {
 			goto out;
 	}
 
-	/* We don't care about declarations */
-	if (is_declaration(die))
-		goto out;
-
 	/* Is this symbol exported in this module with EXPORT_SYMBOL? */
 	ksym2 = ksymtab_find(fctx->ksymtab, name);
 	if (ksym2 == NULL)
 		goto out;
+	/* We don't care about declarations */
+	if (is_declaration(die))
+		goto out;
+	/*
+	 * Mark the symbol as not eligible to fake symbol generation.
+	 * We can come till this place with an assembly function,
+	 * because it may have dwarf info for its C declaration,
+	 * but others in dwarf are supposed to be normal C functions.
+	 */
+	ksymtab_ksym_mark(ksym2);
 
 	/* Anything EXPORT_SYMBOLed should be external */
 	if (!is_external(die))
@@ -1350,6 +1356,67 @@ static bool is_all_done(generate_config_t *conf) {
 	return ksymtab_mark_count(conf->symbols) == conf->symbol_cnt;
 }
 
+static struct record *fake_record_new(const char *key)
+{
+	struct record *rec;
+	obj_t *obj;
+
+	rec = record_new(key);
+
+	/*
+	 * The symbol not necessary belongs to an assembly function,
+	 * it is actually "no definition found in the debug information",
+	 * but the main goal is to find the assembly ones.
+	 */
+	rec->origin = safe_strdup("File <unknown>/assembly.S:0\n");
+	obj = obj_basetype_new(safe_strdup("void"));
+	obj = obj_func_new_add(safe_strdup(key), obj);
+
+	record_close(rec, obj);
+
+	return rec;
+}
+
+static void generate_fake_record(generate_config_t *conf, const char *key)
+{
+	struct record *rec;
+	char *new_key;
+
+	if (conf->verbose)
+		printf("Generating fake record for %s\n", key);
+
+	rec = fake_record_new(key);
+	new_key = record_db_add(conf->db, rec);
+
+	record_put(rec);
+	free(new_key);
+}
+
+/*
+ * process_not_found:
+ *
+ * Generate fake records for symbols, not found in the debug info,
+ * but existed in the export list (most probably, assembly function).
+ *
+ * If there is a checklist, mark the symbol there (as processed).
+ * If the symbol not in the checklist, ignore it completely,
+ * means, do not mark and do not generate fake record for it either.
+ */
+static void process_not_found(const char *key, size_t idx, void *ctx)
+{
+	generate_config_t *conf = ctx;
+	struct ksym *ksym;
+
+	if (conf->symbols) {
+		ksym = ksymtab_find(conf->symbols, key);
+		if (ksym == NULL)
+			return;
+		ksymtab_ksym_mark(ksym);
+	}
+
+	generate_fake_record(conf, key);
+}
+
 static bool process_symbol_file(char *path, void *arg) {
 	struct file_ctx fctx;
 	generate_config_t *conf = (generate_config_t *)arg;
@@ -1366,6 +1433,8 @@ static bool process_symbol_file(char *path, void *arg) {
 		if (conf->verbose)
 			printf("Skip %s (no exported symbols)\n", path);
 	}
+
+	ksymtab_for_each_unmarked(fctx.ksymtab, process_not_found, conf);
 
 	ksymtab_free(fctx.ksymtab);
 
