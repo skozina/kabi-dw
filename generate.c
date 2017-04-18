@@ -332,25 +332,6 @@ static bool is_external(Dwarf_Die *die) {
 	return (true);
 }
 
-/* Check if given DIE was declared as inline */
-static bool is_inline(Dwarf_Die *die) {
-	Dwarf_Attribute attr;
-	Dwarf_Word value;
-	int rc;
-
-	if (!dwarf_hasattr(die, DW_AT_inline))
-		return (false);
-	(void) dwarf_attr(die, DW_AT_inline, &attr);
-	rc = dwarf_formudata(&attr, &value);
-	if (rc == -1)
-		fail("dwarf_formudata error %d", rc);
-
-	if (value >= DW_INL_declared_not_inlined)
-		return (true);
-	else
-		return (false);
-}
-
 struct set *set_init(size_t size)
 {
 	struct hash *h;
@@ -1195,6 +1176,10 @@ static int get_symbol_index(Dwarf_Die *die, struct file_ctx *fctx) {
 	int result = 0;
 	generate_config_t *conf = fctx->conf;
 
+	/* Shortcut, unnamed die cannot be part of whitelist */
+	if (name == NULL)
+		return (-1);
+
 	/* If symbol file was provided, is the symbol on the list? */
 	if (conf->symbols != NULL) {
 		result = ksymtab_find(conf->symbols, name);
@@ -1210,8 +1195,8 @@ static int get_symbol_index(Dwarf_Die *die, struct file_ctx *fctx) {
 	if (ksymtab_find(fctx->ksymtab, name) == -1)
 		return (-1);
 
-	/* Anything except inlined functions should be external */
-	if (!is_inline(die) && !is_external(die))
+	/* Anything EXPORT_SYMBOLed should be external */
+	if (!is_external(die))
 		return (-1);
 
 	/* We expect only variables or functions on whitelist */
@@ -1226,8 +1211,6 @@ static int get_symbol_index(Dwarf_Die *die, struct file_ctx *fctx) {
 		 */
 		break;
 	case DW_TAG_variable:
-		break;
-	case DW_TAG_structure_type:
 		break;
 	default:
 		fail("Symbol %s has unexpected tag: %s!\n", name,
