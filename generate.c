@@ -1252,35 +1252,36 @@ static void process_cu_die(Dwarf_Die *cu_die, struct file_ctx *fctx)
 	/* Walk all DIEs in the CU */
 	dwarf_child(cu_die, &child_die);
 	do {
-		if (is_symbol_valid(fctx, &child_die)) {
-			void *data;
-			struct cu_ctx ctx;
+		void *data;
+		struct cu_ctx ctx;
 
-			if (!cu_printed && conf->verbose) {
-				printf("Processing CU %s\n",
-				    dwarf_diename(cu_die));
-				cu_printed = true;
-			}
+		if (!is_symbol_valid(fctx, &child_die))
+			continue;
 
-			ctx.conf = conf;
-			ctx.cu_die = cu_die;
-
-			/* Grab a fresh stack of symbols */
-			ctx.stack = stack_init();
-			/* And a set of all processed symbols */
-			ctx.processed = set_init(PROCESSED_SIZE);
-
-			/* Print both the CU DIE and symbol DIE */
-			ref = print_die(&ctx, NULL, &child_die);
-			obj_free(ref);
-
-			/* And clear the stack again */
-			while ((data = stack_pop(ctx.stack)) != NULL)
-				free(data);
-
-			stack_destroy(ctx.stack);
-			set_free(ctx.processed);
+		if (!cu_printed && conf->verbose) {
+			printf("Processing CU %s\n",
+			       dwarf_diename(cu_die));
+			cu_printed = true;
 		}
+
+		ctx.conf = conf;
+		ctx.cu_die = cu_die;
+
+		/* Grab a fresh stack of symbols */
+		ctx.stack = stack_init();
+		/* And a set of all processed symbols */
+		ctx.processed = set_init(PROCESSED_SIZE);
+
+		/* Print both the CU DIE and symbol DIE */
+		ref = print_die(&ctx, NULL, &child_die);
+		obj_free(ref);
+
+		/* And clear the stack again */
+		while ((data = stack_pop(ctx.stack)) != NULL)
+			free(data);
+
+		stack_destroy(ctx.stack);
+		set_free(ctx.processed);
 	} while (dwarf_siblingof(&child_die, &child_die) == 0);
 }
 
