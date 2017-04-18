@@ -42,31 +42,44 @@
 
 #define KSYMTAB_SIZE 8192
 
-struct ksymtab;
+struct ksymtab {
+	struct hash *hash;
+	size_t mark_count;
+};
 
 struct ksym {
 	size_t idx;
+	bool mark;
+	struct ksymtab *ksymtab;
 	char key[];
 };
 
 void ksymtab_free(struct ksymtab *ksymtab)
 {
-	struct hash *h = (struct hash *)ksymtab;
+	struct hash *h;
 
-	if (h == NULL)
+	if (ksymtab == NULL)
 		return;
 
+	h = ksymtab->hash;
+
 	hash_free(h);
+	free(ksymtab);
 }
 
 struct ksymtab *ksymtab_new(size_t size)
 {
 	struct hash *h;
+	struct ksymtab *ksymtab;
 
 	h = hash_new(size, free);
 	assert(h != NULL);
 
-	return (struct ksymtab *)h;
+	ksymtab = safe_malloc(sizeof(*ksymtab));
+	ksymtab->hash = h;
+	/* ksymtab->mark_count is zeroed by the allocator */
+
+	return ksymtab;
 }
 
 void ksymtab_add_sym(struct ksymtab *ksymtab,
@@ -74,13 +87,14 @@ void ksymtab_add_sym(struct ksymtab *ksymtab,
 		     size_t len,
 		     size_t idx)
 {
-	struct hash *h = (struct hash *)ksymtab;
+	struct hash *h = ksymtab->hash;
 	struct ksym *ksym;
 
 	ksym = safe_malloc(sizeof(*ksym) + len + 1);
 	memcpy(ksym->key, str, len);
 	ksym->key[len] = '\0';
 	ksym->idx = idx;
+	ksym->ksymtab = ksymtab;
 	hash_add(h, ksym->key, ksym);
 }
 
@@ -216,7 +230,7 @@ done:
  */
 int ksymtab_find(struct ksymtab *ksymtab, const char *name) {
 	struct ksym *v;
-	struct hash *h = (struct hash *)ksymtab;
+	struct hash *h = ksymtab->hash;
 
 	if (name == NULL)
 		return (-1);
@@ -230,28 +244,45 @@ int ksymtab_find(struct ksymtab *ksymtab, const char *name) {
 
 size_t ksymtab_len(struct ksymtab *ksymtab)
 {
-	struct hash *h = (struct hash *)ksymtab;
+	struct hash *h;
 
-	if (h == NULL)
+	if (ksymtab == NULL)
 		return 0;
+
+	h = ksymtab->hash;
 	return hash_get_count(h);
 }
 
-void ksymtab_for_each(struct ksymtab *ksymtab,
-		      void (*f)(const char *, size_t, void *),
-		      void *ctx)
+size_t ksymtab_mark_count(struct ksymtab *ksymtab)
 {
-	struct hash *h = (struct hash *)ksymtab;
+	return ksymtab->mark_count;
+}
+
+void ksymtab_for_each_unmarked(struct ksymtab *ksymtab,
+			       void (*f)(const char *, size_t, void *),
+			       void *ctx)
+{
+	struct hash *h;
 	struct hash_iter iter;
 	const void *v;
 	const struct ksym *vv;
 
-	if (h == NULL)
+	if (ksymtab == NULL)
 		return;
+
+	h = ksymtab->hash;
 
 	hash_iter_init(h, &iter);
         while (hash_iter_next(&iter, NULL, &v)) {
 		vv = (const struct ksym *)v;
-		f(vv->key, vv->idx, ctx);
+		if (! vv->mark)
+			f(vv->key, vv->idx, ctx);
 	}
+}
+
+void ksymtab_ksym_mark(struct ksym *ksym)
+{
+	if (!ksym->mark)
+		ksym->ksymtab->mark_count++;
+	ksym->mark = true;
 }

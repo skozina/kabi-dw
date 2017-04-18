@@ -19,6 +19,7 @@
 #define	KSYMTAB_H_
 
 struct ksymtab;
+struct ksym;
 
 extern void ksymtab_free(struct ksymtab *);
 extern struct ksymtab *ksymtab_read(char *);
@@ -26,7 +27,10 @@ extern int ksymtab_find(struct ksymtab *, const char *);
 extern size_t ksymtab_len(struct ksymtab *);
 extern struct ksymtab *ksymtab_new(size_t);
 extern void ksymtab_add_sym(struct ksymtab *, const char *, size_t, size_t);
-extern void ksymtab_for_each(struct ksymtab *,
-			     void (*f)(const char *, size_t, void *),
-			     void *);
+extern void ksymtab_for_each_unmarked(struct ksymtab *,
+				      void (*f)(const char *, size_t, void *),
+				      void *);
+extern size_t ksymtab_mark_count(struct ksymtab *);
+extern void ksymtab_ksym_mark(struct ksym *);
+
 #endif /* KSYMTAB_H_ */

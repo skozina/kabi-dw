@@ -1407,7 +1407,9 @@ static void generate_symbol_defs(generate_config_t *conf) {
 		fail("Not a file or directory: %s\n", conf->kernel_dir);
 	}
 
-	ksymtab_for_each(conf->symbols, print_not_found, conf->symbols_found);
+	ksymtab_for_each_unmarked(conf->symbols,
+				  print_not_found,
+				  conf->symbols_found);
 
 	record_db_dump(conf->db, conf->kabi_dir);
 	record_db_free(conf->db);
