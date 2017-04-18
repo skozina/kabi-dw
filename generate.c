@@ -815,14 +815,17 @@ static obj_t *print_die_structure(struct cu_ctx *ctx,
 	obj_list_head_t *members = NULL;
 	obj_t *obj;
 	obj_t *member;
+	Dwarf_Die child_die;
 
 	obj = obj_struct_new(safe_strdup(name));
 
 	if (!dwarf_haschildren(die))
 		goto done;
 
-	dwarf_child(die, die);
+	dwarf_child(die, &child_die);
 	do {
+		Dwarf_Die *die = &child_die;
+
 		name = get_die_name(die);
 		tag = dwarf_tag(die);
 		if (tag != DW_TAG_member)
@@ -835,7 +838,7 @@ static obj_t *print_die_structure(struct cu_ctx *ctx,
 		else
 			obj_list_add(members, member);
 
-	} while (dwarf_siblingof(die, die) == 0);
+	} while (dwarf_siblingof(&child_die, &child_die) == 0);
 
 	obj->member_list = members;
 done:
@@ -869,21 +872,24 @@ static obj_t *print_die_enumeration(struct cu_ctx *ctx,
 	obj_list_head_t *members = NULL;
 	obj_t *member;
 	obj_t *obj;
+	Dwarf_Die child_die;
 
 	obj = obj_enum_new(safe_strdup(name));
 
 	if (!dwarf_haschildren(die))
 		goto done;
 
-	dwarf_child(die, die);
+	dwarf_child(die, &child_die);
 	do {
+		Dwarf_Die *die = &child_die;
+
 		name = get_die_name(die);
 		member = print_die_enumerator(ctx, rec, die, name);
 		if (members == NULL)
 			members = obj_list_head_new(member);
 		else
 			obj_list_add(members, member);
-	} while (dwarf_siblingof(die, die) == 0);
+	} while (dwarf_siblingof(&child_die, &child_die) == 0);
 
 	members->object = obj;
 	obj->member_list = members;
@@ -901,14 +907,17 @@ static obj_t *print_die_union(struct cu_ctx *ctx,
 	obj_t *member;
 	obj_t *type;
 	obj_t *obj;
+	Dwarf_Die child_die;
 
 	obj = obj_union_new(safe_strdup(name));
 
 	if (!dwarf_haschildren(die))
 		goto done;
 
-	dwarf_child(die, die);
+	dwarf_child(die, &child_die);
 	do {
+		Dwarf_Die *die = &child_die;
+
 		name = get_die_name(die);
 		tag = dwarf_tag(die);
 		if (tag != DW_TAG_member)
@@ -923,7 +932,7 @@ static obj_t *print_die_union(struct cu_ctx *ctx,
 		else
 			obj_list_add(members, member);
 
-	} while (dwarf_siblingof(die, die) == 0);
+	} while (dwarf_siblingof(&child_die, &child_die) == 0);
 
 	members->object = obj;
 	obj->member_list = members;
