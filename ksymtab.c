@@ -541,6 +541,8 @@ struct ksymtab *ksymtab_read(char *filename, struct ksymtab **aliases)
 	size_t size;
 	struct ksymtab *res = NULL;
 
+	assert(aliases != NULL);
+
 	elf = ksymtab_elf_open(filename);
 	if (elf == NULL)
 		return NULL;
@@ -549,8 +551,7 @@ struct ksymtab *ksymtab_read(char *filename, struct ksymtab **aliases)
 		goto done;
 
 	res = parse_ksymtab_strings(data, size);
-	if (aliases != NULL)
-		*aliases = ksymtab_find_aliases(res, elf);
+	*aliases = ksymtab_find_aliases(res, elf);
 
 done:
 	ksymtab_elf_close(elf);
