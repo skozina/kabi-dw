@@ -60,9 +60,6 @@ extern struct ksym *ksymtab_copy_sym(struct ksymtab *, struct ksym *);
 extern void ksymtab_for_each(struct ksymtab *,
 			     void (*f)(struct ksym *, void *),
 			     void *);
-extern void ksymtab_for_each_unmarked(struct ksymtab *,
-				      void (*f)(const char *, size_t, void *),
-				      void *);
 extern size_t ksymtab_mark_count(struct ksymtab *);
 extern void ksymtab_ksym_mark(struct ksym *);
 

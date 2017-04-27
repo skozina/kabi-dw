@@ -354,38 +354,6 @@ void ksymtab_for_each(struct ksymtab *ksymtab,
 	}
 }
 
-struct unmarked_ctx {
-	void (*f)(const char *, size_t, void *);
-	void *ctx;
-};
-
-static void unmarked_callback(struct ksym *ksym, void *_ctx)
-{
-	struct unmarked_ctx *ctx = _ctx;
-	const char *name;
-	size_t idx;
-
-	if (ksymtab_ksym_is_marked(ksym))
-		return;
-
-	name = ksymtab_ksym_get_name(ksym);
-	idx = (size_t)ksymtab_ksym_get_value(ksym);
-
-	ctx->f(name, idx, ctx->ctx);
-}
-
-void ksymtab_for_each_unmarked(struct ksymtab *ksymtab,
-			       void (*f)(const char *, size_t, void *),
-			       void *u_ctx)
-{
-	struct unmarked_ctx ctx = {
-		.f = f,
-		.ctx = u_ctx,
-	};
-
-	ksymtab_for_each(ksymtab, unmarked_callback, &ctx);
-}
-
 /* Parses raw content of  __ksymtab_strings section to a ksymtab */
 static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
 {
