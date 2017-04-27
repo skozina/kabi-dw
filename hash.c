@@ -48,9 +48,14 @@ static inline unsigned int ALIGN_POWER2(unsigned int u)
 	return 1 << ((sizeof(u) * 8) - __builtin_clz(u - 1));
 }
 
+static inline size_t min(size_t a, size_t b)
+{
+	return a < b ? a : b;
+}
 
 struct hash_entry {
 	const char *key;
+	size_t keylen;
 	const void *value;
 };
 
@@ -67,6 +72,21 @@ struct hash {
 	void (*free_value)(void *value);
 	struct hash_bucket buckets[];
 };
+
+static inline int hash_key_cmp(const char *key1, size_t size1,
+			       const char *key2, size_t size2)
+{
+	int rc;
+	size_t size;
+
+	size = min(size1, size2);
+
+	rc = memcmp(key1, key2, size);
+	if (rc != 0)
+		return rc;
+
+	return (int)(size1 - size2);
+}
 
 struct hash *hash_new(unsigned int n_buckets,
 					void (*free_value)(void *value))
@@ -167,9 +187,9 @@ static inline unsigned int hash_superfast(const char *key, unsigned int len)
  * none of key or value are copied, just references are remembered as is,
  * make sure they are live while pair exists in hash!
  */
-int hash_add(struct hash *hash, const char *key, const void *value)
+int hash_add_bin(struct hash *hash,
+		 const char *key, size_t keylen, const void *value)
 {
-	unsigned int keylen = strlen(key);
 	unsigned int hashval = hash_superfast(key, keylen);
 	unsigned int pos = hashval & (hash->n_buckets - 1);
 	struct hash_bucket *bucket = hash->buckets + pos;
@@ -188,11 +208,12 @@ int hash_add(struct hash *hash, const char *key, const void *value)
 	entry = bucket->entries;
 	entry_end = entry + bucket->used;
 	for (; entry < entry_end; entry++) {
-		int c = strcmp(key, entry->key);
+		int c = hash_key_cmp(key, keylen, entry->key, entry->keylen);
 		if (c == 0) {
 			if (hash->free_value)
 				hash->free_value((void *)entry->value);
 			entry->key = key;
+			entry->keylen = keylen;
 			entry->value = value;
 			return 0;
 		} else if (c < 0) {
@@ -203,6 +224,7 @@ int hash_add(struct hash *hash, const char *key, const void *value)
 	}
 
 	entry->key = key;
+	entry->keylen = keylen;
 	entry->value = value;
 	bucket->used++;
 	hash->count++;
@@ -210,9 +232,9 @@ int hash_add(struct hash *hash, const char *key, const void *value)
 }
 
 /* similar to hash_add(), but fails if key already exists */
-int hash_add_unique(struct hash *hash, const char *key, const void *value)
+int hash_add_unique_bin(struct hash *hash,
+			const char *key, size_t keylen, const void *value)
 {
-	unsigned int keylen = strlen(key);
 	unsigned int hashval = hash_superfast(key, keylen);
 	unsigned int pos = hashval & (hash->n_buckets - 1);
 	struct hash_bucket *bucket = hash->buckets + pos;
@@ -231,7 +253,7 @@ int hash_add_unique(struct hash *hash, const char *key, const void *value)
 	entry = bucket->entries;
 	entry_end = entry + bucket->used;
 	for (; entry < entry_end; entry++) {
-		int c = strcmp(key, entry->key);
+		int c = hash_key_cmp(key, keylen, entry->key, entry->keylen);
 		if (c == 0)
 			return -EEXIST;
 		else if (c < 0) {
@@ -242,6 +264,7 @@ int hash_add_unique(struct hash *hash, const char *key, const void *value)
 	}
 
 	entry->key = key;
+	entry->keylen = keylen;
 	entry->value = value;
 	bucket->used++;
 	hash->count++;
@@ -252,17 +275,17 @@ static int hash_entry_cmp(const void *pa, const void *pb)
 {
 	const struct hash_entry *a = pa;
 	const struct hash_entry *b = pb;
-	return strcmp(a->key, b->key);
+	return hash_key_cmp(a->key, a->keylen, b->key, b->keylen);
 }
 
-void *hash_find(const struct hash *hash, const char *key)
+void *hash_find_bin(const struct hash *hash, const char *key, size_t keylen)
 {
-	unsigned int keylen = strlen(key);
 	unsigned int hashval = hash_superfast(key, keylen);
 	unsigned int pos = hashval & (hash->n_buckets - 1);
 	const struct hash_bucket *bucket = hash->buckets + pos;
 	const struct hash_entry se = {
 		.key = key,
+		.keylen = keylen,
 		.value = NULL
 	};
 	const struct hash_entry *entry = bsearch(
@@ -273,9 +296,8 @@ void *hash_find(const struct hash *hash, const char *key)
 	return (void *)entry->value;
 }
 
-int hash_del(struct hash *hash, const char *key)
+int hash_del_bin(struct hash *hash, const char *key, size_t keylen)
 {
-	unsigned int keylen = strlen(key);
 	unsigned int hashval = hash_superfast(key, keylen);
 	unsigned int pos = hashval & (hash->n_buckets - 1);
 	unsigned int steps_used, steps_total;
@@ -283,6 +305,7 @@ int hash_del(struct hash *hash, const char *key)
 	struct hash_entry *entry, *entry_end;
 	const struct hash_entry se = {
 		.key = key,
+		.keylen = keylen,
 		.value = NULL
 	};
 
@@ -328,8 +351,9 @@ void hash_iter_init(const struct hash *hash, struct hash_iter *iter)
 	iter->entry = -1;
 }
 
-bool hash_iter_next(struct hash_iter *iter, const char **key,
-							const void **value)
+bool hash_iter_next_bin(struct hash_iter *iter, const char **key,
+			size_t *keylen,
+			const void **value)
 {
 	const struct hash_bucket *b = iter->hash->buckets + iter->bucket;
 	const struct hash_entry *e;
@@ -357,6 +381,8 @@ bool hash_iter_next(struct hash_iter *iter, const char **key,
 		*value = e->value;
 	if (key != NULL)
 		*key = e->key;
+	if (keylen != NULL)
+		*keylen = e->keylen;
 
 	return true;
 }
