@@ -158,7 +158,7 @@ static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
 	if (elf_getshdrstrndx(elf, &shstrndx) != 0)
 		fail("elf_getshdrstrndx() failed: %s\n", elf_errmsg(-1));
 
-	ke = safe_malloc(sizeof(*ke));
+	ke = safe_zmalloc(sizeof(*ke));
 	ke->elf = elf;
 	ke->fd = fd;
 	ke->shstrndx = shstrndx;
@@ -262,7 +262,7 @@ struct ksymtab *ksymtab_new(size_t size)
 	h = hash_new(size, ksymtab_ksym_free);
 	assert(h != NULL);
 
-	ksymtab = safe_malloc(sizeof(*ksymtab));
+	ksymtab = safe_zmalloc(sizeof(*ksymtab));
 	ksymtab->hash = h;
 	/* ksymtab->mark_count is zeroed by the allocator */
 
@@ -277,11 +277,12 @@ struct ksym *ksymtab_add_sym(struct ksymtab *ksymtab,
 	struct hash *h = ksymtab->hash;
 	struct ksym *ksym;
 
-	ksym = safe_malloc(sizeof(*ksym) + len + 1);
+	ksym = safe_zmalloc(sizeof(*ksym) + len + 1);
 	memcpy(ksym->key, str, len);
 	ksym->key[len] = '\0';
 	ksym->value = value;
 	ksym->ksymtab = ksymtab;
+	/* ksym->link is zeroed by the allocator */
 	hash_add(h, ksym->key, ksym);
 
 	return ksym;
@@ -405,7 +406,7 @@ static struct map_entry *map_entry_new(uint64_t value, const char *name)
 {
 	struct map_entry *res;
 
-	res = safe_malloc(sizeof(*res));
+	res = safe_zmalloc(sizeof(*res));
 	res->value = value;
 	res->name = name;
 

@@ -38,7 +38,7 @@ static inline void safe_asprintf(char **strp, const char *fmt, ...) {
 	va_end(arglist);
 }
 
-static inline void *safe_malloc(size_t size) {
+static inline void *safe_zmalloc(size_t size) {
 	void *result = malloc(size);
 	if (result == NULL)
 		fail("Malloc of size %zu failed", size);

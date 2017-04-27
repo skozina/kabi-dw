@@ -30,11 +30,11 @@
 #define	INIT_CAPACITY	10
 
 stack_t *stack_init(void) {
-	stack_t *st = safe_malloc(sizeof (*st));
+	stack_t *st = safe_zmalloc(sizeof (*st));
 
 	st->st_capacity = INIT_CAPACITY;
 	st->st_count = 0;
-	st->st_data = safe_malloc(st->st_capacity * sizeof (*st->st_data));
+	st->st_data = safe_zmalloc(st->st_capacity * sizeof (*st->st_data));
 
 	return (st);
 }

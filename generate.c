@@ -370,7 +370,7 @@ static struct record *record_alloc(void)
 {
 	struct record *rec;
 
-	rec = safe_malloc(sizeof(*rec));
+	rec = safe_zmalloc(sizeof(*rec));
 	return rec;
 }
 
@@ -1639,7 +1639,7 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 void generate(int argc, char **argv) {
 	char *temp_path;
 	char *symbol_file;
-	generate_config_t *conf = safe_malloc(sizeof (*conf));
+	generate_config_t *conf = safe_zmalloc(sizeof (*conf));
 
 	parse_generate_opts(argc, argv, conf, &symbol_file);
 

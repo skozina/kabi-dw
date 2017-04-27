@@ -968,7 +968,7 @@ static obj_t *obj_copy(obj_t *o1)
 {
 	obj_t *o;
 
-	o = safe_malloc(sizeof(*o));
+	o = safe_zmalloc(sizeof(*o));
 	*o = *o1;
 
 	o->type = o1->type;
