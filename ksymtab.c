@@ -148,18 +148,18 @@ static struct ksymtab *print_section(Elf *elf, Elf_Scn *scn) {
 	return parse_ksymtab_strings(data->d_buf, data->d_size);
 }
 
-/* Build list of exported symbols, ie. read seciton __ksymtab_strings */
-struct ksymtab *ksymtab_read(char *filename) {
+static int ksymtab_elf_open(char *filename,
+			    Elf **elf_out,
+			    int *fd_out,
+			    size_t *shstrndx_out)
+{
 	Elf *elf;
 	int fd;
 	Elf_Kind ek;
 	int class;
-	Elf_Scn *scn;
-	GElf_Shdr shdr;
-	size_t shstrndx;
-	char *name;
 	GElf_Ehdr ehdr;
-	struct ksymtab *res = NULL;
+	size_t shstrndx;
+	int ret = -1;
 
 	if (elf_version(EV_CURRENT) == EV_NONE)
 		fail("elf_version() failed: %s\n", elf_errmsg(-1));
@@ -187,6 +187,36 @@ struct ksymtab *ksymtab_read(char *filename) {
 
 	if (elf_getshdrstrndx(elf, &shstrndx) != 0)
 		fail("elf_getshdrstrndx() failed: %s\n", elf_errmsg(-1));
+
+	*elf_out = elf;
+	*fd_out = fd;
+	*shstrndx_out = shstrndx;
+
+	ret = 0;
+done:
+	return ret;
+}
+
+static void ksymtab_elf_close(Elf *elf, int fd)
+{
+	(void) elf_end(elf);
+	(void) close(fd);
+}
+
+/* Build list of exported symbols, ie. read seciton __ksymtab_strings */
+struct ksymtab *ksymtab_read(char *filename) {
+	Elf *elf = NULL;
+	int fd = 0;
+	Elf_Scn *scn;
+	GElf_Shdr shdr;
+	size_t shstrndx;
+	char *name;
+	struct ksymtab *res = NULL;
+	int rc;
+
+	rc = ksymtab_elf_open(filename, &elf, &fd, &shstrndx);
+	if (rc < 0)
+		goto done;
 
 	scn = elf_nextscn(elf, NULL);
 	for (; scn != NULL; scn = elf_nextscn(elf, scn)) {
@@ -226,9 +256,8 @@ struct ksymtab *ksymtab_read(char *filename) {
 	}
 
 done:
-	(void) elf_end(elf);
-	(void) close(fd);
 
+	ksymtab_elf_close(elf, fd);
 	return (res);
 }
 
