@@ -1402,10 +1402,14 @@ static void generate_fake_record(generate_config_t *conf, const char *key)
  * If the symbol not in the checklist, ignore it completely,
  * means, do not mark and do not generate fake record for it either.
  */
-static void process_not_found(const char *key, size_t idx, void *ctx)
+static void process_not_found(struct ksym *exported, void *ctx)
 {
 	generate_config_t *conf = ctx;
 	struct ksym *ksym;
+	const char *key = ksymtab_ksym_get_name(exported);
+
+	if (ksymtab_ksym_is_marked(exported))
+		return;
 
 	if (conf->symbols) {
 		ksym = ksymtab_find(conf->symbols, key);
@@ -1420,31 +1424,39 @@ static void process_not_found(const char *key, size_t idx, void *ctx)
 static bool process_symbol_file(char *path, void *arg) {
 	struct file_ctx fctx;
 	generate_config_t *conf = (generate_config_t *)arg;
+	struct ksymtab *ksymtab;
+	bool ret = true;
 
-	fctx.conf = conf;
-	fctx.ksymtab = ksymtab_read(path, NULL);
+	ksymtab = ksymtab_read(path, NULL);
 
-	if (ksymtab_len(fctx.ksymtab) > 0) {
-		if (conf->verbose)
-			printf("Processing %s\n", path);
-
-		generate_type_info(path, &fctx);
-	} else {
+	if (ksymtab_len(ksymtab) == 0) {
 		if (conf->verbose)
 			printf("Skip %s (no exported symbols)\n", path);
+		goto out;
 	}
 
-	ksymtab_for_each_unmarked(fctx.ksymtab, process_not_found, conf);
+	fctx.conf = conf;
+	fctx.ksymtab = ksymtab;
 
-	ksymtab_free(fctx.ksymtab);
+	if (conf->verbose)
+		printf("Processing %s\n", path);
+
+	generate_type_info(path, &fctx);
+	ksymtab_for_each(ksymtab, process_not_found, conf);
 
 	if (is_all_done(conf))
-		return (false);
-	return (true);
+		ret = false;
+out:
+	ksymtab_free(ksymtab);
+	return ret;
 }
 
-static void print_not_found(const char *s, size_t i, void *ctx)
+static void print_not_found(struct ksym *ksym, void *ctx)
 {
+	const char *s = ksymtab_ksym_get_name(ksym);
+
+	if (ksymtab_ksym_is_marked(ksym))
+		return;
 	printf("%s not found!\n", s);
 }
 
@@ -1474,7 +1486,7 @@ static void generate_symbol_defs(generate_config_t *conf) {
 		fail("Not a file or directory: %s\n", conf->kernel_dir);
 	}
 
-	ksymtab_for_each_unmarked(conf->symbols, print_not_found, NULL);
+	ksymtab_for_each(conf->symbols, print_not_found, NULL);
 
 	record_db_dump(conf->db, conf->kabi_dir);
 	record_db_free(conf->db);
