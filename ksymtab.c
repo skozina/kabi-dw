@@ -299,9 +299,6 @@ struct ksym *ksymtab_copy_sym(struct ksymtab *ksymtab, struct ksym *ksym)
 	return new;
 }
 
-/*
- * Return the index of symbol in the array or -1 if the symbol was not found.
- */
 struct ksym *ksymtab_find(struct ksymtab *ksymtab, const char *name) {
 	struct ksym *v;
 	struct hash *h = ksymtab->hash;
