@@ -1422,7 +1422,7 @@ static bool process_symbol_file(char *path, void *arg) {
 	generate_config_t *conf = (generate_config_t *)arg;
 
 	fctx.conf = conf;
-	fctx.ksymtab = ksymtab_read(path);
+	fctx.ksymtab = ksymtab_read(path, NULL);
 
 	if (ksymtab_len(fctx.ksymtab) > 0) {
 		if (conf->verbose)

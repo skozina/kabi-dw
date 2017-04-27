@@ -422,13 +422,151 @@ static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
 	return (res);
 }
 
-static void symtab_handler(const char *name, uint64_t value, int binding, void *ctx)
+/*
+ * An entry for address -> symbol mapping.
+ * The key will be "value".
+ * We can use name pointer directly from the elf,
+ * it will be freed later.
+ */
+struct map_entry {
+	uint64_t value;
+	const char *name;
+};
+
+static struct map_entry *map_entry_new(uint64_t value, const char *name)
 {
-	printf("Symbol %s, value %lx, binding %d\n", name, value, binding);
+	struct map_entry *res;
+
+	res = safe_malloc(sizeof(*res));
+	res->value = value;
+	res->name = name;
+
+	return res;
 }
 
-/* Build list of exported symbols, ie. read seciton __ksymtab_strings */
-struct ksymtab *ksymtab_read(char *filename)
+struct weak_filter_ctx {
+	struct ksymtab *ksymtab;
+	struct ksymtab *weaks;
+	struct hash *map;
+};
+
+/*
+ * Does two things in one pass on the symbol table:
+ * 1) makes address -> symbol map for GLOBAL symbols;
+ * 2) collecs subset of EXPORTed symbol, which have WEAK binding.
+ */
+static void weak_filter(const char *name, uint64_t value, int bind, void *_ctx)
+{
+	struct weak_filter_ctx *ctx = _ctx;
+	struct map_entry *m;
+	struct ksym *ksym;
+
+	if (bind == STB_GLOBAL) {
+		m = map_entry_new(value, name);
+		hash_add_bin(ctx->map,
+			     (const char *)&m->value, sizeof(m->value), m);
+		return;
+	}
+
+	/* WEAK handling */
+
+	ksym = ksymtab_find(ctx->ksymtab, name);
+	if (ksym == NULL)
+		/* skip non-exported aliases */
+		return;
+
+	ksymtab_add_sym(ctx->weaks, name, strlen(name), value);
+}
+
+struct weak_to_alias_ctx {
+	struct ksymtab *aliases;
+	struct hash *map;
+};
+
+static void weak_to_alias(struct ksym *ksym, void *_ctx)
+{
+	struct weak_to_alias_ctx *ctx = _ctx;
+	struct map_entry *m;
+	uint64_t value = ksymtab_ksym_get_value(ksym);
+	const char *name = ksymtab_ksym_get_name(ksym);
+	struct ksym *alias;
+
+	m = hash_find_bin(ctx->map, (const char *)&value, sizeof(value));
+	if (m == NULL)
+		/* there is no GLOBAL alias for the WEAK exported symbol */
+		return;
+
+	alias = ksymtab_add_sym(ctx->aliases, m->name, strlen(m->name), 0);
+	ksymtab_ksym_set_link(alias, name);
+}
+
+static struct ksymtab *ksymtab_weaks_to_aliases(struct ksymtab *weaks,
+						struct hash *map)
+{
+	struct ksymtab *aliases;
+	struct weak_to_alias_ctx ctx;
+
+	aliases = ksymtab_new(KSYMTAB_SIZE);
+	if (aliases == NULL)
+		fail("Cannot create ksymtab\n");
+
+	ctx.aliases = aliases;
+	ctx.map = map;
+
+	ksymtab_for_each(weaks, weak_to_alias, &ctx);
+
+	return aliases;
+}
+
+/*
+ * Generate weak aliases for the symbols, found in the list of exported.
+ * It will work correctly for one alias only.
+ */
+static struct ksymtab *ksymtab_find_aliases(struct ksymtab *ksymtab,
+					    struct ksymtab_elf *elf)
+{
+	struct ksymtab *aliases;
+	struct ksymtab *weaks;
+	struct hash *map; /* address to name mapping */
+	struct weak_filter_ctx ctx;
+
+	weaks = ksymtab_new(KSYMTAB_SIZE);
+	if (weaks == NULL)
+		fail("Cannot create weaks symtab\n");
+
+	map = hash_new(KSYMTAB_SIZE, free);
+	if (map == NULL)
+		fail("Cannot create address->symbol mapping hash\n");
+
+	ctx.ksymtab = ksymtab;
+	ctx.weaks = weaks;
+	ctx.map = map;
+        /*
+	 * If there's a weak symbol on the whitelist,
+	 * we need to find the proper global
+	 * symbol to generate the type for it.
+	 *
+	 * It is done in two steps below:
+	 * 1) create address -> global symbol mapping and
+	 *    suitable weak symbol list;
+	 * 2) for all weak symbols find its alias with the mapping.
+	 */
+	ksymtab_elf_for_each_global_sym(elf, weak_filter, &ctx);
+	aliases = ksymtab_weaks_to_aliases(weaks, map);
+
+	hash_free(map);
+	ksymtab_free(weaks);
+
+	return aliases;
+}
+
+/*
+ * Build list of exported symbols, ie. read seciton __ksymtab_strings,
+ * analyze symbol table and create table of aliases -- list of global symbols,
+ * which have the same addresses, as weak symbols,
+ * mentioned by __ksymtab_strings
+ */
+struct ksymtab *ksymtab_read(char *filename, struct ksymtab **aliases)
 {
 	struct ksymtab_elf *elf;
 	const char *data;
@@ -443,7 +581,8 @@ struct ksymtab *ksymtab_read(char *filename)
 		goto done;
 
 	res = parse_ksymtab_strings(data, size);
-	ksymtab_elf_for_each_global_sym(elf, symtab_handler, NULL);
+	if (aliases != NULL)
+		*aliases = ksymtab_find_aliases(res, elf);
 
 done:
 	ksymtab_elf_close(elf);

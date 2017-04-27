@@ -50,7 +50,7 @@ static inline char *ksymtab_ksym_get_link(struct ksym *ksym)
 }
 
 extern void ksymtab_free(struct ksymtab *);
-extern struct ksymtab *ksymtab_read(char *);
+extern struct ksymtab *ksymtab_read(char *, struct ksymtab **);
 extern struct ksym *ksymtab_find(struct ksymtab *, const char *);
 extern size_t ksymtab_len(struct ksymtab *);
 extern struct ksymtab *ksymtab_new(size_t);
