@@ -1174,6 +1174,7 @@ static bool is_symbol_valid(struct file_ctx *fctx, Dwarf_Die *die) {
 	generate_config_t *conf = fctx->conf;
 	struct ksym *ksym1 = NULL;
 	struct ksym *ksym2;
+	char *alias_link;
 
 	/* Shortcut, unnamed die cannot be part of whitelist */
 	if (name == NULL)
@@ -1190,6 +1191,14 @@ static bool is_symbol_valid(struct file_ctx *fctx, Dwarf_Die *die) {
 	ksym2 = ksymtab_find(fctx->ksymtab, name);
 	if (ksym2 == NULL)
 		goto out;
+
+	alias_link = ksymtab_ksym_get_link(ksym2);
+	if (alias_link != NULL) {
+		if (conf->verbose)
+			printf("Generating type %s as alias for %s\n",
+			       name, alias_link);
+	}
+
 	/* We don't care about declarations */
 	if (is_declaration(die))
 		goto out;
@@ -1421,19 +1430,38 @@ static void process_not_found(struct ksym *exported, void *ctx)
 	generate_fake_record(conf, key);
 }
 
+static void ksymtab_add_alias(struct ksym *ksym, void *ctx)
+{
+	struct ksymtab *ksymtab = ctx;
+
+	ksymtab_copy_sym(ksymtab, ksym);
+}
+
+static void merge_aliases(struct ksymtab *ksymtab,
+			  struct ksymtab *symbols,
+			  struct ksymtab *aliases)
+{
+	ksymtab_for_each(aliases, ksymtab_add_alias, ksymtab);
+	if (symbols != NULL)
+		ksymtab_for_each(aliases, ksymtab_add_alias, symbols);
+}
+
 static bool process_symbol_file(char *path, void *arg) {
 	struct file_ctx fctx;
 	generate_config_t *conf = (generate_config_t *)arg;
 	struct ksymtab *ksymtab;
+	struct ksymtab *aliases = NULL;
 	bool ret = true;
 
-	ksymtab = ksymtab_read(path, NULL);
+	ksymtab = ksymtab_read(path, &aliases);
 
 	if (ksymtab_len(ksymtab) == 0) {
 		if (conf->verbose)
 			printf("Skip %s (no exported symbols)\n", path);
 		goto out;
 	}
+
+	merge_aliases(ksymtab, conf->symbols, aliases);
 
 	fctx.conf = conf;
 	fctx.ksymtab = ksymtab;
@@ -1447,6 +1475,7 @@ static bool process_symbol_file(char *path, void *arg) {
 	if (is_all_done(conf))
 		ret = false;
 out:
+	ksymtab_free(aliases);
 	ksymtab_free(ksymtab);
 	return ret;
 }
