@@ -18,15 +18,48 @@
 #ifndef KSYMTAB_H_
 #define	KSYMTAB_H_
 
+#include <stdint.h>
+
 struct ksymtab;
-struct ksym;
+struct ksym {
+	uint64_t value;
+	bool mark;
+	char *link;
+	struct ksymtab *ksymtab;
+	char key[];
+};
+
+static inline bool ksymtab_ksym_is_marked(struct ksym *ksym)
+{
+	return ksym->mark;
+}
+
+static inline const char *ksymtab_ksym_get_name(struct ksym *ksym)
+{
+	return ksym->key;
+}
+
+static inline uint64_t ksymtab_ksym_get_value(struct ksym *ksym)
+{
+	return ksym->value;
+}
+
+static inline char *ksymtab_ksym_get_link(struct ksym *ksym)
+{
+	return ksym->link;
+}
 
 extern void ksymtab_free(struct ksymtab *);
 extern struct ksymtab *ksymtab_read(char *);
 extern struct ksym *ksymtab_find(struct ksymtab *, const char *);
 extern size_t ksymtab_len(struct ksymtab *);
 extern struct ksymtab *ksymtab_new(size_t);
-extern void ksymtab_add_sym(struct ksymtab *, const char *, size_t, size_t);
+extern struct ksym *ksymtab_add_sym(struct ksymtab *,
+				    const char *, size_t, uint64_t);
+extern struct ksym *ksymtab_copy_sym(struct ksymtab *, struct ksym *);
+extern void ksymtab_for_each(struct ksymtab *,
+			     void (*f)(struct ksym *, void *),
+			     void *);
 extern void ksymtab_for_each_unmarked(struct ksymtab *,
 				      void (*f)(const char *, size_t, void *),
 				      void *);

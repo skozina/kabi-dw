@@ -37,6 +37,7 @@
 #include "main.h"
 #include "utils.h"
 #include "hash.h"
+#include "ksymtab.h"
 
 #define	KSYMTAB_STRINGS	"__ksymtab_strings"
 #define SYMTAB		".symtab"
@@ -57,12 +58,7 @@ struct ksymtab {
 	size_t mark_count;
 };
 
-struct ksym {
-	size_t idx;
-	bool mark;
-	struct ksymtab *ksymtab;
-	char key[];
-};
+struct ksym;
 
 static int ksymtab_elf_get_section(struct ksymtab_elf *ke,
 				   const char *section,
@@ -230,6 +226,21 @@ void ksymtab_ksym_mark(struct ksym *ksym)
 	ksym->mark = true;
 }
 
+static inline void ksymtab_ksym_set_link(struct ksym *ksym, const char *link)
+{
+	if (ksym->link)
+		free(ksym->link);
+	ksym->link = safe_strdup_or_null(link);
+}
+
+static void ksymtab_ksym_free(void *arg)
+{
+	struct ksym *ksym = arg;
+
+	free(ksym->link);
+	free(ksym);
+}
+
 void ksymtab_free(struct ksymtab *ksymtab)
 {
 	struct hash *h;
@@ -248,7 +259,7 @@ struct ksymtab *ksymtab_new(size_t size)
 	struct hash *h;
 	struct ksymtab *ksymtab;
 
-	h = hash_new(size, free);
+	h = hash_new(size, ksymtab_ksym_free);
 	assert(h != NULL);
 
 	ksymtab = safe_malloc(sizeof(*ksymtab));
@@ -258,10 +269,10 @@ struct ksymtab *ksymtab_new(size_t size)
 	return ksymtab;
 }
 
-void ksymtab_add_sym(struct ksymtab *ksymtab,
-		     const char *str,
-		     size_t len,
-		     size_t idx)
+struct ksym *ksymtab_add_sym(struct ksymtab *ksymtab,
+			     const char *str,
+			     size_t len,
+			     uint64_t value)
 {
 	struct hash *h = ksymtab->hash;
 	struct ksym *ksym;
@@ -269,9 +280,24 @@ void ksymtab_add_sym(struct ksymtab *ksymtab,
 	ksym = safe_malloc(sizeof(*ksym) + len + 1);
 	memcpy(ksym->key, str, len);
 	ksym->key[len] = '\0';
-	ksym->idx = idx;
+	ksym->value = value;
 	ksym->ksymtab = ksymtab;
 	hash_add(h, ksym->key, ksym);
+
+	return ksym;
+}
+
+struct ksym *ksymtab_copy_sym(struct ksymtab *ksymtab, struct ksym *ksym)
+{
+	const char *name = ksymtab_ksym_get_name(ksym);
+	uint64_t value = ksymtab_ksym_get_value(ksym);
+	char *link = ksymtab_ksym_get_link(ksym);
+	struct ksym *new;
+
+	new = ksymtab_add_sym(ksymtab, name, strlen(name), value);
+	ksymtab_ksym_set_link(new, link);
+
+	return new;
 }
 
 /*
@@ -307,14 +333,14 @@ size_t ksymtab_mark_count(struct ksymtab *ksymtab)
 	return ksymtab->mark_count;
 }
 
-void ksymtab_for_each_unmarked(struct ksymtab *ksymtab,
-			       void (*f)(const char *, size_t, void *),
-			       void *ctx)
+void ksymtab_for_each(struct ksymtab *ksymtab,
+		      void (*f)(struct ksym *, void *),
+		      void *ctx)
 {
 	struct hash *h;
 	struct hash_iter iter;
 	const void *v;
-	const struct ksym *vv;
+	struct ksym *vv;
 
 	if (ksymtab == NULL)
 		return;
@@ -323,10 +349,41 @@ void ksymtab_for_each_unmarked(struct ksymtab *ksymtab,
 
 	hash_iter_init(h, &iter);
         while (hash_iter_next(&iter, NULL, &v)) {
-		vv = (const struct ksym *)v;
-		if (! vv->mark)
-			f(vv->key, vv->idx, ctx);
+		vv = (struct ksym *)v;
+		f(vv, ctx);
 	}
+}
+
+struct unmarked_ctx {
+	void (*f)(const char *, size_t, void *);
+	void *ctx;
+};
+
+static void unmarked_callback(struct ksym *ksym, void *_ctx)
+{
+	struct unmarked_ctx *ctx = _ctx;
+	const char *name;
+	size_t idx;
+
+	if (ksymtab_ksym_is_marked(ksym))
+		return;
+
+	name = ksymtab_ksym_get_name(ksym);
+	idx = (size_t)ksymtab_ksym_get_value(ksym);
+
+	ctx->f(name, idx, ctx->ctx);
+}
+
+void ksymtab_for_each_unmarked(struct ksymtab *ksymtab,
+			       void (*f)(const char *, size_t, void *),
+			       void *u_ctx)
+{
+	struct unmarked_ctx ctx = {
+		.f = f,
+		.ctx = u_ctx,
+	};
+
+	ksymtab_for_each(ksymtab, unmarked_callback, &ctx);
 }
 
 /* Parses raw content of  __ksymtab_strings section to a ksymtab */
