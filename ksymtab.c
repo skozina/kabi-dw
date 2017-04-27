@@ -134,20 +134,6 @@ static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
 	return (res);
 }
 
-static struct ksymtab *print_section(Elf *elf, Elf_Scn *scn) {
-	GElf_Shdr shdr;
-	Elf_Data *data;
-
-	if (gelf_getshdr(scn, &shdr) != &shdr)
-		fail("getshdr() failed: %s\n", elf_errmsg(-1));
-
-	data = elf_getdata(scn, NULL);
-	if (data == NULL || data->d_size == 0)
-		fail(KSYMTAB_STRINGS " section empty!\n");
-
-	return parse_ksymtab_strings(data->d_buf, data->d_size);
-}
-
 static int ksymtab_elf_open(char *filename,
 			    Elf **elf_out,
 			    int *fd_out,
@@ -206,11 +192,13 @@ static void ksymtab_elf_close(Elf *elf, int fd)
 static int ksymtab_elf_get_section(Elf *elf,
 				   size_t shstrndx,
 				   const char *section,
-				   Elf_Scn **scn_out)
+				   const char **d_data,
+				   size_t *size)
 {
 	Elf_Scn *scn;
 	GElf_Shdr shdr;
 	char *name;
+	Elf_Data *data;
 
 	scn = elf_nextscn(elf, NULL);
 	for (; scn != NULL; scn = elf_nextscn(elf, scn)) {
@@ -251,7 +239,15 @@ static int ksymtab_elf_get_section(Elf *elf,
 		fail("Unexpected type of section %s: %d\n",
 		     name, shdr.sh_type);
 
-	*scn_out = scn;
+	if (gelf_getshdr(scn, &shdr) != &shdr)
+		fail("getshdr() failed: %s\n", elf_errmsg(-1));
+
+	data = elf_getdata(scn, NULL);
+	if (data == NULL || data->d_size == 0)
+		fail("%s section empty!\n", section);
+
+	*d_data = data->d_buf;
+	*size = data->d_size;
 
 	return 0;
 }
@@ -260,20 +256,22 @@ static int ksymtab_elf_get_section(Elf *elf,
 struct ksymtab *ksymtab_read(char *filename) {
 	Elf *elf = NULL;
 	int fd = 0;
-	Elf_Scn *scn = NULL;
 	size_t shstrndx;
 	struct ksymtab *res = NULL;
 	int rc;
+	const char *data;
+	size_t size;
 
 	rc = ksymtab_elf_open(filename, &elf, &fd, &shstrndx);
 	if (rc < 0)
 		goto done;
 
-	rc = ksymtab_elf_get_section(elf, shstrndx, KSYMTAB_STRINGS, &scn);
+	rc = ksymtab_elf_get_section(elf, shstrndx, KSYMTAB_STRINGS,
+				     &data, &size);
 	if (rc < 0)
 		goto done;
 
-	res = print_section(elf, scn);
+	res = parse_ksymtab_strings(data, size);
 done:
 
 	ksymtab_elf_close(elf, fd);
