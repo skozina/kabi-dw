@@ -42,6 +42,12 @@
 
 #define KSYMTAB_SIZE 8192
 
+struct ksymtab_elf {
+	Elf *elf;
+	size_t shstrndx;
+	int fd;
+};
+
 struct ksymtab {
 	struct hash *hash;
 	size_t mark_count;
@@ -134,18 +140,14 @@ static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
 	return (res);
 }
 
-static int ksymtab_elf_open(char *filename,
-			    Elf **elf_out,
-			    int *fd_out,
-			    size_t *shstrndx_out)
+static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
 {
 	Elf *elf;
 	int fd;
-	Elf_Kind ek;
 	int class;
 	GElf_Ehdr ehdr;
 	size_t shstrndx;
-	int ret = -1;
+	struct ksymtab_elf *ke = NULL;
 
 	if (elf_version(EV_CURRENT) == EV_NONE)
 		fail("elf_version() failed: %s\n", elf_errmsg(-1));
@@ -157,7 +159,7 @@ static int ksymtab_elf_open(char *filename,
 	if ((elf = elf_begin(fd, ELF_C_READ, NULL)) == NULL)
 		fail("elf_begin() failed: %s\n", elf_errmsg(-1));
 
-	if ((ek = elf_kind(elf) != ELF_K_ELF))
+	if (elf_kind(elf) != ELF_K_ELF)
 		goto done;
 
 	if (gelf_getehdr(elf, &ehdr) == NULL)
@@ -174,27 +176,28 @@ static int ksymtab_elf_open(char *filename,
 	if (elf_getshdrstrndx(elf, &shstrndx) != 0)
 		fail("elf_getshdrstrndx() failed: %s\n", elf_errmsg(-1));
 
-	*elf_out = elf;
-	*fd_out = fd;
-	*shstrndx_out = shstrndx;
-
-	ret = 0;
+	ke = safe_malloc(sizeof(*ke));
+	ke->elf = elf;
+	ke->fd = fd;
+	ke->shstrndx = shstrndx;
 done:
-	return ret;
+	return ke;
 }
 
-static void ksymtab_elf_close(Elf *elf, int fd)
+static void ksymtab_elf_close(struct ksymtab_elf *ke)
 {
-	(void) elf_end(elf);
-	(void) close(fd);
+	(void) elf_end(ke->elf);
+	(void) close(ke->fd);
+	free(ke);
 }
 
-static int ksymtab_elf_get_section(Elf *elf,
-				   size_t shstrndx,
+static int ksymtab_elf_get_section(struct ksymtab_elf *ke,
 				   const char *section,
 				   const char **d_data,
 				   size_t *size)
 {
+	Elf *elf = ke->elf;
+	size_t shstrndx = ke->shstrndx;
 	Elf_Scn *scn;
 	GElf_Shdr shdr;
 	char *name;
@@ -253,28 +256,24 @@ static int ksymtab_elf_get_section(Elf *elf,
 }
 
 /* Build list of exported symbols, ie. read seciton __ksymtab_strings */
-struct ksymtab *ksymtab_read(char *filename) {
-	Elf *elf = NULL;
-	int fd = 0;
-	size_t shstrndx;
-	struct ksymtab *res = NULL;
-	int rc;
+struct ksymtab *ksymtab_read(char *filename)
+{
+	struct ksymtab_elf *elf;
 	const char *data;
 	size_t size;
+	struct ksymtab *res = NULL;
 
-	rc = ksymtab_elf_open(filename, &elf, &fd, &shstrndx);
-	if (rc < 0)
-		goto done;
+	elf = ksymtab_elf_open(filename);
+	if (elf == NULL)
+		return NULL;
 
-	rc = ksymtab_elf_get_section(elf, shstrndx, KSYMTAB_STRINGS,
-				     &data, &size);
-	if (rc < 0)
+	if (ksymtab_elf_get_section(elf, KSYMTAB_STRINGS, &data, &size) < 0)
 		goto done;
 
 	res = parse_ksymtab_strings(data, size);
-done:
 
-	ksymtab_elf_close(elf, fd);
+done:
+	ksymtab_elf_close(elf);
 	return (res);
 }
 
