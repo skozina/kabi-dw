@@ -60,57 +60,6 @@ struct ksym {
 	char key[];
 };
 
-static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
-{
-	Elf *elf;
-	int fd;
-	int class;
-	GElf_Ehdr ehdr;
-	size_t shstrndx;
-	struct ksymtab_elf *ke = NULL;
-
-	if (elf_version(EV_CURRENT) == EV_NONE)
-		fail("elf_version() failed: %s\n", elf_errmsg(-1));
-
-	if ((fd = open(filename, O_RDONLY, 0)) < 0)
-		fail("Failed to open file %s: %s\n", filename,
-		    strerror(errno));
-
-	if ((elf = elf_begin(fd, ELF_C_READ, NULL)) == NULL)
-		fail("elf_begin() failed: %s\n", elf_errmsg(-1));
-
-	if (elf_kind(elf) != ELF_K_ELF)
-		goto done;
-
-	if (gelf_getehdr(elf, &ehdr) == NULL)
-		fail("getehdr () failed: %s\n", elf_errmsg(-1));
-
-	/* Check elf header */
-	if (memcmp(&ehdr.e_ident, ELFMAG, SELFMAG) != 0)
-		goto done;
-
-	class = gelf_getclass(elf);
-	if (class != ELFCLASS64 && class != ELFCLASS32)
-		fail("Unsupported elf class: %d\n", class);
-
-	if (elf_getshdrstrndx(elf, &shstrndx) != 0)
-		fail("elf_getshdrstrndx() failed: %s\n", elf_errmsg(-1));
-
-	ke = safe_malloc(sizeof(*ke));
-	ke->elf = elf;
-	ke->fd = fd;
-	ke->shstrndx = shstrndx;
-done:
-	return ke;
-}
-
-static void ksymtab_elf_close(struct ksymtab_elf *ke)
-{
-	(void) elf_end(ke->elf);
-	(void) close(ke->fd);
-	free(ke);
-}
-
 static int ksymtab_elf_get_section(struct ksymtab_elf *ke,
 				   const char *section,
 				   const char **d_data,
@@ -173,6 +122,64 @@ static int ksymtab_elf_get_section(struct ksymtab_elf *ke,
 	*size = data->d_size;
 
 	return 0;
+}
+
+static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
+{
+	Elf *elf;
+	int fd;
+	int class;
+	GElf_Ehdr ehdr;
+	size_t shstrndx;
+	struct ksymtab_elf *ke = NULL;
+
+	if (elf_version(EV_CURRENT) == EV_NONE)
+		fail("elf_version() failed: %s\n", elf_errmsg(-1));
+
+	if ((fd = open(filename, O_RDONLY, 0)) < 0)
+		fail("Failed to open file %s: %s\n", filename,
+		    strerror(errno));
+
+	if ((elf = elf_begin(fd, ELF_C_READ, NULL)) == NULL)
+		fail("elf_begin() failed: %s\n", elf_errmsg(-1));
+
+	if (elf_kind(elf) != ELF_K_ELF)
+		goto done;
+
+	if (gelf_getehdr(elf, &ehdr) == NULL)
+		fail("getehdr () failed: %s\n", elf_errmsg(-1));
+
+	/* Check elf header */
+	if (memcmp(&ehdr.e_ident, ELFMAG, SELFMAG) != 0)
+		goto done;
+
+	class = gelf_getclass(elf);
+	if (class != ELFCLASS64 && class != ELFCLASS32)
+		fail("Unsupported elf class: %d\n", class);
+
+	if (elf_getshdrstrndx(elf, &shstrndx) != 0)
+		fail("elf_getshdrstrndx() failed: %s\n", elf_errmsg(-1));
+
+	ke = safe_malloc(sizeof(*ke));
+	ke->elf = elf;
+	ke->fd = fd;
+	ke->shstrndx = shstrndx;
+done:
+	return ke;
+}
+
+static void ksymtab_elf_close(struct ksymtab_elf *ke)
+{
+	(void) elf_end(ke->elf);
+	(void) close(ke->fd);
+	free(ke);
+}
+
+void ksymtab_ksym_mark(struct ksym *ksym)
+{
+	if (!ksym->mark)
+		ksym->ksymtab->mark_count++;
+	ksym->mark = true;
 }
 
 void ksymtab_free(struct ksymtab *ksymtab)
@@ -272,13 +279,6 @@ void ksymtab_for_each_unmarked(struct ksymtab *ksymtab,
 		if (! vv->mark)
 			f(vv->key, vv->idx, ctx);
 	}
-}
-
-void ksymtab_ksym_mark(struct ksym *ksym)
-{
-	if (!ksym->mark)
-		ksym->ksymtab->mark_count++;
-	ksym->mark = true;
 }
 
 /* Parses raw content of  __ksymtab_strings section to a ksymtab */
