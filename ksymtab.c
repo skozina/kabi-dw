@@ -39,12 +39,16 @@
 #include "hash.h"
 
 #define	KSYMTAB_STRINGS	"__ksymtab_strings"
+#define SYMTAB		".symtab"
+#define STRTAB		".strtab"
 
 #define KSYMTAB_SIZE 8192
 
 struct ksymtab_elf {
 	Elf *elf;
 	size_t shstrndx;
+	const char *strtab;
+	size_t strtab_size;
 	int fd;
 };
 
@@ -107,10 +111,6 @@ static int ksymtab_elf_get_section(struct ksymtab_elf *ke,
 		exit(1);
 	}
 
-	if (shdr.sh_type != SHT_PROGBITS)
-		fail("Unexpected type of section %s: %d\n",
-		     name, shdr.sh_type);
-
 	if (gelf_getshdr(scn, &shdr) != &shdr)
 		fail("getshdr() failed: %s\n", elf_errmsg(-1));
 
@@ -131,6 +131,8 @@ static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
 	int class;
 	GElf_Ehdr ehdr;
 	size_t shstrndx;
+	const char *strtab;
+	size_t strtab_size;
 	struct ksymtab_elf *ke = NULL;
 
 	if (elf_version(EV_CURRENT) == EV_NONE)
@@ -154,7 +156,7 @@ static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
 		goto done;
 
 	class = gelf_getclass(elf);
-	if (class != ELFCLASS64 && class != ELFCLASS32)
+	if (class != ELFCLASS64)
 		fail("Unsupported elf class: %d\n", class);
 
 	if (elf_getshdrstrndx(elf, &shstrndx) != 0)
@@ -164,6 +166,11 @@ static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
 	ke->elf = elf;
 	ke->fd = fd;
 	ke->shstrndx = shstrndx;
+
+	ksymtab_elf_get_section(ke, STRTAB, &strtab, &strtab_size);
+
+	ke->strtab = strtab;
+	ke->strtab_size = strtab_size;
 done:
 	return ke;
 }
@@ -173,6 +180,47 @@ static void ksymtab_elf_close(struct ksymtab_elf *ke)
 	(void) elf_end(ke->elf);
 	(void) close(ke->fd);
 	free(ke);
+}
+
+static void ksymtab_elf_for_each_global_sym(struct ksymtab_elf *ke,
+					    void (*fn)(const char *name,
+						       uint64_t value,
+						       int binding,
+						       void *ctx),
+					    void *ctx)
+{
+	const Elf64_Sym *end;
+	Elf64_Sym *sym;
+	int binding;
+	const char *name;
+	const char *data;
+	size_t size;
+
+	ksymtab_elf_get_section(ke, SYMTAB, &data, &size);
+
+	sym = (Elf64_Sym *)data;
+	end = (Elf64_Sym *)(data + size);
+
+	sym++; /* skip first zero record */
+	for (; sym < end; sym++) {
+
+		binding = ELF64_ST_BIND(sym->st_info);
+		if (! (binding == STB_GLOBAL ||
+		       binding == STB_WEAK))
+			continue;
+
+		if (sym->st_name == 0)
+			continue;
+
+		if (sym->st_name > ke->strtab_size)
+			fail("Symbol name index out of range\n");
+
+		name = ke->strtab + sym->st_name;
+		if (name == NULL)
+			fail("Could not find symbol name\n");
+
+		fn(name, sym->st_value, binding, ctx);
+	}
 }
 
 void ksymtab_ksym_mark(struct ksym *ksym)
@@ -317,6 +365,11 @@ static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
 	return (res);
 }
 
+static void symtab_handler(const char *name, uint64_t value, int binding, void *ctx)
+{
+	printf("Symbol %s, value %lx, binding %d\n", name, value, binding);
+}
+
 /* Build list of exported symbols, ie. read seciton __ksymtab_strings */
 struct ksymtab *ksymtab_read(char *filename)
 {
@@ -333,6 +386,7 @@ struct ksymtab *ksymtab_read(char *filename)
 		goto done;
 
 	res = parse_ksymtab_strings(data, size);
+	ksymtab_elf_for_each_global_sym(elf, symtab_handler, NULL);
 
 done:
 	ksymtab_elf_close(elf);
