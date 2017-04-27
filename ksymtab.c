@@ -203,20 +203,14 @@ static void ksymtab_elf_close(Elf *elf, int fd)
 	(void) close(fd);
 }
 
-/* Build list of exported symbols, ie. read seciton __ksymtab_strings */
-struct ksymtab *ksymtab_read(char *filename) {
-	Elf *elf = NULL;
-	int fd = 0;
+static int ksymtab_elf_get_section(Elf *elf,
+				   size_t shstrndx,
+				   const char *section,
+				   Elf_Scn **scn_out)
+{
 	Elf_Scn *scn;
 	GElf_Shdr shdr;
-	size_t shstrndx;
 	char *name;
-	struct ksymtab *res = NULL;
-	int rc;
-
-	rc = ksymtab_elf_open(filename, &elf, &fd, &shstrndx);
-	if (rc < 0)
-		goto done;
 
 	scn = elf_nextscn(elf, NULL);
 	for (; scn != NULL; scn = elf_nextscn(elf, scn)) {
@@ -225,36 +219,61 @@ struct ksymtab *ksymtab_read(char *filename) {
 		if ((name = elf_strptr(elf, shstrndx, shdr.sh_name)) == NULL)
 			fail("elf_strptr() failed: %s\n", elf_errmsg(-1));
 
-		if (strcmp(name, KSYMTAB_STRINGS) != 0)
-			continue;
-
-		/*
-		 * This is stupid. Fedora/EL builds -debuginfo packages
-		 * by running eu-strip --reloc-debug-sections
-		 * which places only standard .debug* sections into the
-		 * -debuginfo modules. The sections which cannot be stripped
-		 * completely (because they are allocated) are changed to
-		 * SHT_NOBITS type to indicate you need to look in the original
-		 * (non-debug) module for them. But those are xzipped.
-		 * So we reject such stuff. We only support fresh output from
-		 * the kernel build.
-		 */
-		if (shdr.sh_type == SHT_NOBITS) {
-			printf("The " KSYMTAB_STRINGS " section has type "
-			    "SHT_NOBITS. Most likely you're running this "
-			    "tool on modules coming from kernel-debuginfo "
-			    "packages. They don't contain the " KSYMTAB_STRINGS
-			    " section, you need to use the raw modules before "
-			    "they are stripped\n");
-			exit(1);
-		}
-
-		if (shdr.sh_type != SHT_PROGBITS)
-			fail("Unexpected type of section %s: %d\n",
-			    name, shdr.sh_type);
-		res = print_section(elf, scn);
+		if (strcmp(name, section) == 0)
+			break;
 	}
 
+	if (scn == NULL) /* no suitable section */
+		return -1;
+
+	/*
+	 * This is stupid. Fedora/EL builds -debuginfo packages
+	 * by running eu-strip --reloc-debug-sections
+	 * which places only standard .debug* sections into the
+	 * -debuginfo modules. The sections which cannot be stripped
+	 * completely (because they are allocated) are changed to
+	 * SHT_NOBITS type to indicate you need to look in the original
+	 * (non-debug) module for them. But those are xzipped.
+	 * So we reject such stuff. We only support fresh output from
+	 * the kernel build.
+	 */
+	if (shdr.sh_type == SHT_NOBITS) {
+		printf("The %s section has type "
+		       "SHT_NOBITS. Most likely you're running this "
+		       "tool on modules coming from kernel-debuginfo "
+		       "packages. They don't contain the %s"
+		       " section, you need to use the raw modules before "
+		       "they are stripped\n", section, section);
+		exit(1);
+	}
+
+	if (shdr.sh_type != SHT_PROGBITS)
+		fail("Unexpected type of section %s: %d\n",
+		     name, shdr.sh_type);
+
+	*scn_out = scn;
+
+	return 0;
+}
+
+/* Build list of exported symbols, ie. read seciton __ksymtab_strings */
+struct ksymtab *ksymtab_read(char *filename) {
+	Elf *elf = NULL;
+	int fd = 0;
+	Elf_Scn *scn = NULL;
+	size_t shstrndx;
+	struct ksymtab *res = NULL;
+	int rc;
+
+	rc = ksymtab_elf_open(filename, &elf, &fd, &shstrndx);
+	if (rc < 0)
+		goto done;
+
+	rc = ksymtab_elf_get_section(elf, shstrndx, KSYMTAB_STRINGS, &scn);
+	if (rc < 0)
+		goto done;
+
+	res = print_section(elf, scn);
 done:
 
 	ksymtab_elf_close(elf, fd);
