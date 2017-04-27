@@ -98,9 +98,9 @@ void ksymtab_add_sym(struct ksymtab *ksymtab,
 	hash_add(h, ksym->key, ksym);
 }
 
-static struct ksymtab *print_section(Elf *elf, Elf_Scn *scn) {
-	GElf_Shdr shdr;
-	Elf_Data *data;
+/* Parses raw content of  __ksymtab_strings section to a ksymtab */
+static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
+{
 	char *p, *oldp;
 	size_t size = 0;
 	size_t i = 0;
@@ -108,20 +108,13 @@ static struct ksymtab *print_section(Elf *elf, Elf_Scn *scn) {
 
 	res = ksymtab_new(KSYMTAB_SIZE);
 
-	if (gelf_getshdr(scn, &shdr) != &shdr)
-		fail("getshdr() failed: %s\n", elf_errmsg(-1));
-
-	data = elf_getdata(scn, NULL);
-	if (data == NULL || data->d_size == 0)
-		fail(KSYMTAB_STRINGS " section empty!\n");
-
-	p = oldp = (char *)data->d_buf;
+	p = oldp = (char *)d_buf;
 
 	/* Make sure we have the final '\0' */
-	if (p[data->d_size - 1] != '\0')
+	if (p[d_size - 1] != '\0')
 		fail("Mallformed " KSYMTAB_STRINGS " section: %s\n", p);
 
-	for (size = 0; size < data->d_size; size++, p++) {
+	for (size = 0; size < d_size; size++, p++) {
 		/* End of symbol? */
 		if (*p == '\0') {
 			size_t len = p - oldp;
@@ -139,6 +132,20 @@ static struct ksymtab *print_section(Elf *elf, Elf_Scn *scn) {
 	}
 
 	return (res);
+}
+
+static struct ksymtab *print_section(Elf *elf, Elf_Scn *scn) {
+	GElf_Shdr shdr;
+	Elf_Data *data;
+
+	if (gelf_getshdr(scn, &shdr) != &shdr)
+		fail("getshdr() failed: %s\n", elf_errmsg(-1));
+
+	data = elf_getdata(scn, NULL);
+	if (data == NULL || data->d_size == 0)
+		fail(KSYMTAB_STRINGS " section empty!\n");
+
+	return parse_ksymtab_strings(data->d_buf, data->d_size);
 }
 
 /* Build list of exported symbols, ie. read seciton __ksymtab_strings */
