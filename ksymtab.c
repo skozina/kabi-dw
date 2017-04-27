@@ -104,42 +104,6 @@ void ksymtab_add_sym(struct ksymtab *ksymtab,
 	hash_add(h, ksym->key, ksym);
 }
 
-/* Parses raw content of  __ksymtab_strings section to a ksymtab */
-static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
-{
-	char *p, *oldp;
-	size_t size = 0;
-	size_t i = 0;
-	struct ksymtab *res;
-
-	res = ksymtab_new(KSYMTAB_SIZE);
-
-	p = oldp = (char *)d_buf;
-
-	/* Make sure we have the final '\0' */
-	if (p[d_size - 1] != '\0')
-		fail("Mallformed " KSYMTAB_STRINGS " section: %s\n", p);
-
-	for (size = 0; size < d_size; size++, p++) {
-		/* End of symbol? */
-		if (*p == '\0') {
-			size_t len = p - oldp;
-
-			/* Skip empty strings */
-			if (len == 0) {
-				oldp = p + 1;
-				continue;
-			}
-
-			ksymtab_add_sym(res, oldp, len, i);
-			i++;
-			oldp = p + 1;
-		}
-	}
-
-	return (res);
-}
-
 static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
 {
 	Elf *elf;
@@ -255,28 +219,6 @@ static int ksymtab_elf_get_section(struct ksymtab_elf *ke,
 	return 0;
 }
 
-/* Build list of exported symbols, ie. read seciton __ksymtab_strings */
-struct ksymtab *ksymtab_read(char *filename)
-{
-	struct ksymtab_elf *elf;
-	const char *data;
-	size_t size;
-	struct ksymtab *res = NULL;
-
-	elf = ksymtab_elf_open(filename);
-	if (elf == NULL)
-		return NULL;
-
-	if (ksymtab_elf_get_section(elf, KSYMTAB_STRINGS, &data, &size) < 0)
-		goto done;
-
-	res = parse_ksymtab_strings(data, size);
-
-done:
-	ksymtab_elf_close(elf);
-	return (res);
-}
-
 /*
  * Return the index of symbol in the array or -1 if the symbol was not found.
  */
@@ -337,4 +279,62 @@ void ksymtab_ksym_mark(struct ksym *ksym)
 	if (!ksym->mark)
 		ksym->ksymtab->mark_count++;
 	ksym->mark = true;
+}
+
+/* Parses raw content of  __ksymtab_strings section to a ksymtab */
+static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
+{
+	char *p, *oldp;
+	size_t size = 0;
+	size_t i = 0;
+	struct ksymtab *res;
+
+	res = ksymtab_new(KSYMTAB_SIZE);
+
+	p = oldp = (char *)d_buf;
+
+	/* Make sure we have the final '\0' */
+	if (p[d_size - 1] != '\0')
+		fail("Mallformed " KSYMTAB_STRINGS " section: %s\n", p);
+
+	for (size = 0; size < d_size; size++, p++) {
+		/* End of symbol? */
+		if (*p == '\0') {
+			size_t len = p - oldp;
+
+			/* Skip empty strings */
+			if (len == 0) {
+				oldp = p + 1;
+				continue;
+			}
+
+			ksymtab_add_sym(res, oldp, len, i);
+			i++;
+			oldp = p + 1;
+		}
+	}
+
+	return (res);
+}
+
+/* Build list of exported symbols, ie. read seciton __ksymtab_strings */
+struct ksymtab *ksymtab_read(char *filename)
+{
+	struct ksymtab_elf *elf;
+	const char *data;
+	size_t size;
+	struct ksymtab *res = NULL;
+
+	elf = ksymtab_elf_open(filename);
+	if (elf == NULL)
+		return NULL;
+
+	if (ksymtab_elf_get_section(elf, KSYMTAB_STRINGS, &data, &size) < 0)
+		goto done;
+
+	res = parse_ksymtab_strings(data, size);
+
+done:
+	ksymtab_elf_close(elf);
+	return (res);
 }
