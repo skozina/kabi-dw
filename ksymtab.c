@@ -60,50 +60,6 @@ struct ksym {
 	char key[];
 };
 
-void ksymtab_free(struct ksymtab *ksymtab)
-{
-	struct hash *h;
-
-	if (ksymtab == NULL)
-		return;
-
-	h = ksymtab->hash;
-
-	hash_free(h);
-	free(ksymtab);
-}
-
-struct ksymtab *ksymtab_new(size_t size)
-{
-	struct hash *h;
-	struct ksymtab *ksymtab;
-
-	h = hash_new(size, free);
-	assert(h != NULL);
-
-	ksymtab = safe_malloc(sizeof(*ksymtab));
-	ksymtab->hash = h;
-	/* ksymtab->mark_count is zeroed by the allocator */
-
-	return ksymtab;
-}
-
-void ksymtab_add_sym(struct ksymtab *ksymtab,
-		     const char *str,
-		     size_t len,
-		     size_t idx)
-{
-	struct hash *h = ksymtab->hash;
-	struct ksym *ksym;
-
-	ksym = safe_malloc(sizeof(*ksym) + len + 1);
-	memcpy(ksym->key, str, len);
-	ksym->key[len] = '\0';
-	ksym->idx = idx;
-	ksym->ksymtab = ksymtab;
-	hash_add(h, ksym->key, ksym);
-}
-
 static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
 {
 	Elf *elf;
@@ -217,6 +173,50 @@ static int ksymtab_elf_get_section(struct ksymtab_elf *ke,
 	*size = data->d_size;
 
 	return 0;
+}
+
+void ksymtab_free(struct ksymtab *ksymtab)
+{
+	struct hash *h;
+
+	if (ksymtab == NULL)
+		return;
+
+	h = ksymtab->hash;
+
+	hash_free(h);
+	free(ksymtab);
+}
+
+struct ksymtab *ksymtab_new(size_t size)
+{
+	struct hash *h;
+	struct ksymtab *ksymtab;
+
+	h = hash_new(size, free);
+	assert(h != NULL);
+
+	ksymtab = safe_malloc(sizeof(*ksymtab));
+	ksymtab->hash = h;
+	/* ksymtab->mark_count is zeroed by the allocator */
+
+	return ksymtab;
+}
+
+void ksymtab_add_sym(struct ksymtab *ksymtab,
+		     const char *str,
+		     size_t len,
+		     size_t idx)
+{
+	struct hash *h = ksymtab->hash;
+	struct ksym *ksym;
+
+	ksym = safe_malloc(sizeof(*ksym) + len + 1);
+	memcpy(ksym->key, str, len);
+	ksym->key[len] = '\0';
+	ksym->idx = idx;
+	ksym->ksymtab = ksymtab;
+	hash_add(h, ksym->key, ksym);
 }
 
 /*
