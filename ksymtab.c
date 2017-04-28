@@ -87,23 +87,21 @@ static int ksymtab_elf_get_section(struct ksymtab_elf *ke,
 		return -1;
 
 	/*
-	 * This is stupid. Fedora/EL builds -debuginfo packages
-	 * by running eu-strip --reloc-debug-sections
-	 * which places only standard .debug* sections into the
-	 * -debuginfo modules. The sections which cannot be stripped
-	 * completely (because they are allocated) are changed to
-	 * SHT_NOBITS type to indicate you need to look in the original
+	 * This is stupid. Fedora/EL builds -debuginfo packages by running
+	 * eu-strip --reloc-debug-sections which places only standard .debug*
+	 * sections into the -debuginfo modules. The sections which cannot
+	 * be stripped completely (because they are allocated) are changed
+	 * to SHT_NOBITS type to indicate you need to look in the original
 	 * (non-debug) module for them. But those are xzipped.
-	 * So we reject such stuff. We only support fresh output from
-	 * the kernel build.
+	 * So we reject such stuff. We only support fresh output from the
+	 * kernel build.
 	 */
 	if (shdr.sh_type == SHT_NOBITS) {
-		printf("The %s section has type "
-		       "SHT_NOBITS. Most likely you're running this "
-		       "tool on modules coming from kernel-debuginfo "
-		       "packages. They don't contain the %s"
-		       " section, you need to use the raw modules before "
-		       "they are stripped\n", section, section);
+		printf("The %s section has type SHT_NOBITS. Most likely you're "
+		    "running this tool on modules coming from kernel-debuginfo "
+		    "packages. They don't contain the %s section, you need to "
+		    "use the raw modules before they are stripped\n", section,
+		    section);
 		exit(1);
 	}
 
