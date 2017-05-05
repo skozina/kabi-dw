@@ -145,6 +145,9 @@ struct record {
 	stack_t *stack;
 	obj_t *obj;
 	bool should_free_cu;
+	char *link;
+	void (*free)(struct record *);
+	void (*dump)(struct record *, FILE *);
 };
 
 /* List of types built-in the compiler */
@@ -374,11 +377,10 @@ static struct record *record_alloc(void)
 	return rec;
 }
 
-static void record_free(struct record *rec)
+static void record_free_regular(struct record *rec)
 {
 	void *data;
 
-	free(rec->key);
 	free(rec->base_file);
 	free(rec->origin);
 	if (rec->should_free_cu)
@@ -389,7 +391,19 @@ static void record_free(struct record *rec)
 	stack_destroy(rec->stack);
 
 	obj_free(rec->obj);
+}
 
+static void record_free_weak(struct record *rec)
+{
+	free(rec->link);
+}
+
+static void record_free(struct record *rec)
+{
+	free(rec->key);
+
+	if (rec->free)
+		rec->free(rec);
 	free(rec);
 }
 
@@ -406,7 +420,9 @@ static void record_get(struct record *rec)
 	rec->ref_count++;
 }
 
-static struct record *record_new(const char *key)
+static void record_dump_regular(struct record *rec, FILE *f);
+
+static struct record *record_new_regular(const char *key)
 {
 	struct record *rec;
 
@@ -414,7 +430,50 @@ static struct record *record_new(const char *key)
 	rec->key = safe_strdup(key);
 	rec->stack = stack_init();
 	rec->cu = "CU \"<nottracked>\"\n";
+	rec->free = record_free_regular;
+	rec->dump = record_dump_regular;
 	record_get(rec);
+	return rec;
+}
+
+static void record_dump_assembly(struct record *rec, FILE *f);
+
+static struct record *record_new_assembly(const char *key)
+{
+	struct record *rec;
+
+	rec = record_alloc();
+	rec->key = safe_strdup(key);
+
+	/*
+	 * The symbol not necessary belongs to an assembly function,
+	 * it is actually "no definition found in the debug information",
+	 * but the main goal is to find the assembly ones.
+	 */
+
+	rec->free = NULL;
+	rec->dump = record_dump_assembly;
+
+	record_get(rec);
+
+	return rec;
+}
+
+static void record_dump_weak(struct record *rec, FILE *f);
+
+static struct record *record_new_weak(const char *key, const char *link)
+{
+	struct record *rec;
+
+	rec = record_alloc();
+	rec->key = safe_strdup(key);
+	rec->link = safe_strdup(link);
+
+	rec->free = record_free_weak;
+	rec->dump = record_dump_weak;
+
+	record_get(rec);
+
 	return rec;
 }
 
@@ -511,7 +570,7 @@ static struct record *record_start(struct cu_ctx *ctx,
 	if (conf->verbose)
 		printf("Generating %s\n", key);
 
-	rec = record_new(key);
+	rec = record_new_regular(key);
 
 	if (conf->gen_extra)
 		record_add_cu(rec, cu_die);
@@ -554,11 +613,43 @@ static void record_stack_dump_and_clear(struct record *rec, FILE *f)
 	}
 }
 
+static void record_dump_regular(struct record *rec, FILE *f)
+{
+	int rc;
+
+	rc = fputs(rec->cu, f);
+	if (rc == EOF)
+		fail("Could not put CU name");
+	rc = fputs(rec->origin, f);
+	if (rc == EOF)
+		fail("Could not put origin");
+
+	record_stack_dump_and_clear(rec, f);
+	obj_dump(rec->obj, f);
+}
+
+static void record_dump_assembly(struct record *rec, FILE *f)
+{
+	int rc;
+
+	rc = fprintf(f, "assembly %s\n", rec->key);
+	if (rc < 0)
+		fail("Could not put assembly\n");
+}
+
+static void record_dump_weak(struct record *rec, FILE *f)
+{
+	int rc;
+
+	rc = fprintf(f, "weak %s -> %s\n", rec->key, rec->link);
+	if (rc < 0)
+		fail("Could not put weak link\n");
+}
+
 static void record_dump(struct record *rec, const char *dir)
 {
 	char path[PATH_MAX];
 	FILE *f;
-	int rc;
 	char *slash;
 
 	snprintf(path, sizeof(path), "%s/%s", dir, rec->key);
@@ -573,15 +664,7 @@ static void record_dump(struct record *rec, const char *dir)
 	if (f == NULL)
 		fail("Cannot create record file '%s': %m", path);
 
-	rc = fputs(rec->cu, f);
-	if (rc == EOF)
-		fail("Could not put CU name");
-	rc = fputs(rec->origin, f);
-	if (rc == EOF)
-		fail("Could not put origin");
-
-	record_stack_dump_and_clear(rec, f);
-	obj_dump(rec->obj, f);
+	rec->dump(rec, f);
 
 	fclose(f);
 }
@@ -1174,7 +1257,6 @@ static bool is_symbol_valid(struct file_ctx *fctx, Dwarf_Die *die) {
 	generate_config_t *conf = fctx->conf;
 	struct ksym *ksym1 = NULL;
 	struct ksym *ksym2;
-	char *alias_link;
 
 	/* Shortcut, unnamed die cannot be part of whitelist */
 	if (name == NULL)
@@ -1191,13 +1273,6 @@ static bool is_symbol_valid(struct file_ctx *fctx, Dwarf_Die *die) {
 	ksym2 = ksymtab_find(fctx->ksymtab, name);
 	if (ksym2 == NULL)
 		goto out;
-
-	alias_link = ksymtab_ksym_get_link(ksym2);
-	if (alias_link != NULL) {
-		if (conf->verbose)
-			printf("Generating type %s as alias for %s\n",
-			       name, alias_link);
-	}
 
 	/* We don't care about declarations */
 	if (is_declaration(die))
@@ -1365,40 +1440,42 @@ static bool is_all_done(generate_config_t *conf) {
 	return ksymtab_mark_count(conf->symbols) == conf->symbol_cnt;
 }
 
-static struct record *fake_record_new(const char *key)
-{
-	struct record *rec;
-	obj_t *obj;
-
-	rec = record_new(key);
-
-	/*
-	 * The symbol not necessary belongs to an assembly function,
-	 * it is actually "no definition found in the debug information",
-	 * but the main goal is to find the assembly ones.
-	 */
-	rec->origin = safe_strdup("File <unknown>/assembly.S:0\n");
-	obj = obj_basetype_new(safe_strdup("void"));
-	obj = obj_func_new_add(safe_strdup(key), obj);
-
-	record_close(rec, obj);
-
-	return rec;
-}
-
-static void generate_fake_record(generate_config_t *conf, const char *key)
+static void generate_assembly_record(generate_config_t *conf, const char *key)
 {
 	struct record *rec;
 	char *new_key;
 
 	if (conf->verbose)
-		printf("Generating fake record for %s\n", key);
+		printf("Generating assembly record for %s\n", key);
 
-	rec = fake_record_new(key);
+	rec = record_new_assembly(key);
 	new_key = record_db_add(conf->db, rec);
 
 	record_put(rec);
 	free(new_key);
+}
+
+static bool try_generate_alias(generate_config_t *conf, struct ksym *ksym)
+{
+	char *link = ksymtab_ksym_get_link(ksym);
+	const char *name = ksymtab_ksym_get_name(ksym);
+	struct record *rec;
+	char *new_key;
+
+	if (!link)
+		return false;
+
+	if (conf->verbose)
+		printf("Generating weak record %s -> %s\n",
+		       name, link);
+
+	rec = record_new_weak(name, link);
+	new_key = record_db_add(conf->db, rec);
+
+	record_put(rec);
+	free(new_key);
+
+	return true;
 }
 
 /*
@@ -1427,7 +1504,8 @@ static void process_not_found(struct ksym *exported, void *ctx)
 		ksymtab_ksym_mark(ksym);
 	}
 
-	generate_fake_record(conf, key);
+	if (!try_generate_alias(conf, exported))
+		generate_assembly_record(conf, key);
 }
 
 static void ksymtab_add_alias(struct ksym *ksym, void *ctx)
@@ -1437,11 +1515,30 @@ static void ksymtab_add_alias(struct ksym *ksym, void *ctx)
 	ksymtab_copy_sym(ksymtab, ksym);
 }
 
+static void ksymtab_add_and_link_alias(struct ksym *ksym, void *ctx)
+{
+	struct ksymtab *ksymtab = ctx;
+	char *link;
+	const char *name;
+	struct ksym *link_ksym;
+
+	link = ksymtab_ksym_get_link(ksym);
+	link_ksym = ksymtab_find(ksymtab, link);
+
+	/* if we linked, there must be the symbol in the symtab */
+	assert(link_ksym != NULL);
+
+	name = ksymtab_ksym_get_name(ksym);
+	ksymtab_ksym_set_link(link_ksym, name);
+
+	ksymtab_copy_sym(ksymtab, ksym);
+}
+
 static void merge_aliases(struct ksymtab *ksymtab,
 			  struct ksymtab *symbols,
 			  struct ksymtab *aliases)
 {
-	ksymtab_for_each(aliases, ksymtab_add_alias, ksymtab);
+	ksymtab_for_each(aliases, ksymtab_add_and_link_alias, ksymtab);
 	if (symbols != NULL)
 		ksymtab_for_each(aliases, ksymtab_add_alias, symbols);
 }
