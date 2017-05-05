@@ -39,6 +39,8 @@ HEX		[a-fA-F0-9]
 "typedef"	{ return(TYPEDEF); }
 "union"		{ return(UNION); }
 "volatile"	{ return(VOLATILE); }
+"assembly"	{ return(ASSEMBLY); }
+"weak"		{ return(WEAK); }
 
 "..."		{ return(ELLIPSIS); }
 

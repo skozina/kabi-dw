@@ -114,6 +114,8 @@ static int cmp_node_reffile(obj_t *o1, obj_t *o2) {
 static int _cmp_nodes(obj_t *o1, obj_t *o2, bool search) {
 	if ((o1->type != o2->type) ||
 	    cmp_str(o1->name, o2->name) ||
+	    (is_weak(o1) != is_weak(o2)) ||
+	    (is_weak(o1) && is_weak(o2) && cmp_str(o1->link, o2->link)) ||
 	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
 	    (has_constant(o1) && (o1->constant != o2->constant)) ||
 	    (has_index(o1) && (o1->index != o2->index)) ||

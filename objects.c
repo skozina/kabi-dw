@@ -153,6 +153,9 @@ static void _obj_free(obj_t *o, obj_t *skip) {
 	if(o->ptr)
 		_obj_free(o->ptr, skip);
 
+	if (is_weak(o))
+		free(o->link);
+
 	free(o);
 }
 
@@ -200,6 +203,8 @@ CREATE_NEW_ADD_FUNC(struct_member)
 CREATE_NEW_ADD_FUNC_NONAME(ptr)
 CREATE_NEW_ADD_FUNC_NONAME(array)
 CREATE_NEW_ADD_FUNC_NONAME(qualifier)
+CREATE_NEW_FUNC(assembly)
+CREATE_NEW_FUNC(weak)
 
 obj_t *obj_basetype_new(char *base_type) {
 	obj_t *new = obj_new(__type_base, NULL);
@@ -223,6 +228,8 @@ const char *obj_type_name[NR_OBJ_TYPES+1] =
 	 "type qualifier",
 	 "base",
 	 "constant",
+	 "assembly",
+	 "weak",
 	 "unknown type"
 	};
 
@@ -562,6 +569,26 @@ static pp_t print_qualifier(obj_t *o, int depth, const char *prefix) {
 	return ret;
 }
 
+static pp_t print_assembly(obj_t *o, int depth, const char *prefix) {
+	pp_t ret = {NULL, NULL};
+
+	prefix_str(&ret.prefix, "assembly ");
+	postfix_str(&ret.prefix, o->name);
+
+	return ret;
+}
+
+static pp_t print_weak(obj_t *o, int depth, const char *prefix) {
+	pp_t ret = {NULL, NULL};
+
+	prefix_str(&ret.prefix, "weak ");
+	postfix_str(&ret.prefix, o->name);
+	postfix_str(&ret.prefix, " -> ");
+	postfix_str(&ret.prefix, o->link);
+
+	return ret;
+}
+
 #define BASIC_CASE(type)				\
 	case __type_##type:				\
 		ret = print_##type(o, depth, prefix);	\
@@ -594,6 +621,8 @@ static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix) {
 	BASIC_CASE(func);
 	BASIC_CASE(array);
 	BASIC_CASE(ptr);
+	BASIC_CASE(assembly);
+	BASIC_CASE(weak);
 	case __type_var:
 	case __type_struct_member:
 		ret = print_varlike(o, depth, prefix);

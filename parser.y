@@ -48,6 +48,8 @@
 %token CONST VOLATILE
 %token STRUCT UNION ENUM ELLIPSIS
 %token STACK
+%token ASSEMBLY
+%token WEAK
 
 %type <str> type_qualifier
 %type <obj> typed_type base_type reference_file array_type
@@ -55,16 +57,40 @@
 %type <obj> union_type struct_type struct_elt
 %type <obj> declaration_var declaration_typedef declaration kabi_dw_file
 %type <list> elt_list arg_list enum_list struct_list
+%type <obj> assembly_file weak_file
 
 %parse-param {obj_t **root}
 
 %%
 
 kabi_dw_file:
-	cu_file source_file stack_list declaration NEWLINE
+	assembly_file
+	{
+		$$ = *root = $assembly_file;
+	}
+        | weak_file
+	{
+		$$ = *root = $weak_file;
+	}
+	| cu_file source_file stack_list declaration NEWLINE
 	{
 	    $$ = *root = $declaration;
 	    obj_fill_parent(*root);
+	}
+	;
+
+assembly_file:
+	ASSEMBLY IDENTIFIER NEWLINE
+	{
+		$$ = obj_assembly_new($IDENTIFIER);
+	}
+	;
+
+weak_file:
+        WEAK IDENTIFIER STACK IDENTIFIER NEWLINE
+	{
+		$$ = obj_weak_new($2);
+		$$->link = $4;
 	}
 	;
 

@@ -45,6 +45,8 @@ typedef enum {
 	__type_qualifier, /* a type qualifier such as "const" or "volatile" */
 	__type_base,
 	__type_constant, /* An element of an enumeration */
+	__type_assembly,
+	__type_weak,
 	NR_OBJ_TYPES
 } obj_types;
 
@@ -76,6 +78,7 @@ typedef struct obj_list_head {
  *		(var) type
  * constant:	(constant) constant value of an enumeration
  * index:	index of array
+ * link:	weak alias link
  * offset:	(var) offset of a struct member
  * is_bitfield: (var) It's a bitfield
  * first_bit, last_bit: (var) bit range within the offset.
@@ -92,6 +95,7 @@ typedef struct obj {
 	union {
 		unsigned long constant;
 		unsigned long index;
+		char *link;
 		struct {
 			unsigned long offset;
 			unsigned char is_bitfield, first_bit, last_bit;
@@ -152,6 +156,10 @@ static inline bool is_n_ary(obj_t *o) {
 	}
 }
 
+static inline bool is_weak(obj_t *o) {
+	return o->type == __type_weak;
+}
+
 /*
  * Display options
  *
@@ -188,6 +196,8 @@ obj_t *obj_struct_member_new_add(char *name, obj_t *obj);
 obj_t *obj_ptr_new_add(obj_t *obj);
 obj_t *obj_array_new_add(obj_t *obj);
 obj_t *obj_qualifier_new_add(obj_t *obj);
+obj_t *obj_assembly_new(char *name);
+obj_t *obj_weak_new(char *name);
 
 obj_t *obj_basetype_new(char *base_type);
 
