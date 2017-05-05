@@ -224,13 +224,6 @@ void ksymtab_ksym_mark(struct ksym *ksym)
 	ksym->mark = true;
 }
 
-static inline void ksymtab_ksym_set_link(struct ksym *ksym, const char *link)
-{
-	if (ksym->link)
-		free(ksym->link);
-	ksym->link = safe_strdup_or_null(link);
-}
-
 static void ksymtab_ksym_free(void *arg)
 {
 	struct ksym *ksym = arg;

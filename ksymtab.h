@@ -49,6 +49,13 @@ static inline char *ksymtab_ksym_get_link(struct ksym *ksym)
 	return ksym->link;
 }
 
+static inline void ksymtab_ksym_set_link(struct ksym *ksym, const char *link)
+{
+	if (ksym->link)
+		free(ksym->link);
+	ksym->link = safe_strdup_or_null(link);
+}
+
 extern void ksymtab_free(struct ksymtab *);
 extern struct ksymtab *ksymtab_read(char *, struct ksymtab **);
 extern struct ksym *ksymtab_find(struct ksymtab *, const char *);
