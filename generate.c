@@ -22,6 +22,7 @@
 
 #include <dwarf.h>
 #include <inttypes.h>
+#include <ctype.h>
 #include <libelf.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -1634,6 +1635,30 @@ static void strip(char *buf) {
 	buf[i] = '\0';
 }
 
+/*
+ * Check if the string is valid C identifier.
+ * We do this so we can easily provide the standard kabi whitelist file as the
+ * symbol list.
+ */
+static bool is_valid_c_identifier(char *s) {
+        int i, len;
+
+        if (s == NULL)
+		return (false);
+
+        if ((len = strlen(s)) == 0)
+                return (false);
+        if (s[0] != '_' && !isalpha(s[0]))
+                return (false);
+
+        for (i = 1; i < len; i++) {
+                if (s[i] != '_' && !isalnum(s[i]))
+                        return (false);
+        }
+
+        return (true);
+}
+
 /* Get list of symbols to generate. */
 static struct ksymtab *read_symbols(char *filename)
 {
@@ -1651,6 +1676,10 @@ static struct ksymtab *read_symbols(char *filename)
 	errno = 0;
 	while ((getline(&line, &len, fp)) != -1) {
 		strip(line);
+		if (!is_valid_c_identifier(line)) {
+			printf("WARNING: Not a C identifier: %s\n", line);
+			continue;
+		}
 		ksymtab_add_sym(symbols, line, len, i);
 		i++;
 	}
