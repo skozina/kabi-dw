@@ -1662,7 +1662,6 @@ static bool is_valid_c_identifier(char *s) {
 
 static bool is_kabi_header(char *s) {
 	const char *suffix = "_whitelist]";
-	char term;
 	int suffixlen = strlen(suffix);
 	int len;
 
@@ -1678,12 +1677,6 @@ static bool is_kabi_header(char *s) {
 	if (strcmp(s + (len - suffixlen), suffix) != 0)
 		return (false);
 
-	term = s[len - suffixlen];
-	s[len - suffixlen] = '\0';
-	if (!is_valid_c_identifier(s + 1))
-		return (false);
-
-	s[len - suffixlen] = term;
 	return (true);
 }
 
