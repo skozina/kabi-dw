@@ -798,7 +798,7 @@ static void record_db_dump(struct record_db *_db, char *dir)
 	struct hash *db = (struct hash *)_db;
 
 	hash_iter_init(db, &iter);
-        while (hash_iter_next(&iter, NULL, &v))
+	while (hash_iter_next(&iter, NULL, &v))
 		record_dump((struct record *)v, dir);
 }
 
@@ -1641,22 +1641,50 @@ static void strip(char *buf) {
  * symbol list.
  */
 static bool is_valid_c_identifier(char *s) {
-        int i, len;
+	int i, len;
 
-        if (s == NULL)
+	if (s == NULL)
 		return (false);
 
-        if ((len = strlen(s)) == 0)
-                return (false);
-        if (s[0] != '_' && !isalpha(s[0]))
-                return (false);
+	len = strlen(s);
+	if (len == 0)
+		return (false);
+	if (s[0] != '_' && !isalpha(s[0]))
+		return (false);
 
-        for (i = 1; i < len; i++) {
-                if (s[i] != '_' && !isalnum(s[i]))
-                        return (false);
-        }
+	for (i = 1; i < len; i++) {
+		if (s[i] != '_' && !isalnum(s[i]))
+			return (false);
+	}
 
-        return (true);
+	return (true);
+}
+
+static bool is_kabi_header(char *s) {
+	const char *suffix = "_whitelist]";
+	char term;
+	int suffixlen = strlen(suffix);
+	int len;
+
+	assert(s != NULL);
+
+	len = strlen(s);
+	if (len <= suffixlen + 1)
+		return (false);
+
+	if (s[0] != '[')
+		return (false);
+
+	if (strcmp(s + (len - suffixlen), suffix) != 0)
+		return (false);
+
+	term = s[len - suffixlen];
+	s[len - suffixlen] = '\0';
+	if (!is_valid_c_identifier(s + 1))
+		return (false);
+
+	s[len - suffixlen] = term;
+	return (true);
 }
 
 /* Get list of symbols to generate. */
@@ -1677,7 +1705,11 @@ static struct ksymtab *read_symbols(char *filename)
 	while ((getline(&line, &len, fp)) != -1) {
 		strip(line);
 		if (!is_valid_c_identifier(line)) {
-			printf("WARNING: Not a C identifier: %s\n", line);
+			if (!is_kabi_header(line)) {
+				printf("WARNING: Ignoring line \'%s\' from the"
+				    " symbols file as it's not a valid C "
+				    "identifier.\n", line);
+			}
 			continue;
 		}
 		ksymtab_add_sym(symbols, line, len, i);
