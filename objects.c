@@ -970,7 +970,7 @@ static bool obj_eq(obj_t *o1, obj_t *o2)
 {
 	/* borrow parts from cmp_nodes */
 	if ((o1->type != o2->type) ||
-	    cmp_str(o1->name, o2->name) ||
+	    !safe_streq(o1->name, o2->name) ||
 	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
 	    (has_constant(o1) && (o1->constant != o2->constant)) ||
 	    (has_index(o1) && (o1->index != o2->index)) ||
@@ -987,7 +987,7 @@ static bool obj_eq(obj_t *o1, obj_t *o2)
 	    (o2->member_list == NULL))
 		return false;
 
-	if (cmp_str(o1->base_type, o2->base_type))
+	if (!safe_streq(o1->base_type, o2->base_type))
 		return false;
 
 	return true;

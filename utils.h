@@ -20,6 +20,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 #include <errno.h>
 
@@ -59,6 +60,35 @@ static inline void *safe_strdup_or_null(const char *s) {
 	return (safe_strdup(s));
 }
 
+static inline bool safe_streq(const char *s1, const char *s2) {
+	if ((s1 == NULL) != (s2 == NULL))
+		return (false);
+	if (s1)
+		return (!strcmp(s1, s2));
+	return (true);
+}
+
+static inline bool safe_strendswith(const char *s1, const char *s2) {
+	int len1, len2;
+
+	if ((s1 == NULL) != (s2 == NULL))
+		return (false);
+
+	if (!s1)
+		return (true);
+
+	len1 = strlen(s1);
+	len2 = strlen(s2);
+
+	if ((len1 == 0) || (len2 == 0))
+		return (false);
+
+	if (len2 > len1)
+		return (false);
+
+	return (strcmp(s1 + len1 - len2, s2) == 0);
+}
+
 static inline ssize_t safe_getline(char **lineptr, size_t *n, FILE *stream) {
 	ssize_t ret = getline(lineptr, n, stream);
 
@@ -81,7 +111,6 @@ static inline FILE *safe_fopen(char *filename) {
 extern void walk_dir(char *, bool, bool (*)(char *, void *), void *);
 extern int check_is_directory(char *);
 extern void rec_mkdir(char *);
-extern int cmp_str(char *, char *);
 extern void safe_rename(const char *, const char *);
 extern char *path_normalize(char *);
 extern char *filenametotype(char *);

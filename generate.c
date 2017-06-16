@@ -707,24 +707,21 @@ static bool record_merge(struct record *rec_dst, struct record *rec_src)
 	s1 = record_origin(rec_dst);
 	s2 = record_origin(rec_src);
 
-	if (strcmp(s1, s2) != 0)
-		goto out;
+	if (!safe_streq(s1, s2))
+		return (false);
 
 	o1 = record_obj(rec_dst);
 	o2 = record_obj(rec_src);
 
 	o = obj_merge(o1, o2);
 	if (o == NULL)
-		goto out;
+		return (false);
 
 	obj_fill_parent(o);
 	o = record_obj_exchange(rec_dst, o);
 	obj_free(o);
 
-	return true;
-
-out:
-	return false;
+	return (true);
 }
 
 static char *record_db_add(struct record_db *db, struct record *rec)
@@ -1550,6 +1547,11 @@ static bool process_symbol_file(char *path, void *arg) {
 	struct ksymtab *ksymtab;
 	struct ksymtab *aliases = NULL;
 	bool ret = true;
+
+	/* We want to process only .ko kernel modules and vmlinux itself */
+	if (!safe_strendswith(path, ".ko") &&
+	    !safe_strendswith(path, "/vmlinux"))
+		return (ret);
 
 	ksymtab = ksymtab_read(path, &aliases);
 

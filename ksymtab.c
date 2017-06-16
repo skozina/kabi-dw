@@ -87,7 +87,7 @@ static int ksymtab_elf_get_section(struct ksymtab_elf *ke,
 		return -1;
 
 	/*
-	 * This is stupid. Fedora/EL builds -debuginfo packages by running
+	 * This is unlucky. Fedora/EL builds -debuginfo packages by running
 	 * eu-strip --reloc-debug-sections which places only standard .debug*
 	 * sections into the -debuginfo modules. The sections which cannot
 	 * be stripped completely (because they are allocated) are changed
@@ -139,19 +139,20 @@ static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
 	if ((elf = elf_begin(fd, ELF_C_READ, NULL)) == NULL)
 		fail("elf_begin() failed: %s\n", elf_errmsg(-1));
 
-	if (elf_kind(elf) != ELF_K_ELF)
-		goto done;
+	if (elf_kind(elf) != ELF_K_ELF) {
+		printf("Doesn't look like an ELF file, ignoring: %s\n",
+		    filename);
+		goto out;
+	}
 
 	if (gelf_getehdr(elf, &ehdr) == NULL)
-		fail("getehdr () failed: %s\n", elf_errmsg(-1));
-
-	/* Check elf header */
-	if (memcmp(&ehdr.e_ident, ELFMAG, SELFMAG) != 0)
-		goto done;
+		fail("getehdr() failed: %s\n", elf_errmsg(-1));
 
 	class = gelf_getclass(elf);
-	if (class != ELFCLASS64)
-		fail("Unsupported elf class: %d\n", class);
+	if (class != ELFCLASS64) {
+		printf("Unsupported elf class of %s: %d\n", filename, class);
+		goto out;
+	}
 
 	if (elf_getshdrstrndx(elf, &shstrndx) != 0)
 		fail("elf_getshdrstrndx() failed: %s\n", elf_errmsg(-1));
@@ -161,12 +162,19 @@ static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
 	ke->fd = fd;
 	ke->shstrndx = shstrndx;
 
-	ksymtab_elf_get_section(ke, STRTAB, &strtab, &strtab_size);
+	if (ksymtab_elf_get_section(ke, STRTAB, &strtab, &strtab_size) < 0) {
+		free(ke);
+		goto out;
+	}
 
 	ke->strtab = strtab;
 	ke->strtab_size = strtab_size;
-done:
-	return ke;
+	return (ke);
+
+out:
+	(void) elf_end(elf);
+	(void) close(fd);
+	return (NULL);
 }
 
 static void ksymtab_elf_close(struct ksymtab_elf *ke)
@@ -190,7 +198,8 @@ static void ksymtab_elf_for_each_global_sym(struct ksymtab_elf *ke,
 	const char *data;
 	size_t size;
 
-	ksymtab_elf_get_section(ke, SYMTAB, &data, &size);
+	if (ksymtab_elf_get_section(ke, SYMTAB, &data, &size) < 0)
+		return;
 
 	sym = (Elf64_Sym *)data;
 	end = (Elf64_Sym *)(data + size);
@@ -207,7 +216,8 @@ static void ksymtab_elf_for_each_global_sym(struct ksymtab_elf *ke,
 			continue;
 
 		if (sym->st_name > ke->strtab_size)
-			fail("Symbol name index out of range\n");
+			fail("Symbol name index %d out of range %ld\n",
+			    sym->st_name, ke->strtab_size);
 
 		name = ke->strtab + sym->st_name;
 		if (name == NULL)
@@ -311,7 +321,7 @@ size_t ksymtab_len(struct ksymtab *ksymtab)
 	struct hash *h;
 
 	if (ksymtab == NULL)
-		return 0;
+		return (0);
 
 	h = ksymtab->hash;
 	return hash_get_count(h);
@@ -534,7 +544,7 @@ struct ksymtab *ksymtab_read(char *filename, struct ksymtab **aliases)
 
 	elf = ksymtab_elf_open(filename);
 	if (elf == NULL)
-		return NULL;
+		return (NULL);
 
 	if (ksymtab_elf_get_section(elf, KSYMTAB_STRINGS, &data, &size) < 0)
 		goto done;
