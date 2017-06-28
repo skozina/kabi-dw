@@ -46,9 +46,10 @@ enum {
 /*
  * Is this symbol a duplicate, i.e. is not the first version of this symbol.
  */
-static bool is_duplicate(char *filename) {
+static bool is_duplicate(char *filename)
+{
 	char *base = basename(filename);
-	char *prefix= NULL, *name = NULL;
+	char *prefix = NULL, *name = NULL;
 	int version = 0;
 	bool ret = (sscanf(base, "%m[a-z]--%m[^.-]-%i.txt",
 			   &prefix, &name, &version) == 3);
@@ -84,7 +85,8 @@ typedef enum {
 
 static int compare_two_files(char *filename, char *newfile, bool follow);
 
-static int cmp_node_reffile(obj_t *o1, obj_t *o2) {
+static int cmp_node_reffile(obj_t *o1, obj_t *o2)
+{
 	char *s1 = filenametotype(o1->base_type);
 	char *s2 = filenametotype(o2->base_type);
 	int len;
@@ -112,7 +114,9 @@ static int cmp_node_reffile(obj_t *o1, obj_t *o2) {
 
 	return CMP_SAME;
 }
-static int _cmp_nodes(obj_t *o1, obj_t *o2, bool search) {
+
+static int _cmp_nodes(obj_t *o1, obj_t *o2, bool search)
+{
 	if ((o1->type != o2->type) ||
 	    !safe_streq(o1->name, o2->name) ||
 	    (is_weak(o1) != is_weak(o2)) ||
@@ -150,7 +154,8 @@ static int _cmp_nodes(obj_t *o1, obj_t *o2, bool search) {
 	return CMP_SAME;
 }
 
-static int cmp_nodes(obj_t *o1, obj_t *o2) {
+static int cmp_nodes(obj_t *o1, obj_t *o2)
+{
 	return _cmp_nodes(o1, o2, false);
 }
 
@@ -182,7 +187,8 @@ typedef enum {
  * list1 and list2 do not differ, whichever comes first.
  */
 static diff_ret_t list_diff(obj_list_t *list1, obj_list_t **next1,
-			    obj_list_t *list2, obj_list_t **next2) {
+			    obj_list_t *list2, obj_list_t **next2)
+{
 	obj_t *o1 = list2->member, *o2 = list1->member, *o = o1;
 	int d1 = 0, d2 = 0, ret;
 	obj_list_t *next;
@@ -212,7 +218,7 @@ static diff_ret_t list_diff(obj_list_t *list1, obj_list_t **next1,
 
 		}
 
-		if ( !(*next1) || !((*next1)->next) || (d2  < d1) ) {
+		if (!(*next1) || !((*next1)->next) || (d2  < d1)) {
 			next = *next2 = (*next2)->next;
 			o = o2;
 			d2++;
@@ -236,13 +242,15 @@ static diff_ret_t list_diff(obj_list_t *list1, obj_list_t **next1,
  * unamed, typically when it's an union or struct of alternative
  * elements but it most likely contains named element).
  */
-static bool worthy_of_print(obj_t *o) {
+static bool worthy_of_print(obj_t *o)
+{
 	return (o->name != NULL) ||
 		(o->type == __type_struct_member) ||
-		(o->type == __type_var) ;
+		(o->type == __type_var);
 }
 
-static void print_two_nodes(const char *s, obj_t *o1, obj_t *o2, FILE *stream) {
+static void print_two_nodes(const char *s, obj_t *o1, obj_t *o2, FILE *stream)
+{
 
 	while (!worthy_of_print(o1)) {
 		o1 = o1->parent;
@@ -273,7 +281,7 @@ typedef struct compare_config_s {
 	 * kABI comparison. Hides...
 	 */
 	int no_replaced; /* replaced symbols */
-	int no_shifted;  /* symbols whose offset shifted */ 
+	int no_shifted;  /* symbols whose offset shifted */
 	int no_inserted; /* symbols inserted in the middle of a struct/union */
 	int no_deleted;  /* symbols removed in the middle (poke a hole) */
 	int no_added;    /* symbols added at the end of a struct/union... */
@@ -285,7 +293,8 @@ compare_config_t compare_config = {false, false, false, false, 0,
 				   NULL, NULL, NULL, NULL,
 				   0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-static int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
+static int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream)
+{
 	obj_list_t *list1 = NULL, *list2 = NULL;
 	int ret = COMP_SAME, tmp;
 
@@ -310,7 +319,7 @@ static int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 	if (o2->member_list)
 		list2 = o2->member_list->first;
 
-	while ( list1 && list2 ) {
+	while (list1 && list2) {
 		if (cmp_nodes(list1->member, list2->member) == CMP_DIFF) {
 			int index;
 			obj_list_t *next1, *next2;
@@ -382,11 +391,13 @@ static int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
 /*
  * Compare two symbols and show the difference in a c-like format
  */
-static int compare_tree(obj_t *o1, obj_t *o2, FILE *stream) {
+static int compare_tree(obj_t *o1, obj_t *o2, FILE *stream)
+{
 	return _compare_tree(o1, o2, stream);
 }
 
-static bool push_file(char *filename) {
+static bool push_file(char *filename)
+{
 	int i, sz = compare_config.flistsz;
 	int cnt = compare_config.flistcnt;
 	char **flist = compare_config.flist;
@@ -412,7 +423,8 @@ static bool push_file(char *filename) {
 	return true;
 }
 
-static void free_files() {
+static void free_files()
+{
 	int i;
 
 	for (i = 0; i < compare_config.flistcnt; i++)
@@ -421,7 +433,8 @@ static void free_files() {
 	compare_config.flistcnt = compare_config.flistsz = 0;
 }
 
-static void compare_usage() {
+static void compare_usage()
+{
 	printf("Usage:\n"
 	       "\tcompare [options] kabi_dir kabi_dir [kabi_file...]\n"
 	       "\tcompare [options] kabi_file kabi_file\n"
@@ -464,7 +477,8 @@ static void compare_usage() {
  *           don't print anything and exit immediately if follow
  *           option isn't set.
  */
-static int compare_two_files(char *filename, char *newfile, bool follow) {
+static int compare_two_files(char *filename, char *newfile, bool follow)
+{
 	obj_t *root1, *root2;
 	char *old_dir = compare_config.old_dir;
 	char *new_dir = compare_config.new_dir;
@@ -500,10 +514,10 @@ static int compare_two_files(char *filename, char *newfile, bool follow) {
 			free(path2);
 
 			return ret;
-		}
-		else
+		} else {
 			fail("Failed to stat() file%s: %s\n",
 			     path2, strerror(errno));
+		}
 	}
 
 	file1 = safe_fopen(path1);
@@ -551,11 +565,12 @@ static int compare_two_files(char *filename, char *newfile, bool follow) {
 
 }
 
-static bool compare_files_cb(char *kabi_path, void *arg) {
+static bool compare_files_cb(char *kabi_path, void *arg)
+{
 	compare_config_t *conf = (compare_config_t *)arg;
 	char *filename;
 
-	if(compare_config.skip_duplicate && is_duplicate(kabi_path))
+	if (compare_config.skip_duplicate && is_duplicate(kabi_path))
 		return true;
 
 	/* If conf->*_dir contains slashes, skip them */
@@ -576,7 +591,8 @@ static bool compare_files_cb(char *kabi_path, void *arg) {
 /*
  * Performs the compare command
  */
-int compare(int argc, char **argv) {
+int compare(int argc, char **argv)
+{
 	int opt, opt_index;
 	char *old_dir, *new_dir;
 	struct stat sb1, sb2;

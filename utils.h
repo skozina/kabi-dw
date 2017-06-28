@@ -30,7 +30,8 @@
 	exit(1);				\
 }
 
-static inline void safe_asprintf(char **strp, const char *fmt, ...) {
+static inline void safe_asprintf(char **strp, const char *fmt, ...)
+{
 	va_list arglist;
 
 	va_start(arglist, fmt);
@@ -39,73 +40,80 @@ static inline void safe_asprintf(char **strp, const char *fmt, ...) {
 	va_end(arglist);
 }
 
-static inline void *safe_zmalloc(size_t size) {
+static inline void *safe_zmalloc(size_t size)
+{
 	void *result = malloc(size);
 	if (result == NULL)
 		fail("Malloc of size %zu failed", size);
 	memset(result, 0, size);
-	return (result);
+	return result;
 }
 
-static inline void *safe_strdup(const char *s) {
+static inline void *safe_strdup(const char *s)
+{
 	void *result = strdup(s);
 	if (result == NULL)
 		fail("strdup() of \"%s\" failed", s);
-	return (result);
+	return result;
 }
 
-static inline void *safe_strdup_or_null(const char *s) {
+static inline void *safe_strdup_or_null(const char *s)
+{
 	if (s == NULL)
 		return NULL;
-	return (safe_strdup(s));
+	return safe_strdup(s);
 }
 
-static inline bool safe_streq(const char *s1, const char *s2) {
+static inline bool safe_streq(const char *s1, const char *s2)
+{
 	if ((s1 == NULL) != (s2 == NULL))
-		return (false);
+		return false;
 	if (s1)
-		return (!strcmp(s1, s2));
-	return (true);
+		return !strcmp(s1, s2);
+	return true;
 }
 
-static inline bool safe_strendswith(const char *s1, const char *s2) {
+static inline bool safe_strendswith(const char *s1, const char *s2)
+{
 	int len1, len2;
 
 	if ((s1 == NULL) != (s2 == NULL))
-		return (false);
+		return false;
 
 	if (!s1)
-		return (true);
+		return true;
 
 	len1 = strlen(s1);
 	len2 = strlen(s2);
 
 	if ((len1 == 0) || (len2 == 0))
-		return (false);
+		return false;
 
 	if (len2 > len1)
-		return (false);
+		return false;
 
-	return (strcmp(s1 + len1 - len2, s2) == 0);
+	return strcmp(s1 + len1 - len2, s2) == 0;
 }
 
-static inline ssize_t safe_getline(char **lineptr, size_t *n, FILE *stream) {
+static inline ssize_t safe_getline(char **lineptr, size_t *n, FILE *stream)
+{
 	ssize_t ret = getline(lineptr, n, stream);
 
 	if ((ret == -1) && (errno != ENOENT))
 		fail("getline failed: %s\n", strerror(errno));
 
-	return (ret);
+	return ret;
 }
 
-static inline FILE *safe_fopen(char *filename) {
+static inline FILE *safe_fopen(char *filename)
+{
 	FILE *file;
 
 	file = fopen(filename, "r");
 	if (!file)
 		fail("Failed to open kABI file: %s\n", filename);
 
-	return (file);
+	return file;
 }
 
 extern void walk_dir(char *, bool, bool (*)(char *, void *), void *);

@@ -159,42 +159,46 @@ static const char *builtin_types[] = {
 	NULL
 };
 
-static const bool is_builtin(const char *name) {
+static const bool is_builtin(const char *name)
+{
 	const char **p;
 
 	for (p = builtin_types; *p != NULL; p++) {
 		if (strcmp(*p, name) == 0)
-			return (true);
+			return true;
 	}
 
-	return (false);
+	return false;
 }
 
-static const char *get_die_name(Dwarf_Die *die) {
+static const char *get_die_name(Dwarf_Die *die)
+{
 	if (dwarf_hasattr(die, DW_AT_name))
-		return (dwarf_diename(die));
+		return dwarf_diename(die);
 	else
-		return (EMPTY_NAME);
+		return EMPTY_NAME;
 }
 
 /*
  * Check if given DIE has DW_AT_declaration attribute.
  * That indicates that the symbol is just a declaration, not full definition.
  */
-static bool is_declaration(Dwarf_Die *die) {
+static bool is_declaration(Dwarf_Die *die)
+{
 	Dwarf_Attribute attr;
 
 	if (!dwarf_hasattr(die, DW_AT_declaration))
-		return (false);
+		return false;
 	(void) dwarf_attr(die, DW_AT_declaration, &attr);
 	if (!dwarf_hasform(&attr, DW_FORM_flag_present))
-		return (false);
-	return (true);
+		return false;
+	return true;
 }
 
-static char *get_file_replace_path = NULL;
+static char *get_file_replace_path;
 
-static char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
+static char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die)
+{
 	Dwarf_Files *files;
 	size_t nfiles;
 	Dwarf_Attribute attr;
@@ -207,7 +211,7 @@ static char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 	 * variable argument list which is defined as * struct __va_list_tag.
 	 */
 	if (is_builtin(get_die_name(die)))
-		return (safe_strdup(BUILTIN_PATH));
+		return safe_strdup(BUILTIN_PATH);
 
 	if (!dwarf_hasattr(die, DW_AT_decl_file))
 		fail("DIE missing file information: %s\n",
@@ -235,10 +239,11 @@ static char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die) {
 	ret = safe_strdup(filename);
 	path_normalize(ret);
 
-	return (ret);
+	return ret;
 }
 
-static long get_line(Dwarf_Die *cu_die, Dwarf_Die *die) {
+static long get_line(Dwarf_Die *cu_die, Dwarf_Die *die)
+{
 	Dwarf_Attribute attr;
 	Dwarf_Word line;
 
@@ -249,23 +254,24 @@ static long get_line(Dwarf_Die *cu_die, Dwarf_Die *die) {
 	(void) dwarf_attr(die, DW_AT_decl_line, &attr);
 	(void) dwarf_formudata(&attr, &line);
 
-	return (line);
+	return line;
 }
 
 static obj_t *print_die(struct cu_ctx *, struct record *, Dwarf_Die *);
 
-static const char * dwarf_tag_string(unsigned int tag) {
-	switch (tag)
-	{
+static const char *dwarf_tag_string(unsigned int tag)
+{
+	switch (tag) {
 #define	DWARF_ONE_KNOWN_DW_TAG(NAME, CODE) case CODE: return #NAME;
 		DWARF_ALL_KNOWN_DW_TAG
 #undef DWARF_ONE_KNOWN_DW_TAG
-		default:
-			return (NULL);
+	default:
+		return NULL;
 	}
 }
 
-static char * get_file_prefix(unsigned int dwarf_tag) {
+static char *get_file_prefix(unsigned int dwarf_tag)
+{
 	struct dwarf_type *current;
 
 	for (current = known_dwarf_types; current->prefix != NULL; current++) {
@@ -273,18 +279,20 @@ static char * get_file_prefix(unsigned int dwarf_tag) {
 			break;
 	}
 
-	return (current->prefix);
+	return current->prefix;
 }
 
-static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
+static char *get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die)
+{
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
-	char *file_prefix = NULL;
+	char *file_prefix;
 	char *file_name = NULL;
 
-	if ((file_prefix = get_file_prefix(tag)) == NULL) {
+	file_prefix = get_file_prefix(tag);
+	if (file_prefix == NULL) {
 		/* No need to redirect output for this type */
-		return (NULL);
+		return NULL;
 	}
 
 	/*
@@ -295,7 +303,7 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 		safe_asprintf(&file_name, DECLARATION_PATH "/%s%s.txt",
 		    file_prefix, name);
 
-		return (file_name);
+		return file_name;
 	}
 
 	/*
@@ -310,7 +318,7 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 	case DW_TAG_structure_type:
 	case DW_TAG_union_type:
 		if (name == NULL)
-			return (NULL);
+			return NULL;
 		break;
 	}
 
@@ -319,19 +327,20 @@ static char * get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die) {
 
 	safe_asprintf(&file_name, "%s%s.txt", file_prefix, name);
 
-	return (file_name);
+	return file_name;
 }
 
 /* Check if given DIE has DW_AT_external attribute */
-static bool is_external(Dwarf_Die *die) {
+static bool is_external(Dwarf_Die *die)
+{
 	Dwarf_Attribute attr;
 
 	if (!dwarf_hasattr(die, DW_AT_external))
-		return (false);
+		return false;
 	(void) dwarf_attr(die, DW_AT_external, &attr);
 	if (!dwarf_hasform(&attr, DW_FORM_flag_present))
-		return (false);
-	return (true);
+		return false;
+	return true;
 }
 
 struct set *set_init(size_t size)
@@ -656,7 +665,7 @@ static void record_dump(struct record *rec, const char *dir)
 	snprintf(path, sizeof(path), "%s/%s", dir, rec->key);
 
 	slash = strrchr(path, '/');
-	assert (slash != NULL);
+	assert(slash != NULL);
 	*slash = '\0';
 	rec_mkdir(path);
 	*slash = '/';
@@ -708,20 +717,20 @@ static bool record_merge(struct record *rec_dst, struct record *rec_src)
 	s2 = record_origin(rec_src);
 
 	if (!safe_streq(s1, s2))
-		return (false);
+		return false;
 
 	o1 = record_obj(rec_dst);
 	o2 = record_obj(rec_src);
 
 	o = obj_merge(o1, o2);
 	if (o == NULL)
-		return (false);
+		return false;
 
 	obj_fill_parent(o);
 	o = record_obj_exchange(rec_dst, o);
 	obj_free(o);
 
-	return (true);
+	return true;
 }
 
 static char *record_db_add(struct record_db *db, struct record *rec)
@@ -785,7 +794,7 @@ static struct record_db *record_db_init(void)
 	if (db == NULL)
 		fail("Could not create db (hash)\n");
 
-	return (struct record_db*)db;
+	return (struct record_db *)db;
 }
 
 static void record_db_dump(struct record_db *_db, char *dir)
@@ -813,9 +822,8 @@ static obj_t *print_die_type(struct cu_ctx *ctx,
 	Dwarf_Die type_die;
 	Dwarf_Attribute attr;
 
-	if (!dwarf_hasattr(die, DW_AT_type)) {
+	if (!dwarf_hasattr(die, DW_AT_type))
 		return obj_basetype_new(safe_strdup("void"));
-	}
 
 	(void) dwarf_attr(die, DW_AT_type, &attr);
 	if (dwarf_formref_die(&attr, &type_die) == NULL)
@@ -1248,7 +1256,8 @@ out:
  * Validate if this is the symbol we should print.
  * Returns true if should.
  */
-static bool is_symbol_valid(struct file_ctx *fctx, Dwarf_Die *die) {
+static bool is_symbol_valid(struct file_ctx *fctx, Dwarf_Die *die)
+{
 	const char *name = dwarf_diename(die);
 	unsigned int tag = dwarf_tag(die);
 	bool result = false;
@@ -1320,7 +1329,7 @@ static bool is_symbol_valid(struct file_ctx *fctx, Dwarf_Die *die) {
 		ksymtab_ksym_mark(ksym1);
 
 out:
-	return (result);
+	return result;
 }
 
 /*
@@ -1374,7 +1383,8 @@ static void process_cu_die(Dwarf_Die *cu_die, struct file_ctx *fctx)
 }
 
 static int dwflmod_generate_cb(Dwfl_Module *dwflmod, void **userdata,
-    const char *name, Dwarf_Addr base, void *arg) {
+		const char *name, Dwarf_Addr base, void *arg)
+{
 	Dwarf_Addr dwbias;
 	Dwarf *dbg = dwfl_module_getdwarf(dwflmod, &dwbias);
 	struct file_ctx *fctx = (struct file_ctx *)arg;
@@ -1393,11 +1403,9 @@ static int dwflmod_generate_cb(Dwfl_Module *dwflmod, void **userdata,
 	uint8_t offsetsize;
 
 	while (dwarf_next_unit(dbg, off, &off, &hsize, &version, &abbrev,
-	    &addresssize, &offsetsize, NULL, &type_offset) == 0)
-	{
-		if (version < 2 || version > 4) {
+	    &addresssize, &offsetsize, NULL, &type_offset) == 0) {
+		if (version < 2 || version > 4)
 			fail("Unsupported dwarf version: %d\n", version);
-		}
 
 		/* CU is followed by a single DIE */
 		Dwarf_Die cu_die;
@@ -1410,12 +1418,12 @@ static int dwflmod_generate_cb(Dwfl_Module *dwflmod, void **userdata,
 		old_off = off;
 	}
 
-	return (DWARF_CB_OK);
+	return DWARF_CB_OK;
 }
 
-static void generate_type_info(char *filepath, struct file_ctx *ctx) {
-	static const Dwfl_Callbacks callbacks =
-	{
+static void generate_type_info(char *filepath, struct file_ctx *ctx)
+{
+	static const Dwfl_Callbacks callbacks = {
 		.section_address = dwfl_offline_section_address,
 		.find_debuginfo = dwfl_standard_find_debuginfo
 	};
@@ -1431,9 +1439,10 @@ static void generate_type_info(char *filepath, struct file_ctx *ctx) {
 	dwfl_end(dwfl);
 }
 
-static bool is_all_done(generate_config_t *conf) {
+static bool is_all_done(generate_config_t *conf)
+{
 	if (conf->symbols == NULL)
-		return (false);
+		return false;
 
 	return ksymtab_mark_count(conf->symbols) == conf->symbol_cnt;
 }
@@ -1541,7 +1550,8 @@ static void merge_aliases(struct ksymtab *ksymtab,
 		ksymtab_for_each(aliases, ksymtab_add_alias, symbols);
 }
 
-static bool process_symbol_file(char *path, void *arg) {
+static bool process_symbol_file(char *path, void *arg)
+{
 	struct file_ctx fctx;
 	generate_config_t *conf = (generate_config_t *)arg;
 	struct ksymtab *ksymtab;
@@ -1551,7 +1561,7 @@ static bool process_symbol_file(char *path, void *arg) {
 	/* We want to process only .ko kernel modules and vmlinux itself */
 	if (!safe_strendswith(path, ".ko") &&
 	    !safe_strendswith(path, "/vmlinux"))
-		return (ret);
+		return ret;
 
 	ksymtab = ksymtab_read(path, &aliases);
 
@@ -1593,7 +1603,8 @@ static void print_not_found(struct ksym *ksym, void *ctx)
  * Print symbol definition by walking all DIEs in a .debug_info section.
  * Returns true if the definition was printed, otherwise false.
  */
-static void generate_symbol_defs(generate_config_t *conf) {
+static void generate_symbol_defs(generate_config_t *conf)
+{
 	struct stat st;
 
 	if (stat(conf->kernel_dir, &st) != 0)
@@ -1624,7 +1635,8 @@ static void generate_symbol_defs(generate_config_t *conf) {
 #define	WHITESPACE	" \t\n"
 
 /* Remove white characters from given buffer */
-static void strip(char *buf) {
+static void strip(char *buf)
+{
 	size_t i = 0, j = 0;
 	while (buf[j] != '\0') {
 		if (strchr(WHITESPACE, buf[j]) == NULL) {
@@ -1642,27 +1654,29 @@ static void strip(char *buf) {
  * We do this so we can easily provide the standard kabi whitelist file as the
  * symbol list.
  */
-static bool is_valid_c_identifier(char *s) {
+static bool is_valid_c_identifier(char *s)
+{
 	int i, len;
 
 	if (s == NULL)
-		return (false);
+		return false;
 
 	len = strlen(s);
 	if (len == 0)
-		return (false);
+		return false;
 	if (s[0] != '_' && !isalpha(s[0]))
-		return (false);
+		return false;
 
 	for (i = 1; i < len; i++) {
 		if (s[i] != '_' && !isalnum(s[i]))
-			return (false);
+			return false;
 	}
 
-	return (true);
+	return true;
 }
 
-static bool is_kabi_header(char *s) {
+static bool is_kabi_header(char *s)
+{
 	const char *suffix = "_whitelist]";
 	int suffixlen = strlen(suffix);
 	int len;
@@ -1671,15 +1685,15 @@ static bool is_kabi_header(char *s) {
 
 	len = strlen(s);
 	if (len <= suffixlen + 1)
-		return (false);
+		return false;
 
 	if (s[0] != '[')
-		return (false);
+		return false;
 
 	if (strcmp(s + (len - suffixlen), suffix) != 0)
-		return (false);
+		return false;
 
-	return (true);
+	return true;
 }
 
 /* Get list of symbols to generate. */
@@ -1723,7 +1737,8 @@ static struct ksymtab *read_symbols(char *filename)
 	return symbols;
 }
 
-static void generate_usage() {
+static void generate_usage()
+{
 	printf("Usage:\n"
 	       "\tgenerate [options] kernel_dir\n"
 	       "\nOptions:\n"
@@ -1741,7 +1756,8 @@ static void generate_usage() {
 }
 
 static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
-    char **symbol_file) {
+		char **symbol_file)
+{
 	*symbol_file = NULL;
 	conf->verbose = false;
 	conf->kabi_dir = DEFAULT_OUTPUT_DIR;
@@ -1789,10 +1805,11 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 	rec_mkdir(conf->kabi_dir);
 }
 
-void generate(int argc, char **argv) {
+void generate(int argc, char **argv)
+{
 	char *temp_path;
 	char *symbol_file;
-	generate_config_t *conf = safe_zmalloc(sizeof (*conf));
+	generate_config_t *conf = safe_zmalloc(sizeof(*conf));
 
 	parse_generate_opts(argc, argv, conf, &symbol_file);
 

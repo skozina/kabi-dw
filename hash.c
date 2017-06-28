@@ -41,7 +41,7 @@ do {						\
 		typeof(*(ptr)) __v;		\
 	} *__p = (typeof(__p)) (ptr);		\
 	__p->__v = (val);			\
-} while(0)
+} while (0)
 
 static inline unsigned int ALIGN_POWER2(unsigned int u)
 {

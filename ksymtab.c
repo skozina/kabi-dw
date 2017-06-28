@@ -76,7 +76,8 @@ static int ksymtab_elf_get_section(struct ksymtab_elf *ke,
 	for (; scn != NULL; scn = elf_nextscn(elf, scn)) {
 		if (gelf_getshdr(scn, &shdr) != &shdr)
 			fail("getshdr() failed: %s\n", elf_errmsg(-1));
-		if ((name = elf_strptr(elf, shstrndx, shdr.sh_name)) == NULL)
+		name = elf_strptr(elf, shstrndx, shdr.sh_name);
+		if (name == NULL)
 			fail("elf_strptr() failed: %s\n", elf_errmsg(-1));
 
 		if (strcmp(name, section) == 0)
@@ -132,11 +133,13 @@ static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
 	if (elf_version(EV_CURRENT) == EV_NONE)
 		fail("elf_version() failed: %s\n", elf_errmsg(-1));
 
-	if ((fd = open(filename, O_RDONLY, 0)) < 0)
+	fd = open(filename, O_RDONLY, 0);
+	if (fd < 0)
 		fail("Failed to open file %s: %s\n", filename,
 		    strerror(errno));
 
-	if ((elf = elf_begin(fd, ELF_C_READ, NULL)) == NULL)
+	elf = elf_begin(fd, ELF_C_READ, NULL);
+	if (elf == NULL)
 		fail("elf_begin() failed: %s\n", elf_errmsg(-1));
 
 	if (elf_kind(elf) != ELF_K_ELF) {
@@ -169,12 +172,12 @@ static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
 
 	ke->strtab = strtab;
 	ke->strtab_size = strtab_size;
-	return (ke);
+	return ke;
 
 out:
 	(void) elf_end(elf);
 	(void) close(fd);
-	return (NULL);
+	return NULL;
 }
 
 static void ksymtab_elf_close(struct ksymtab_elf *ke)
@@ -208,7 +211,7 @@ static void ksymtab_elf_for_each_global_sym(struct ksymtab_elf *ke,
 	for (; sym < end; sym++) {
 
 		binding = ELF64_ST_BIND(sym->st_info);
-		if (! (binding == STB_GLOBAL ||
+		if (!(binding == STB_GLOBAL ||
 		       binding == STB_WEAK))
 			continue;
 
@@ -302,7 +305,8 @@ struct ksym *ksymtab_copy_sym(struct ksymtab *ksymtab, struct ksym *ksym)
 	return new;
 }
 
-struct ksym *ksymtab_find(struct ksymtab *ksymtab, const char *name) {
+struct ksym *ksymtab_find(struct ksymtab *ksymtab, const char *name)
+{
 	struct ksym *v;
 	struct hash *h = ksymtab->hash;
 
@@ -321,7 +325,7 @@ size_t ksymtab_len(struct ksymtab *ksymtab)
 	struct hash *h;
 
 	if (ksymtab == NULL)
-		return (0);
+		return 0;
 
 	h = ksymtab->hash;
 	return hash_get_count(h);
@@ -347,7 +351,7 @@ void ksymtab_for_each(struct ksymtab *ksymtab,
 	h = ksymtab->hash;
 
 	hash_iter_init(h, &iter);
-        while (hash_iter_next(&iter, NULL, &v)) {
+	while (hash_iter_next(&iter, NULL, &v)) {
 		vv = (struct ksym *)v;
 		f(vv, ctx);
 	}
@@ -386,7 +390,7 @@ static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
 		}
 	}
 
-	return (res);
+	return res;
 }
 
 /*
@@ -508,7 +512,7 @@ static struct ksymtab *ksymtab_find_aliases(struct ksymtab *ksymtab,
 	ctx.ksymtab = ksymtab;
 	ctx.weaks = weaks;
 	ctx.map = map;
-        /*
+	/*
 	 * If there's a weak symbol on the whitelist,
 	 * we need to find the proper global
 	 * symbol to generate the type for it.
@@ -544,7 +548,7 @@ struct ksymtab *ksymtab_read(char *filename, struct ksymtab **aliases)
 
 	elf = ksymtab_elf_open(filename);
 	if (elf == NULL)
-		return (NULL);
+		return NULL;
 
 	if (ksymtab_elf_get_section(elf, KSYMTAB_STRINGS, &data, &size) < 0)
 		goto done;
@@ -554,5 +558,5 @@ struct ksymtab *ksymtab_read(char *filename, struct ksymtab **aliases)
 
 done:
 	ksymtab_elf_close(elf);
-	return (res);
+	return res;
 }

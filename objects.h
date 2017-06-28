@@ -26,7 +26,7 @@
 #include <stdio.h>
 
 #ifdef DEBUG
-#define debug(args...) do { printf(args); } while(0)
+#define debug(args...) do { printf(args); } while (0)
 #else
 #define debug(args...)
 #endif
@@ -87,7 +87,7 @@ typedef struct obj_list_head {
  * the unary ptr. Only functions uses both.
  */
 typedef struct obj {
-	obj_types type;	
+	obj_types type;
 	char *name;
 	char *base_type;
 	obj_list_head_t *member_list;
@@ -103,24 +103,29 @@ typedef struct obj {
 	};
 } obj_t;
 
-static inline bool has_offset(obj_t *o) {
+static inline bool has_offset(obj_t *o)
+{
 	return o->type == __type_struct_member;
 }
 
-static inline bool has_constant(obj_t *o) {
+static inline bool has_constant(obj_t *o)
+{
 	return o->type == __type_constant;
 }
 
-static inline bool has_index(obj_t *o) {
+static inline bool has_index(obj_t *o)
+{
 	return o->type == __type_array;
 }
 
-static inline bool is_bitfield(obj_t *o) {
+static inline bool is_bitfield(obj_t *o)
+{
 	return o->is_bitfield != 0;
 }
 
-static inline bool is_terminal(obj_t *o) {
-	switch(o->type) {
+static inline bool is_terminal(obj_t *o)
+{
+	switch (o->type) {
 	case __type_reffile:
 	case __type_base:
 	case __type_constant:
@@ -130,8 +135,9 @@ static inline bool is_terminal(obj_t *o) {
 	}
 }
 
-static inline bool is_unary(obj_t *o) {
-	switch(o->type) {
+static inline bool is_unary(obj_t *o)
+{
+	switch (o->type) {
 	case __type_ptr:
 	case __type_typedef:
 	case __type_array:
@@ -144,8 +150,9 @@ static inline bool is_unary(obj_t *o) {
 	}
 }
 
-static inline bool is_n_ary(obj_t *o) {
-	switch(o->type) {
+static inline bool is_n_ary(obj_t *o)
+{
+	switch (o->type) {
 	case __type_struct:
 	case __type_union:
 	case __type_enum:
@@ -156,7 +163,8 @@ static inline bool is_n_ary(obj_t *o) {
 	}
 }
 
-static inline bool is_weak(obj_t *o) {
+static inline bool is_weak(obj_t *o)
+{
 	return o->type == __type_weak;
 }
 

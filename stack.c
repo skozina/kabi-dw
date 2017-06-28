@@ -29,59 +29,66 @@
 
 #define	INIT_CAPACITY	10
 
-stack_t *stack_init(void) {
-	stack_t *st = safe_zmalloc(sizeof (*st));
+stack_t *stack_init(void)
+{
+	stack_t *st = safe_zmalloc(sizeof(*st));
 
 	st->st_capacity = INIT_CAPACITY;
 	st->st_count = 0;
-	st->st_data = safe_zmalloc(st->st_capacity * sizeof (*st->st_data));
+	st->st_data = safe_zmalloc(st->st_capacity * sizeof(*st->st_data));
 
-	return (st);
+	return st;
 }
 
-void stack_destroy(stack_t *st) {
+void stack_destroy(stack_t *st)
+{
 	if (st->st_count > 0)
 		fail("Stack not empty!\n");
 
 	free(st->st_data);
-	(void) memset(st, 0, sizeof (*st));
+	(void) memset(st, 0, sizeof(*st));
 	free(st);
 }
 
-void stack_push(stack_t *st, void *data) {
+void stack_push(stack_t *st, void *data)
+{
 	if (st->st_count == st->st_capacity) {
 		st->st_capacity *= 2;
 		st->st_data = realloc(st->st_data,
-		    st->st_capacity * sizeof (*st->st_data));
+		    st->st_capacity * sizeof(*st->st_data));
 	}
 
 	st->st_data[st->st_count] = data;
 	st->st_count++;
 }
 
-void *stack_pop(stack_t *st) {
+void *stack_pop(stack_t *st)
+{
 	if (st->st_count == 0)
-		return (NULL);
+		return NULL;
 
 	st->st_count--;
-	return (st->st_data[st->st_count]);
+	return st->st_data[st->st_count];
 }
 
-void *stack_head(stack_t *st) {
+void *stack_head(stack_t *st)
+{
 	if (st->st_count == 0)
-		return (NULL);
+		return NULL;
 
-	return (st->st_data[st->st_count-1]);
+	return st->st_data[st->st_count-1];
 }
 
-void walk_stack(stack_t *st, void (*cb)(void *, void *), void *arg) {
+void walk_stack(stack_t *st, void (*cb)(void *, void *), void *arg)
+{
 	unsigned int i;
 
 	for (i = 0; i < st->st_count; i++)
 		cb(st->st_data[i], arg);
 }
 
-void walk_stack_backward(stack_t *st, void (*cb)(void *, void *), void *arg) {
+void walk_stack_backward(stack_t *st, void (*cb)(void *, void *), void *arg)
+{
 	unsigned int i;
 
 	for (i = st->st_count; i > 0; i--)

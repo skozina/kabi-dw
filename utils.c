@@ -38,7 +38,8 @@
  * Sort function for scandir.
  * Walk regular file first, then process subdirectories.
  */
-int reg_first(const struct dirent **a, const struct dirent **b) {
+int reg_first(const struct dirent **a, const struct dirent **b)
+{
 	if ((*a)->d_type == DT_REG && (*b)->d_type != DT_REG)
 		return -1;
 	if ((*b)->d_type == DT_REG && (*a)->d_type != DT_REG)
@@ -58,7 +59,8 @@ int reg_first(const struct dirent **a, const struct dirent **b) {
  * all done.
  */
 void walk_dir(char *path, bool list_dirs, bool (*cb)(char *, void *),
-    void *arg) {
+		void *arg)
+{
 	struct dirent **entlist;
 	bool proceed = true;
 	int entries, i;
@@ -110,24 +112,27 @@ void walk_dir(char *path, bool list_dirs, bool (*cb)(char *, void *),
 	free(entlist);
 }
 
-int check_is_directory(char *dir) {
+int check_is_directory(char *dir)
+{
 	struct stat dirstat;
 
 	if (stat(dir, &dirstat) != 0)
-		return (errno);
+		return errno;
 
 	if (!S_ISDIR(dirstat.st_mode))
-		return (ENOTDIR);
+		return ENOTDIR;
 
-	return (0);
+	return 0;
 }
 
-static void safe_mkdir(char *path) {
+static void safe_mkdir(char *path)
+{
 	if (mkdir(path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0)
 		fail(strerror(errno));
 }
 
-void rec_mkdir(char *path) {
+void rec_mkdir(char *path)
+{
 	char *buf;
 	char *pos;
 	size_t len = strlen(path);
@@ -167,7 +172,8 @@ void rec_mkdir(char *path) {
 	free(buf);
 }
 
-void safe_rename(const char *oldpath, const char *newpath) {
+void safe_rename(const char *oldpath, const char *newpath)
+{
 	char *temp;
 
 	temp = safe_strdup(newpath);
@@ -194,12 +200,12 @@ static char *last_slash(char *str, char *end)
 	for (; end > str; end--) {
 		if (*end == c) {
 			if (met)
-				return (end);
+				return end;
 			else
 				met = 1;
 		}
 	}
-	return (NULL);
+	return NULL;
 }
 
 typedef void *(*state_t)(struct norm_ctx *);
@@ -218,16 +224,16 @@ static void *initial(struct norm_ctx *ctx)
 	switch (c) {
 	case '\0':
 		*ctx->outp = c;
-		return (end);
+		return end;
 	case '/':
 		*ctx->outp++ = c;
-		return (slash);
+		return slash;
 	case '.':
-		return (one_dot);
+		return one_dot;
 	default:
 		*ctx->outp++ = c;
 	}
-	return (normal);
+	return normal;
 }
 
 static void *normal(struct norm_ctx *ctx)
@@ -237,51 +243,54 @@ static void *normal(struct norm_ctx *ctx)
 	switch (c) {
 	case '\0':
 		*ctx->outp++ = c;
-		return (end);
+		return end;
 	case '/':
 		*ctx->outp++ = c;
-		return (slash);
+		return slash;
 	default:
 		*ctx->outp++ = c;
 	}
-	return (normal);
+	return normal;
 }
 
-static void *slash(struct norm_ctx *ctx) {
+static void *slash(struct norm_ctx *ctx)
+{
 	char c = *ctx->p++;
 
 	switch (c) {
 	case '\0':
 		fail("Cannot normalize path %s", ctx->path);
 	case '/':
-		return (slash);
+		return slash;
 	case '.':
-		return (one_dot);
+		return one_dot;
 	default:
 		*ctx->outp++ = c;
 	}
-	return (normal);
+	return normal;
 }
 
-static void *one_dot(struct norm_ctx *ctx) {
+static void *one_dot(struct norm_ctx *ctx)
+{
 	char c = *ctx->p++;
 
 	switch (c) {
 	case '\0':
 		*--ctx->outp = c;
-		return (end);
+		return end;
 	case '/':
-		return (slash);
+		return slash;
 	case '.':
-		return (two_dots);
+		return two_dots;
 	default:
 		*ctx->outp++ = '.';
 		*ctx->outp++ = c;
 	}
-	return (normal);
+	return normal;
 }
 
-static void *two_dots(struct norm_ctx *ctx) {
+static void *two_dots(struct norm_ctx *ctx)
+{
 	char c = *ctx->p++;
 	char *p;
 
@@ -291,28 +300,30 @@ static void *two_dots(struct norm_ctx *ctx) {
 		if (p == NULL)
 			p = ctx->path;
 		*p = c;
-		return (end);
+		return end;
 	case '/':
 		p = last_slash(ctx->path, ctx->outp);
 		if (p == NULL) {
 			ctx->outp = ctx->path;
-			return (normal);
+			return normal;
 		}
 		ctx->outp = ++p;
-		return (slash);
+		return slash;
 	default:
 		*ctx->outp++ = '.';
 		*ctx->outp++ = '.';
 		*ctx->outp++ = c;
 	}
-	return (normal);
+	return normal;
 }
 
-static void *end(struct norm_ctx *ctx) {
+static void *end(struct norm_ctx *ctx)
+{
 	fail("Cannot normalize path %s", ctx->path);
 }
 
-char *path_normalize(char *path) {
+char *path_normalize(char *path)
+{
 	struct norm_ctx ctx = {
 		.path = path,
 		.p = path,
@@ -323,7 +334,7 @@ char *path_normalize(char *path) {
 	while (state != end)
 		state = state(&ctx);
 
-	return (path);
+	return path;
 }
 
 /* Removes the two dashes at the end of the prefix */
@@ -334,19 +345,20 @@ char *path_normalize(char *path) {
  *
  * It allocates the string which must be freed by the caller.
  */
-char *filenametotype(char *filename) {
+char *filenametotype(char *filename)
+{
 	char *base = basename(filename);
-	char *prefix= NULL, *name = NULL, *type = NULL;
+	char *prefix = NULL, *name = NULL, *type = NULL;
 	int version = 0;
 
-	if ( (sscanf(base, "%m[a-z]--%m[^.-].txt", &prefix, &name) != 2) &&
+	if ((sscanf(base, "%m[a-z]--%m[^.-].txt", &prefix, &name) != 2) &&
 	     (sscanf(base, "%m[a-z]--%m[^.-]-%i.txt",
 		     &prefix, &name, &version) != 3))
 		fail("Unexpected file name: %s\n", filename);
 
 	if (IS_PREFIX(prefix, TYPEDEF_FILE))
 		type = name;
-	else if (IS_PREFIX(prefix, STRUCT_FILE)||
+	else if (IS_PREFIX(prefix, STRUCT_FILE) ||
 		 IS_PREFIX(prefix, UNION_FILE) ||
 		 IS_PREFIX(prefix, ENUM_FILE))
 		safe_asprintf(&type, "%s %s", prefix, name);

@@ -36,7 +36,8 @@
 
 static char *progname;
 
-void usage(void) {
+void usage(void)
+{
 	printf("Usage:\n"
 	    "\t %s generate [options] kernel_dir\n"
 	    "\t %s show [options] kabi_file...\n"
@@ -45,7 +46,8 @@ void usage(void) {
 	exit(1);
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
 	int ret = 0;
 
 	progname = argv[0];
@@ -55,15 +57,14 @@ int main(int argc, char **argv) {
 
 	argv++; argc--;
 
-	if (strcmp(argv[0], "generate") == 0) {
+	if (strcmp(argv[0], "generate") == 0)
 		generate(argc, argv);
-	} else if (strcmp(argv[0], "compare") == 0) {
+	else if (strcmp(argv[0], "compare") == 0)
 		ret = compare(argc, argv);
-	} else if (strcmp(argv[0], "show") == 0) {
+	else if (strcmp(argv[0], "show") == 0)
 		ret = show(argc, argv);
-	} else {
+	else
 		usage();
-	}
 
 	return ret;
 }

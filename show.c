@@ -28,7 +28,8 @@ struct {
 	FILE *file;
 } show_config = {false, false, false, NULL};
 
-static void show_usage() {
+static void show_usage()
+{
 	printf("Usage:\n"
 	       "\tshow [options] kabi_file...\n"
 	       "\nOptions:\n"
@@ -45,7 +46,8 @@ static void show_usage() {
 /*
  * Performs the show command
  */
-int show(int argc, char **argv) {
+int show(int argc, char **argv)
+{
 	obj_t *root;
 	int opt, opt_index, ret = 0;
 	struct option loptions[] = {
@@ -102,4 +104,3 @@ int show(int argc, char **argv) {
 
 	return ret;
 }
-
