@@ -108,7 +108,7 @@ static int cmp_node_reffile(obj_t *o1, obj_t *o2)
 	 */
 	len = strlen(DECLARATION_PATH);
 	if (strncmp(o1->base_type, DECLARATION_PATH, len) &&
-	    strncmp(o1->base_type, DECLARATION_PATH, len) &&
+	    strncmp(o2->base_type, DECLARATION_PATH, len) &&
 	    compare_two_files(o1->base_type, o2->base_type, true))
 		return CMP_REFFILE;
 
