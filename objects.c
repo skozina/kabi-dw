@@ -45,7 +45,7 @@
 
 obj_list_t *obj_list_new(obj_t *obj)
 {
-	obj_list_t *list = malloc(sizeof(obj_list_t));
+	obj_list_t *list = safe_zmalloc(sizeof(obj_list_t));
 	list->member = obj;
 	list->next = NULL;
 	return list;
@@ -59,7 +59,7 @@ static void list_init(obj_list_head_t *head, obj_t *obj)
 
 obj_list_head_t *obj_list_head_new(obj_t *obj)
 {
-	obj_list_head_t *h = malloc(sizeof(obj_list_head_t));
+	obj_list_head_t *h = safe_zmalloc(sizeof(obj_list_head_t));
 
 	list_init(h, obj);
 
@@ -88,29 +88,9 @@ void obj_list_add(obj_list_head_t *head, obj_t *obj)
 	head->last = list;
 }
 
-bool obj_list_remove(obj_list_head_t *head, obj_t *obj)
-{
-	obj_list_t *l = head->first, *previous = NULL;
-
-	while (l) {
-		if (l->member == obj) {
-			if (previous)
-				previous->next = l->next;
-			if (l == head->first)
-				head->first = l->next;
-			if (l == head->last)
-				head->last = previous;
-			return true;
-		}
-		l = l->next;
-	}
-	return false;
-}
-
 obj_t *obj_new(obj_types type, char *name)
 {
-	obj_t *new = malloc(sizeof(obj_t));
-	bzero(new, sizeof(obj_t));
+	obj_t *new = safe_zmalloc(sizeof(obj_t));
 
 	new->type = type;
 	new->name = name;
@@ -297,7 +277,7 @@ static char *print_margin_offset(const char *prefix, const char *s, int depth)
 
 	if (!len)
 		return NULL;
-	ret = malloc(len);
+	ret = safe_zmalloc(len);
 
 	snprintf(ret, len, "%s%-*s",
 		 prefix ? prefix : "", depth * C_INDENT_OFFSET, s);
@@ -350,9 +330,7 @@ static char *_prefix_str(char **s, char *p, bool space, bool freep)
 	if (space)
 		newlen++;
 
-	*s = realloc(*s, newlen);
-	if (!*s)
-		fail("realloc failed in _prefix_str(): %s\n", strerror(errno));
+	*s = safe_realloc(*s, newlen);
 
 	if (lens)
 		memmove(space ? *s+lenp+1 : *s+lenp, *s, lens + 1);
@@ -405,9 +383,7 @@ static char *_postfix_str(char **s, char *p, bool space, bool freep)
 	if (space)
 		newlen++;
 
-	*s = realloc(*s, newlen);
-	if (!*s)
-		fail("realloc failed in _postfix_str(): %s\n", strerror(errno));
+	*s = safe_realloc(*s, newlen);
 
 	if (lens == 0)
 		(*s)[0] = '\0';
@@ -458,7 +434,7 @@ static pp_t print_reffile(obj_t *o, int depth, const char *prefix)
 	pp_t ret = {NULL, NULL};
 	char *s = filenametotype(o->base_type);
 
-	s = realloc(s, strlen(s) + 2);
+	s = safe_realloc(s, strlen(s) + 2);
 	strcat(s, " ");
 	ret.prefix = s;
 
@@ -532,7 +508,7 @@ static pp_t print_func(obj_t *o, int depth, const char *prefix)
 
 static pp_t print_array(obj_t *o, int depth, const char *prefix)
 {
-	pp_t ret = {NULL, NULL};
+	pp_t ret;
 	char *s;
 	obj_t *next = o->ptr;
 
@@ -546,7 +522,7 @@ static pp_t print_array(obj_t *o, int depth, const char *prefix)
 
 static pp_t print_ptr(obj_t *o, int depth, const char *prefix)
 {
-	pp_t ret = {NULL, NULL};
+	pp_t ret;
 	bool need_paren = is_paren_needed(o);
 	obj_t *next = o->ptr;
 
@@ -563,7 +539,7 @@ static pp_t print_ptr(obj_t *o, int depth, const char *prefix)
 /* Print a var or a struct_member */
 static pp_t print_varlike(obj_t *o, int depth, const char *prefix)
 {
-	pp_t ret = {NULL, NULL};
+	pp_t ret;
 	char *s = NULL;
 
 	if (is_bitfield(o))
@@ -585,7 +561,7 @@ static pp_t print_varlike(obj_t *o, int depth, const char *prefix)
 
 static pp_t print_typedef(obj_t *o, int depth, const char *prefix)
 {
-	pp_t ret = {NULL, NULL};
+	pp_t ret;
 
 	ret = _print_tree(o->ptr, depth, false, prefix);
 
@@ -597,7 +573,7 @@ static pp_t print_typedef(obj_t *o, int depth, const char *prefix)
 
 static pp_t print_qualifier(obj_t *o, int depth, const char *prefix)
 {
-	pp_t ret = {NULL, NULL};
+	pp_t ret;
 
 	ret = _print_tree(o->ptr, depth, false, prefix);
 	prefix_str_space(&ret.prefix, o->base_type);
@@ -646,6 +622,9 @@ static pp_t _print_tree(obj_t *o, int depth, bool newline, const char *prefix)
 {
 	pp_t ret = {NULL, NULL};
 	char *margin;
+
+	/* silence coverity on write-only variable */
+	(void)ret;
 
 	if (!o)
 		fail("NULL pointer in _print_tree\n");

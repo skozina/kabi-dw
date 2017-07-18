@@ -126,7 +126,7 @@ static int _cmp_nodes(obj_t *o1, obj_t *o2, bool search)
 	    (has_index(o1) && (o1->index != o2->index)) ||
 	    (is_bitfield(o1) != is_bitfield(o2)) ||
 	    (is_bitfield(o1) && ((o1->last_bit - o1->first_bit) !=
-				 (o2->last_bit - o1->first_bit))))
+				 (o2->last_bit - o2->first_bit))))
 		return CMP_DIFF;
 
 	if (o1->type == __type_reffile) {
@@ -408,13 +408,14 @@ static bool push_file(char *filename)
 
 	if (!sz) {
 		compare_config.flistsz = sz = 16;
-		compare_config.flist = flist = malloc(16 * sizeof(char *));
+		compare_config.flist = flist =
+			safe_zmalloc(16 * sizeof(char *));
 	}
 	if (cnt >= sz) {
 		sz *= 2;
 		compare_config.flistsz = sz;
 		compare_config.flist = flist =
-			realloc(flist, sz * sizeof(char *));
+			safe_realloc(flist, sz * sizeof(char *));
 	}
 
 	flist[cnt] = strdup(filename);
@@ -538,10 +539,13 @@ static int compare_two_files(char *filename, char *newfile, bool follow)
 		obj_debug_tree(root2);
 	}
 
-	if (follow)
+	if (follow) {
 		stream = fopen("/dev/null", "w");
-	else
+		if (stream == NULL)
+			fail("Unable to open /dev/null: %s\n", strerror(errno));
+	} else {
 		stream = open_memstream(&s, &sz);
+	}
 	tmp = compare_tree(root1, root2, stream);
 
 	if (tmp == COMP_DIFF) {
@@ -627,6 +631,7 @@ int compare(int argc, char **argv)
 			break;
 		case 'n':
 			compare_config.hide_kabi_new = true;
+			/* fall through */
 		case 'k':
 			compare_config.hide_kabi = true;
 			break;

@@ -43,15 +43,26 @@ static inline void safe_asprintf(char **strp, const char *fmt, ...)
 static inline void *safe_zmalloc(size_t size)
 {
 	void *result = malloc(size);
+
 	if (result == NULL)
 		fail("Malloc of size %zu failed", size);
 	memset(result, 0, size);
 	return result;
 }
 
+static inline void *safe_realloc(void *ptr, size_t size)
+{
+	void *result = realloc(ptr, size);
+
+	if (result == NULL)
+		fail("Rellloc of size %zu failed: %s\n", size, strerror(errno));
+	return result;
+}
+
 static inline void *safe_strdup(const char *s)
 {
 	void *result = strdup(s);
+
 	if (result == NULL)
 		fail("strdup() of \"%s\" failed", s);
 	return result;

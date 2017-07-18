@@ -878,8 +878,8 @@ static obj_t *print_die_structure(struct cu_ctx *ctx,
 				  struct record *rec,
 				  Dwarf_Die *die)
 {
-	unsigned int tag = dwarf_tag(die);
 	const char *name = get_die_name(die);
+	unsigned int tag;
 	obj_list_head_t *members = NULL;
 	obj_t *obj;
 	obj_t *member;
@@ -970,7 +970,7 @@ static obj_t *print_die_union(struct cu_ctx *ctx,
 			      Dwarf_Die *die)
 {
 	const char *name = get_die_name(die);
-	unsigned int tag = dwarf_tag(die);
+	unsigned int tag;
 	obj_list_head_t *members = NULL;
 	obj_t *member;
 	obj_t *type;

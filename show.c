@@ -71,6 +71,7 @@ int show(int argc, char **argv)
 			break;
 		case 'n':
 			show_config.hide_kabi_new = true;
+			/* fall through */
 		case 'k':
 			show_config.hide_kabi = true;
 			break;
