@@ -1263,6 +1263,11 @@ static void dump_constant(obj_t *o, FILE *f)
 	fprintf(f, "%s = 0x%lx\n", o->name, o->constant);
 }
 
+static void dump_fail(obj_t *o, FILE *f)
+{
+	fail("Dump call for this type unsupported!\n");
+}
+
 struct dumper {
 	void (*dumper)(obj_t *o, FILE *f);
 };
@@ -1281,6 +1286,8 @@ static struct dumper dumpers[] = {
 	[__type_qualifier].dumper = dump_qualifier,
 	[__type_base].dumper = dump_base,
 	[__type_constant].dumper = dump_constant,
+	[__type_assembly].dumper = dump_fail,
+	[__type_weak].dumper = dump_fail,
 };
 
 void obj_dump(obj_t *o, FILE *f)
