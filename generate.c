@@ -66,6 +66,7 @@ typedef struct {
 	struct ksymtab *symbols; /* List of symbols to generate */
 	size_t symbol_cnt;
 	struct record_db *db;
+	bool rhel_tree;
 	bool verbose;
 	bool gen_extra;
 } generate_config_t;
@@ -1550,18 +1551,26 @@ static void merge_aliases(struct ksymtab *ksymtab,
 		ksymtab_for_each(aliases, ksymtab_add_alias, symbols);
 }
 
-static bool process_symbol_file(char *path, void *arg)
+static walk_rv_t process_symbol_file(char *path, void *arg)
 {
 	struct file_ctx fctx;
 	generate_config_t *conf = (generate_config_t *)arg;
 	struct ksymtab *ksymtab;
 	struct ksymtab *aliases = NULL;
-	bool ret = true;
+	walk_rv_t ret = WALK_CONT;
 
 	/* We want to process only .ko kernel modules and vmlinux itself */
 	if (!safe_strendswith(path, ".ko") &&
 	    !safe_strendswith(path, "/vmlinux"))
 		return ret;
+
+	/*
+	 * Don't look into RHEL build cache directories.
+	 */
+	if (conf->rhel_tree) {
+		if (strstr(path, "redhat/rpm") != NULL)
+			return WALK_SKIP;
+	}
 
 	ksymtab = ksymtab_read(path, &aliases);
 
@@ -1583,7 +1592,7 @@ static bool process_symbol_file(char *path, void *arg)
 	ksymtab_for_each(ksymtab, process_not_found, conf);
 
 	if (is_all_done(conf))
-		ret = false;
+		ret = WALK_STOP;
 out:
 	ksymtab_free(aliases);
 	ksymtab_free(ksymtab);
@@ -1748,7 +1757,8 @@ static void generate_usage()
 	       "where to write kabi files (default: \"output\")\n"
 	       "    -s, --symbols symbol_file:\n\t\t\ta file containing the"
 	       " list of symbols of interest (e.g. whitelisted)\n"
-	       "    -r, --replace-path abs_path:\n\t\t\t"
+	       "    -r, --rhel:\n\t\t\trun on the RHEL build tree\n"
+	       "    -a, --abs-path abs_path:\n\t\t\t"
 	       "replace the absolute path by a relative path\n"
 	       "    -g, --generate-extra-info:\n\t\t\t"
 	       "generate extra information (declaration stack, compilation unit)\n");
@@ -1759,6 +1769,7 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 		char **symbol_file)
 {
 	*symbol_file = NULL;
+	conf->rhel_tree = false;
 	conf->verbose = false;
 	conf->kabi_dir = DEFAULT_OUTPUT_DIR;
 	int opt, opt_index;
@@ -1767,12 +1778,13 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 		{"verbose", no_argument, 0, 'v'},
 		{"output", required_argument, 0, 'o'},
 		{"symbols", required_argument, 0, 's'},
-		{"replace-path", required_argument, 0, 'r'},
+		{"rhel", no_argument, 0, 'r'},
+		{"abs-path", required_argument, 0, 'a'},
 		{"generate-extra-info", no_argument, 0, 'g'},
 		{0, 0, 0, 0}
 	};
 
-	while ((opt = getopt_long(argc, argv, "hvo:s:r:m:g",
+	while ((opt = getopt_long(argc, argv, "hvo:s:ra:m:g",
 				  loptions, &opt_index)) != -1) {
 		switch (opt) {
 		case 'h':
@@ -1787,6 +1799,9 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 			*symbol_file = optarg;
 			break;
 		case 'r':
+			conf->rhel_tree = true;
+			break;
+		case 'a':
 			get_file_replace_path = optarg;
 			break;
 		case 'g':

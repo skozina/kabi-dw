@@ -53,16 +53,17 @@ int reg_first(const struct dirent **a, const struct dirent **b)
 }
 
 /*
- * Call cb() on each node in the directory structure @path.
- * If list_dirs == true list subdirectories as well, otherwise list only files.
+ * Call cb() on all nodes in the directory structure @path.
+ * If list_dirs == true run cb() on subdirectories as well, otherwise list only
+ * files.
  * The cb() has to return true if we continue directory walk or false if we're
  * all done.
  */
-void walk_dir(char *path, bool list_dirs, bool (*cb)(char *, void *),
+void walk_dir(char *path, bool list_dirs, walk_rv_t (*cb)(char *, void *),
 		void *arg)
 {
 	struct dirent **entlist;
-	bool proceed = true;
+	walk_rv_t cb_rv = WALK_CONT;
 	int entries, i;
 
 	assert(path != NULL && strlen(path) >= 1);
@@ -74,7 +75,7 @@ void walk_dir(char *path, bool list_dirs, bool (*cb)(char *, void *),
 	}
 
 	/* process all the files and directories within directory */
-	for (i = 0; i < entries && proceed; i++) {
+	for (i = 0; i < entries; i++) {
 		struct dirent *ent = entlist[i];
 		struct stat entstat;
 		char *new_path;
@@ -96,17 +97,29 @@ void walk_dir(char *path, bool list_dirs, bool (*cb)(char *, void *),
 		}
 
 		if (S_ISDIR(entstat.st_mode)) {
+			if (list_dirs) {
+				cb_rv = cb(new_path, arg);
+				if (cb_rv != WALK_CONT)
+					goto out;
+			}
+
 			/* Ignore symlinks */
 			if (!S_ISLNK(entstat.st_mode))
 				walk_dir(new_path, list_dirs, cb, arg);
-			if (list_dirs)
-				proceed = cb(new_path, arg);
 		} else if (S_ISREG(entstat.st_mode)) {
-			proceed = cb(new_path, arg);
+			cb_rv = cb(new_path, arg);
 		}
 
+out:
 		free(new_path);
 		free(ent);
+
+		if (cb_rv == WALK_STOP)
+			break;
+		if (cb_rv == WALK_SKIP) {
+			cb_rv = WALK_CONT;
+			break;
+		}
 	}
 
 	free(entlist);

@@ -127,7 +127,13 @@ static inline FILE *safe_fopen(char *filename)
 	return file;
 }
 
-extern void walk_dir(char *, bool, bool (*)(char *, void *), void *);
+typedef enum {
+	WALK_CONT,
+	WALK_STOP,
+	WALK_SKIP,
+} walk_rv_t;
+
+extern void walk_dir(char *, bool, walk_rv_t (*)(char *, void *), void *);
 extern int check_is_directory(char *);
 extern void rec_mkdir(char *);
 extern void safe_rename(const char *, const char *);

@@ -569,13 +569,13 @@ static int compare_two_files(char *filename, char *newfile, bool follow)
 
 }
 
-static bool compare_files_cb(char *kabi_path, void *arg)
+static walk_rv_t compare_files_cb(char *kabi_path, void *arg)
 {
 	compare_config_t *conf = (compare_config_t *)arg;
 	char *filename;
 
 	if (compare_config.skip_duplicate && is_duplicate(kabi_path))
-		return true;
+		return WALK_CONT;
 
 	/* If conf->*_dir contains slashes, skip them */
 	filename = kabi_path + strlen(conf->old_dir);
@@ -586,7 +586,7 @@ static bool compare_files_cb(char *kabi_path, void *arg)
 	if (compare_two_files(filename, NULL, false))
 		conf->ret = EXIT_KABI_CHANGE;
 
-	return true;
+	return WALK_CONT;
 }
 
 #define COMPARE_NO_OPT(name) \
