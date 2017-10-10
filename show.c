@@ -85,9 +85,11 @@ int show(int argc, char **argv)
 		show_usage();
 
 	while (optind < argc) {
-		show_config.file = safe_fopen(argv[optind++]);
+		char *fn = argv[optind++];
 
-		root = obj_parse(show_config.file);
+		show_config.file = safe_fopen(fn);
+
+		root = obj_parse(show_config.file, fn);
 
 		if (show_config.hide_kabi)
 			obj_hide_kabi(root, show_config.hide_kabi_new);

@@ -24,10 +24,10 @@
 #include <string.h>
 #include <errno.h>
 
-#define	fail(m...)	{			\
+#define	fail(fmt, ...)	{					\
 	fprintf(stderr, "%s():%d ", __func__, __LINE__);	\
-	fprintf(stderr, m);				\
-	exit(1);				\
+	fprintf(stderr, fmt, ## __VA_ARGS__);			\
+	exit(1);						\
 }
 
 static inline void safe_asprintf(char **strp, const char *fmt, ...)

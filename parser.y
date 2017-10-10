@@ -368,7 +368,7 @@ reference_file:
 
 extern void usage(void);
 
-obj_t *obj_parse(FILE *file) {
+obj_t *obj_parse(FILE *file, char *fn) {
 	obj_t *root = NULL;
 
 #ifdef DEBUG
@@ -380,7 +380,7 @@ obj_t *obj_parse(FILE *file) {
 	yyin = file;
 	yyparse(&root);
 	if (!root)
-		fail("No object build\n");
+		fail("No object build for file %s\n", fn);
 
 	return root;
 }

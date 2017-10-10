@@ -523,11 +523,12 @@ static int compare_two_files(char *filename, char *newfile, bool follow)
 
 	file1 = safe_fopen(path1);
 	file2 = safe_fopen(path2);
+
+	root1 = obj_parse(file1, path1);
+	root2 = obj_parse(file2, path2);
+
 	free(path1);
 	free(path2);
-
-	root1 = obj_parse(file1);
-	root2 = obj_parse(file2);
 
 	if (compare_config.hide_kabi) {
 		obj_hide_kabi(root1, compare_config.hide_kabi_new);
