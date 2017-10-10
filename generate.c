@@ -155,6 +155,7 @@ struct record {
 /* List of types built-in the compiler */
 static const char *builtin_types[] = {
 	"__va_list_tag",
+	"__builtin_va_list",
 	"__builtin_strlen",
 	"__builtin_strcpy",
 	NULL
