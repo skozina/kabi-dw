@@ -199,7 +199,7 @@ static bool is_declaration(Dwarf_Die *die)
 
 static char *get_file_replace_path;
 
-static char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die)
+static char *_get_file(Dwarf_Die *cu_die, Dwarf_Die *die)
 {
 	Dwarf_Files *files;
 	size_t nfiles;
@@ -208,19 +208,11 @@ static char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die)
 	const char *filename;
 	char *ret;
 
-	/*
-	 * Handle types built-in in C compiler. These are for example the
-	 * variable argument list which is defined as * struct __va_list_tag.
-	 */
-	if (is_builtin(get_die_name(die)))
-		return safe_strdup(BUILTIN_PATH);
-
-	if (!dwarf_hasattr(die, DW_AT_decl_file))
+	if (dwarf_attr(die, DW_AT_decl_file, &attr) == NULL) {
 		fail("DIE missing file information: %s\n",
-		    dwarf_diename(die));
-
-	(void) dwarf_attr(die, DW_AT_decl_file, &attr);
-	(void) dwarf_formudata(&attr, &file);
+		     dwarf_diename(die));
+	}
+	dwarf_formudata(&attr, &file);
 
 	if (dwarf_getsrcfiles(cu_die, &files, &nfiles) != 0)
 		fail("cannot get files for CU %s\n", dwarf_diename(cu_die));
@@ -244,19 +236,51 @@ static char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die)
 	return ret;
 }
 
+static char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die)
+{
+	Dwarf_Attribute attr;
+	Dwarf_Die spec_die;
+
+	/*
+	 * Handle types built-in in C compiler. These are for example the
+	 * variable argument list which is defined as * struct __va_list_tag.
+	 */
+	if (is_builtin(get_die_name(die)))
+		return safe_strdup(BUILTIN_PATH);
+
+	if (dwarf_hasattr(die, DW_AT_decl_file))
+		return _get_file(cu_die, die);
+
+	if ((dwarf_attr(die, DW_AT_specification, &attr) == NULL) ||
+	    (dwarf_formref_die(&attr, &spec_die) == NULL)) {
+		fail("DIE missing file information: %s\n",
+		     dwarf_diename(die));
+	}
+
+	return _get_file(cu_die, &spec_die);
+}
+
 static long get_line(Dwarf_Die *cu_die, Dwarf_Die *die)
 {
 	Dwarf_Attribute attr;
 	Dwarf_Word line;
+	Dwarf_Die spec_die;
 
-	if (!dwarf_hasattr(die, DW_AT_decl_line))
-		fail("DIE missing file or line information: %s\n",
-		    dwarf_diename(die));
+	if (is_builtin(get_die_name(die)))
+		return 0;
 
-	(void) dwarf_attr(die, DW_AT_decl_line, &attr);
-	(void) dwarf_formudata(&attr, &line);
+	if (dwarf_attr(die, DW_AT_decl_line, &attr) != NULL) {
+		dwarf_formudata(&attr, &line);
+		return line;
+	}
 
-	return line;
+	if ((dwarf_attr(die, DW_AT_specification, &attr) == NULL) ||
+	    (dwarf_formref_die(&attr, &spec_die) == NULL)) {
+		fail("DIE missing line information: %s\n",
+		     dwarf_diename(die));
+	}
+
+	return get_line(cu_die, &spec_die);
 }
 
 static obj_t *print_die(struct cu_ctx *, struct record *, Dwarf_Die *);
@@ -332,17 +356,31 @@ static char *get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die)
 	return file_name;
 }
 
-/* Check if given DIE has DW_AT_external attribute */
-static bool is_external(Dwarf_Die *die)
+/*
+ * Check if given DIE is external.
+ * It can has DW_AT_external attribute itself,
+ * or in case of reference to the specification,
+ * the specification DIE can be exported.
+ */
+static int is_external(Dwarf_Die *die)
 {
 	Dwarf_Attribute attr;
+	Dwarf_Die spec_die;
 
-	if (!dwarf_hasattr(die, DW_AT_external))
+	if (dwarf_hasattr(die, DW_AT_external)) {
+		dwarf_attr(die, DW_AT_external, &attr);
+		if (!dwarf_hasform(&attr, DW_FORM_flag_present))
+			return false;
+		return true;
+	}
+
+	if (dwarf_attr(die, DW_AT_specification, &attr) == NULL)
 		return false;
-	(void) dwarf_attr(die, DW_AT_external, &attr);
-	if (!dwarf_hasform(&attr, DW_FORM_flag_present))
-		return false;
-	return true;
+
+	if (dwarf_formref_die(&attr, &spec_die) == NULL)
+		fail("dwarf_formref_die() failed for %s\n",
+		     dwarf_diename(die));
+	return is_external(&spec_die);
 }
 
 struct set *set_init(size_t size)
