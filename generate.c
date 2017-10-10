@@ -136,7 +136,19 @@ struct dwarf_type {
  *
  * obj: pointer to the abstract type object, representing the toplevel type of
  *      the record.
-*/
+ *
+ * should_free_cu: usually we generate a string for the "cu" field,
+ *                 and it must be then explicitly freed, but if the origin
+ *                 is not tracked, it points to a static constat read only
+ *                 string. This field help to disignate the situations.
+ *
+ * link: name of weak link alisas for the weak aliases.
+ *
+ * free: type specific function to free the record
+ *       (there are normal, weak and assembly records).
+ *
+ * dump: type specific function for record output.
+ */
 struct record {
 	char *key;
 	int version;
