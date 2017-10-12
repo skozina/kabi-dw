@@ -18,7 +18,7 @@ SRCS=generate.c ksymtab.c utils.c main.c stack.c objects.c hash.c
 SRCS += compare.c show.c
 
 CC=gcc
-CFLAGS=-Wall -O2 -g --std=gnu99 -D_GNU_SOURCE -c
+CFLAGS=-Wall -O2 --std=gnu99 -D_GNU_SOURCE -c
 LDFLAGS=-ldw -lelf
 
 YACC=bison
@@ -34,7 +34,7 @@ OBJS+=parser.yy.o parser.tab.o
 
 all: $(PROG)
 
-debug: CFLAGS+=-DDEBUG -fsanitize=address
+debug: CFLAGS+=-g -DDEBUG -fsanitize=address
 debug: LDFLAGS:=-lasan $(LDFLAGS)
 debug: FLEXFLAGS+=-d
 debug: $(PROG)
