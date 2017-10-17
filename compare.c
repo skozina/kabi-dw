@@ -76,11 +76,27 @@ static void print_node_list(const char *s, const char *prefix,
 	_print_node_list(s, prefix, list, NULL, stream);
 }
 
+
+/*
+ * There is some ambiguity here that need to be cleared and a
+ * hierarchy that need to be explicitly established. The current
+ * situation is: if there is a real change to the object
+ * (different name, type...) we return CMP_DIFF; If that's not
+ * the case, but a referred symbol has changed, we return
+ * CMP_REFFILE; If that's not the case, but the offset has
+ * changed, we return CMP_OFFSET. So the current order is
+ * CMP_DIFF > CMP_REFFILE > CMP_OFFSET > CMP_ALIGNMENT"
+ * In case of alignment, if the structure alignment has changed,
+ * only that is reported. If not, then the fields are checked and
+ * the all the different fields are reported.
+ */
+
 typedef enum {
 	CMP_SAME = 0,
 	CMP_OFFSET,	/* Only the offset has changed */
 	CMP_DIFF,	/* Nodes are differents */
 	CMP_REFFILE,	/* A refered symbol has changed */
+	CMP_ALIGNMENT,  /* An alignment has changed */
 } cmp_ret_t;
 
 static int compare_two_files(char *filename, char *newfile, bool follow);
@@ -150,6 +166,9 @@ static int _cmp_nodes(obj_t *o1, obj_t *o2, bool search)
 			return CMP_DIFF;
 		return CMP_OFFSET;
 	}
+
+	if (o1->alignment != o2->alignment)
+		return CMP_ALIGNMENT;
 
 	return CMP_SAME;
 }
@@ -293,6 +312,33 @@ compare_config_t compare_config = {false, false, false, false, 0,
 				   NULL, NULL, NULL, NULL,
 				   0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
+static void message_alignment_value(unsigned v, FILE *stream)
+{
+	if (v == 0)
+		fprintf(stream, "<undefined>");
+	else
+		fprintf(stream, "%u", v);
+}
+
+static void message_alignment(obj_t *o1, obj_t *o2, FILE *stream)
+{
+	char *part_str;
+
+	if (o1->type == __type_struct_member) {
+		part_str = "field";
+	} else {
+		part_str = "symbol";
+	}
+
+	fprintf(stream, "The alignment of %s '%s' has changed from ",
+		part_str, o1->name);
+
+	message_alignment_value(o1->alignment, stream);
+	fprintf(stream, " to ");
+	message_alignment_value(o2->alignment, stream);
+	fprintf(stream, "\n");
+}
+
 static int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream)
 {
 	obj_list_t *list1 = NULL, *list2 = NULL;
@@ -310,7 +356,11 @@ static int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream)
 				"Shifted" : "Replaced";
 			print_two_nodes(s, o1, o2, stream);
 			ret = COMP_DIFF;
+		} else if (tmp == CMP_ALIGNMENT) {
+			message_alignment(o1, o2, stream);
+			ret = COMP_DIFF;
 		}
+
 		return ret;
 	}
 

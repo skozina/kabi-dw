@@ -1016,7 +1016,8 @@ static bool obj_eq(obj_t *o1, obj_t *o2)
 	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
 	    (has_constant(o1) && (o1->constant != o2->constant)) ||
 	    (has_index(o1) && (o1->index != o2->index)) ||
-	    (is_bitfield(o1) != is_bitfield(o2)))
+	    (is_bitfield(o1) != is_bitfield(o2)) ||
+	    (o1->alignment != o2->alignment))
 		return false;
 
 	/* just compare bitfields */
@@ -1237,6 +1238,10 @@ static void dump_struct_member(obj_t *o, FILE *f)
 	fprintf(f, "0x%lx", o->offset);
 	if (o->is_bitfield)
 		fprintf(f, ":%d-%d", o->first_bit, o->last_bit);
+
+	if (o->alignment != 0)
+		fprintf(f, " %u", o->alignment);
+
 	fprintf(f, " %s ", o->name);
 	obj_dump(o->ptr, f);
 }

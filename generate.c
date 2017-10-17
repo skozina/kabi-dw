@@ -57,6 +57,14 @@
 #define DB_SIZE (20 * 1024)
 #define INITIAL_RECORD_SIZE 512
 
+/*
+ * Dwarf5 spec, 7.5.4 Attribute Encodings
+ * libdw doesn't support it yet
+ */
+#ifndef DW_AT_alignment
+#define DW_AT_alignment 0x88
+#endif
+
 struct set;
 struct record_db;
 
@@ -395,6 +403,20 @@ static int is_external(Dwarf_Die *die)
 	return is_external(&spec_die);
 }
 
+static obj_t *die_read_alignment(Dwarf_Die *die, obj_t *obj)
+{
+	Dwarf_Attribute attr;
+	Dwarf_Word value;
+
+	if (dwarf_attr(die, DW_AT_alignment, &attr) == NULL)
+		goto out;
+
+	dwarf_formudata(&attr, &value);
+	obj->alignment = value;
+out:
+	return obj;
+}
+
 struct set *set_init(size_t size)
 {
 	struct hash *h;
@@ -687,6 +709,10 @@ static void record_dump_regular(struct record *rec, FILE *f)
 		fail("Could not put origin");
 
 	record_stack_dump_and_clear(rec, f);
+
+	if (rec->obj->alignment != 0)
+		fprintf(f, "Alignment %u\n", rec->obj->alignment);
+
 	obj_dump(rec->obj, f);
 }
 
@@ -923,6 +949,7 @@ static obj_t *print_die_struct_member(struct cu_ctx *ctx,
 		obj->first_bit = offset;
 		obj->last_bit = offset + size - 1;
 	}
+	die_read_alignment(die, obj);
 	return obj;
 }
 
@@ -1057,6 +1084,7 @@ static obj_t *print_die_union(struct cu_ctx *ctx,
 	members->object = obj;
 	obj->member_list = members;
 done:
+	die_read_alignment(die, obj);
 	return obj;
 }
 
@@ -1246,6 +1274,7 @@ static obj_t *print_die_tag(struct cu_ctx *ctx,
 		break;
 	}
 	}
+	obj = die_read_alignment(die, obj);
 	return obj;
 }
 

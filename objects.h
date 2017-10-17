@@ -70,6 +70,7 @@ typedef struct obj_list_head {
  * base_type:	(base type) the type of the symbol,
  *		(qualifier) the type qualifier (const or volatile)
  *		(reffile) path to the file
+ * alignment:	value of DW_AT_alignment attribute or 0 if not present
  * member_list: (struct, union, enum) list of members
  *              (function) list of arguments
  * ptr:		(pointer) object pointed to
@@ -90,6 +91,7 @@ typedef struct obj {
 	obj_types type;
 	char *name;
 	char *base_type;
+	unsigned alignment;
 	obj_list_head_t *member_list;
 	struct obj *ptr, *parent;
 	union {

@@ -58,6 +58,7 @@
 %type <obj> declaration_var declaration_typedef declaration kabi_dw_file
 %type <list> elt_list arg_list enum_list struct_list
 %type <obj> assembly_file weak_file
+%type <ul> alignment
 
 %parse-param {obj_t **root}
 
@@ -75,6 +76,12 @@ kabi_dw_file:
 	| cu_file source_file stack_list declaration NEWLINE
 	{
 	    $$ = *root = $declaration;
+	    obj_fill_parent(*root);
+	}
+	| cu_file source_file stack_list alignment declaration NEWLINE
+	{
+	    $$ = *root = $declaration;
+	    $$->alignment = $alignment;
 	    obj_fill_parent(*root);
 	}
 	;
@@ -125,6 +132,15 @@ stack_elt:
 		free($STRING);
 	}
 	;
+
+alignment:
+        IDENTIFIER CONSTANT NEWLINE
+	{
+	    if (strcmp($IDENTIFIER,"Alignment"))
+		abort("Wrong alignment keyword: \"%s\"\n", $IDENTIFIER);
+	    free($IDENTIFIER);
+	    $$ = $CONSTANT;
+	}
 
 /* Possible types are struct union enum func typedef and var */
 declaration:
@@ -195,6 +211,13 @@ struct_elt:
 	    $$ = obj_struct_member_new_add($IDENTIFIER, $type);
 	    $$->offset = $CONSTANT;
 	}
+	/* with alignment */
+	| CONSTANT CONSTANT IDENTIFIER type
+	{
+	    $$ = obj_struct_member_new_add($IDENTIFIER, $type);
+	    $$->offset = $1;
+            $$->alignment = $2;
+	}
 	| CONSTANT ':' CONSTANT '-' CONSTANT IDENTIFIER type
 	{
 	    if ($5 > UCHAR_MAX || $3 > $5)
@@ -204,6 +227,18 @@ struct_elt:
 	    $$->is_bitfield = 1;
 	    $$->first_bit = $3;
 	    $$->last_bit = $5;
+	}
+	/* with alignment */
+	| CONSTANT ':' CONSTANT '-' CONSTANT CONSTANT IDENTIFIER type
+	{
+	    if ($5 > UCHAR_MAX || $3 > $5)
+		abort("Invalid offset: %lx:%lu:%lu\n", $1, $3, $5);
+	    $$ = obj_struct_member_new_add($IDENTIFIER, $type);
+	    $$->offset = $1;
+	    $$->is_bitfield = 1;
+	    $$->first_bit = $3;
+	    $$->last_bit = $5;
+	    $$->alignment = $6;
 	}
 	;
 
