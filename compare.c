@@ -40,8 +40,22 @@
 /* Return values for the (_)compare_tree functions */
 enum {
 	COMP_SAME = 0,	/* Subtree are equal */
-	COMP_DIFF,	/* Subtree differs */
+	COMP_DIFF,	/* Subtree differs, stop the scanning */
+	COMP_CONT,	/* Only offset or alignment change, continue */
 };
+
+int comp_return_value(int old, int new) {
+	switch (new) {
+	case COMP_DIFF:
+		return COMP_DIFF;
+	case COMP_CONT:
+		if (old != COMP_DIFF)
+			return COMP_CONT;
+	case COMP_SAME:
+		;
+	}
+	return old;
+}
 
 /*
  * Is this symbol a duplicate, i.e. is not the first version of this symbol.
@@ -217,7 +231,8 @@ static diff_ret_t list_diff(obj_list_t *list1, obj_list_t **next1,
 
 	while (next) {
 		ret = _cmp_nodes(o, next->member, true);
-		if (ret == CMP_SAME || ret == CMP_OFFSET) {
+		if (ret == CMP_SAME || ret == CMP_OFFSET
+		    || ret == CMP_ALIGNMENT) {
 			if (o == o1)
 				/* We find the first element of list2
 				   on list1, that is d1 elements have
@@ -230,7 +245,8 @@ static diff_ret_t list_diff(obj_list_t *list1, obj_list_t **next1,
 		if (d1 == d2)  {
 			ret = _cmp_nodes((*next1)->member, (*next2)->member,
 					 true);
-			if (ret == CMP_SAME || ret == CMP_OFFSET) {
+			if (ret == CMP_SAME || ret == CMP_OFFSET
+			    || ret == CMP_ALIGNMENT) {
 				/* d1 fields have been replaced */
 				return DIFF_REPLACE;
 			}
@@ -355,13 +371,14 @@ static int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream)
 			const char *s =	(tmp == CMP_OFFSET) ?
 				"Shifted" : "Replaced";
 			print_two_nodes(s, o1, o2, stream);
-			ret = COMP_DIFF;
+			ret = COMP_CONT;
 		} else if (tmp == CMP_ALIGNMENT) {
 			message_alignment(o1, o2, stream);
-			ret = COMP_DIFF;
+			ret = COMP_CONT;
 		}
 
-		return ret;
+		if (ret == COMP_DIFF)
+			return ret;
 	}
 
 	if (o1->member_list)
@@ -407,9 +424,8 @@ static int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream)
 			}
 		}
 
-		if (_compare_tree(list1->member, list2->member, stream) !=
-		    COMP_SAME)
-			ret = COMP_DIFF;
+		tmp =_compare_tree(list1->member, list2->member, stream);
+		ret = comp_return_value(ret, tmp);
 
 		list1 = list1->next;
 		list2 = list2->next;
@@ -431,9 +447,10 @@ static int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream)
 		}
 	}
 
-	if (o1->ptr && o2->ptr)
-		if (_compare_tree(o1->ptr, o2->ptr, stream) != COMP_SAME)
-			ret = COMP_DIFF;
+	if (o1->ptr && o2->ptr) {
+		tmp = _compare_tree(o1->ptr, o2->ptr, stream);
+		ret = comp_return_value(ret, tmp);
+	}
 
 	return ret;
 }
@@ -599,7 +616,7 @@ static int compare_two_files(char *filename, char *newfile, bool follow)
 	}
 	tmp = compare_tree(root1, root2, stream);
 
-	if (tmp == COMP_DIFF) {
+	if (tmp != COMP_SAME) {
 		if (!follow) {
 			printf("Changes detected in: %s\n", filename);
 			fflush(stream);
