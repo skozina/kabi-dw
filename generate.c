@@ -1902,7 +1902,6 @@ static void parse_generate_opts(int argc, char **argv, generate_config_t *conf,
 
 void generate(int argc, char **argv)
 {
-	char *temp_path;
 	char *symbol_file;
 	generate_config_t *conf = safe_zmalloc(sizeof(*conf));
 
@@ -1916,18 +1915,7 @@ void generate(int argc, char **argv)
 			printf("Loaded %ld symbols\n", conf->symbol_cnt);
 	}
 
-	/* Create a place for temporary files */
-	safe_asprintf(&temp_path, "%s/%s", conf->kabi_dir, TEMP_PATH);
-	rec_mkdir(temp_path);
-
 	generate_symbol_defs(conf);
-
-	/* Delete the temporary space again */
-	if (rmdir(temp_path) != 0)
-		printf("WARNING: Failed to delete %s: %s\n", temp_path,
-		    strerror(errno));
-
-	free(temp_path);
 
 	if (symbol_file != NULL)
 		ksymtab_free(conf->symbols);
