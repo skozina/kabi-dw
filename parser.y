@@ -62,9 +62,10 @@
 %type <obj> typed_type base_type reference_file array_type
 %type <obj> type ptr_type variable_var_list func_type elt enum_elt enum_type
 %type <obj> union_type struct_type struct_elt
-%type <obj> declaration_var declaration_typedef declaration kabi_dw_file
+%type <obj> declaration_var declaration_typedef declaration
+%type <obj> kabi_dw_file kabi_dw_file_subtype
 %type <list> elt_list arg_list enum_list struct_list
-%type <obj> assembly_file weak_file
+%type <obj> assembly_file weak_file symbol
 %type <ul> alignment
 
 %parse-param {obj_t **root}
@@ -72,6 +73,26 @@
 %%
 
 kabi_dw_file:
+	fmt_version kabi_dw_file_subtype
+	{
+		$$ =  *root = $kabi_dw_file_subtype;
+	}
+	;
+
+fmt_version:
+	IDENTIFIER ':' CONSTANT '.' CONSTANT NEWLINE
+	{
+		if (strcmp($IDENTIFIER, "Version"))
+			abort("Wrong keyword (\"Version\" expected): \"%s\"\n",
+			      $IDENTIFIER);
+		if (($3 != FILEFMT_VERSION_MAJOR) |
+		    ($5 > FILEFMT_VERSION_MINOR))
+			abort("Unsupported file version: %lu.%lu\n", $3, $5);
+		free($IDENTIFIER);
+	}
+	;
+
+kabi_dw_file_subtype:
 	assembly_file
 	{
 		$$ = *root = $assembly_file;
@@ -80,15 +101,9 @@ kabi_dw_file:
 	{
 		$$ = *root = $weak_file;
 	}
-	| cu_file source_file stack_list declaration NEWLINE
+	| cu_file source_file stack_list symbol
 	{
-	    $$ = *root = $declaration;
-	    obj_fill_parent(*root);
-	}
-	| cu_file source_file stack_list alignment declaration NEWLINE
-	{
-	    $$ = *root = $declaration;
-	    $$->alignment = $alignment;
+	    $$ = *root = $symbol;
 	    obj_fill_parent(*root);
 	}
 	;
@@ -111,7 +126,7 @@ weak_file:
 	;
 
 cu_file:
-	IDENTIFIER STRING NEWLINE
+	IDENTIFIER ':' STRING NEWLINE
 	{
 	    check_and_free_keyword($IDENTIFIER, "CU");
 	    free($STRING);
@@ -119,7 +134,7 @@ cu_file:
 	;
 
 source_file:
-	IDENTIFIER SRCFILE ':' CONSTANT NEWLINE
+	IDENTIFIER ':' SRCFILE ':' CONSTANT NEWLINE
 	{
 	    check_and_free_keyword($IDENTIFIER, "File");
 	    free($SRCFILE);
@@ -138,11 +153,24 @@ stack_elt:
 	}
 	;
 
+symbol:
+	IDENTIFIER ':' NEWLINE declaration NEWLINE
+	{
+		check_and_free_keyword($IDENTIFIER, "Symbol");
+		$$ = $declaration;
+	}
+	| IDENTIFIER ':' NEWLINE alignment declaration NEWLINE
+	{
+		check_and_free_keyword($IDENTIFIER, "Symbol");
+		$$ = $declaration;
+		$$->alignment = $alignment;
+	}
+
 alignment:
         IDENTIFIER CONSTANT NEWLINE
 	{
-	    check_and_free_keyword($IDENTIFIER, "Alignment");
-	    $$ = $CONSTANT;
+		check_and_free_keyword($IDENTIFIER, "Alignment");
+		$$ = $CONSTANT;
 	}
 
 /* Possible types are struct union enum func typedef and var */

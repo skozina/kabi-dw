@@ -24,6 +24,20 @@
 #include <string.h>
 #include <errno.h>
 
+/*
+ * Changes to file format that keep backward compatibility call for
+ * incementing the minor number, changes that don't calls for
+ * incrementing the major number.
+ */
+#define _VERSION(s,j) _STR(s,j)
+#define _STR(s,j) _STR2(Version: s##.j\n)
+#define _STR2(s) #s
+
+#define FILEFMT_VERSION_MAJOR	1
+#define FILEFMT_VERSION_MINOR	0
+#define FILEFMT_VERSION_STRING	\
+	_VERSION(FILEFMT_VERSION_MAJOR,FILEFMT_VERSION_MINOR)
+
 #define	fail(fmt, ...)	{					\
 	fprintf(stderr, "%s():%d ", __func__, __LINE__);	\
 	fprintf(stderr, fmt, ## __VA_ARGS__);			\

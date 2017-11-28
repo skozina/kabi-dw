@@ -67,7 +67,7 @@ HEX		[a-fA-F0-9]
 		  return(CONSTANT);
 		}
 
-[{}()\[\];:,*@=-]	{ return(yytext[0]); }
+[{}()\[\];:,.*@=-]	{ return(yytext[0]); }
 
 "\n"		{ return(NEWLINE); }
 
