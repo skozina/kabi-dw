@@ -17,8 +17,8 @@
 
 NUM		[0-9]
 ALPHA		[a-zA-Z]
-INDENT_FIRST	[a-zA-Z_]
-INDENT		[a-zA-Z0-9_]
+IDENT_FIRST	[a-zA-Z_]
+IDENT		[a-zA-Z0-9_]
 FILECHAR	[a-zA-Z0-9_/<>\-\.]
 HEX		[a-fA-F0-9]
 
@@ -29,10 +29,13 @@ HEX		[a-fA-F0-9]
 
 %option nounput
 %option noyywrap
-%x IN_STRING
+%s SYMBOL
+%x IN_STRING UNKNOWN_FIELD
 
 %%
+	static int last_sc = INITIAL;
 
+<SYMBOL>{ /* Keywords used by symbol declaration */
 "const"		{ return(CONST); }
 "enum"		{ return(ENUM); }
 "struct"	{ return(STRUCT); }
@@ -41,15 +44,32 @@ HEX		[a-fA-F0-9]
 "volatile"	{ return(VOLATILE); }
 
 "..."		{ return(ELLIPSIS); }
+}
 
-"->"		{ return(STACK); }
+
+<INITIAL,UNKNOWN_FIELD>{ /* keywords used only in the header */
+"Version:"	{ BEGIN(INITIAL); return(VERSION_KW); }
+"CU:"		{ BEGIN(INITIAL); return(CU_KW); }
+"File:"		{ BEGIN(INITIAL); return(FILE_KW); }
+"Stack:"	{ BEGIN(INITIAL); return(STACK_KW); }
+"Symbol:\n"	{ BEGIN(SYMBOL); return(SYMBOL_KW_NL); }
+{IDENT}+":"	{ BEGIN(UNKNOWN_FIELD); }
+}
+
+<UNKNOWN_FIELD>{ /* Ignore unknown fields. */
+[^\n:]*"\n"	{ ; }
+ /* A line that doesn't start with {IDENT}+":", i.e. not a valid field */
+{IDENT}*[^a-zA-Z0-9_\n:]+{IDENT}*[^\n]*"\n" { ; }
+}
+
+"->"	{ return(ARROW); }
 
 {FILECHAR}+"."[chS]|"<built-in>"	{ yylval.str = strdup(yytext);
 				  debug("Source file: %s\n", yylval.str);
 				  return(SRCFILE);
 				}
 
-{INDENT_FIRST}{INDENT}*	{ yylval.str = strdup(yytext);
+{IDENT_FIRST}{IDENT}*	{ yylval.str = strdup(yytext);
 			  debug("Identifier: %s\n", yylval.str);
 			  return(IDENTIFIER);
 			}
@@ -72,12 +92,16 @@ HEX		[a-fA-F0-9]
 "\n"		{ return(NEWLINE); }
 
 [ \t\v\f]	{ ; }
-"\""		{ BEGIN(IN_STRING); }
-<IN_STRING>[^"]*	{ yylval.str = strdup(yytext);
+
+"\""		{ last_sc = YY_START; BEGIN(IN_STRING); }
+<IN_STRING>[^"]* { yylval.str = strdup(yytext);
 		  debug("String: %s\n", yylval.str);
 		  return(STRING);
 		}
-<IN_STRING>"\""	{ BEGIN(INITIAL); }
+<IN_STRING>"\""	{ BEGIN(last_sc); }
 .		{ printf("Unexpected entry \"%c\"\n", *yytext); }
+
+ /* Get back to initial condition or we'll start the next file in SYMBOL */
+<<EOF>>		{ BEGIN(INITIAL); yyterminate(); }
 
 %%
