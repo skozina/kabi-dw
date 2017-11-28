@@ -27,6 +27,15 @@
 	YYABORT;				\
 }
 
+#define check_and_free_keyword(identifier, expected)			\
+{									\
+	if (strcmp(identifier, expected))				\
+		abort("Wrong keyword: %s expected, %s received\n",	\
+		      expected, identifier);				\
+	free(identifier);						\
+}
+
+
 %}
 
 %union {
@@ -48,8 +57,6 @@
 %token CONST VOLATILE
 %token STRUCT UNION ENUM ELLIPSIS
 %token STACK
-%token ASSEMBLY
-%token WEAK
 
 %type <str> type_qualifier
 %type <obj> typed_type base_type reference_file array_type
@@ -87,15 +94,17 @@ kabi_dw_file:
 	;
 
 assembly_file:
-	ASSEMBLY IDENTIFIER NEWLINE
+	IDENTIFIER IDENTIFIER NEWLINE
 	{
-		$$ = obj_assembly_new($IDENTIFIER);
+		check_and_free_keyword($1, "assembly");
+		$$ = obj_assembly_new($2);
 	}
 	;
 
 weak_file:
-        WEAK IDENTIFIER STACK IDENTIFIER NEWLINE
+        IDENTIFIER IDENTIFIER STACK IDENTIFIER NEWLINE
 	{
+		check_and_free_keyword($1, "weak");
 		$$ = obj_weak_new($2);
 		$$->link = $4;
 	}
@@ -104,9 +113,7 @@ weak_file:
 cu_file:
 	IDENTIFIER STRING NEWLINE
 	{
-	    if (strcmp($IDENTIFIER,"CU"))
-		abort("Wrong CU keyword: \"%s\"\n", $IDENTIFIER);
-	    free($IDENTIFIER);
+	    check_and_free_keyword($IDENTIFIER, "CU");
 	    free($STRING);
 	}
 	;
@@ -114,9 +121,7 @@ cu_file:
 source_file:
 	IDENTIFIER SRCFILE ':' CONSTANT NEWLINE
 	{
-	    if (strcmp($IDENTIFIER,"File"))
-		abort("Wrong file keyword: \"%s\"\n", $IDENTIFIER);
-	    free($IDENTIFIER);
+	    check_and_free_keyword($IDENTIFIER, "File");
 	    free($SRCFILE);
 	}
 	;
@@ -136,9 +141,7 @@ stack_elt:
 alignment:
         IDENTIFIER CONSTANT NEWLINE
 	{
-	    if (strcmp($IDENTIFIER,"Alignment"))
-		abort("Wrong alignment keyword: \"%s\"\n", $IDENTIFIER);
-	    free($IDENTIFIER);
+	    check_and_free_keyword($IDENTIFIER, "Alignment");
 	    $$ = $CONSTANT;
 	}
 
@@ -162,9 +165,7 @@ declaration_typedef:
 declaration_var:
 	IDENTIFIER IDENTIFIER type
 	{
-	    if (strcmp($1,"var"))
-		abort("Wrong var keyword: \"%s\"\n", $1);
-	    free($1);
+	    check_and_free_keyword($1, "var");
 	    $$ = obj_var_new_add($2, $type);
 	}
 	;
@@ -287,9 +288,7 @@ enum_elt:
 func_type:
 	IDENTIFIER IDENTIFIER '(' NEWLINE arg_list ')' NEWLINE type
 	{
-	    if (strcmp($1,"func"))
-		abort("Wrong func keyword: \"%s\"\n", $1);
-	    free($1);
+	    check_and_free_keyword($1, "func");
 	    $$ = obj_func_new_add($2, $type);
 	    $$->member_list = $arg_list;
 	    if ($arg_list)
@@ -297,9 +296,7 @@ func_type:
 	}
 	| IDENTIFIER reference_file /* protype define as typedef */
 	{
-	    if (strcmp($IDENTIFIER,"func"))
-		abort("Wrong func keyword: \"%s\"\n", $IDENTIFIER);
-	    free($IDENTIFIER);
+	    check_and_free_keyword($IDENTIFIER, "func");
 	    $$ = obj_func_new_add(NULL, $reference_file);
 	}
 	;
