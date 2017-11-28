@@ -153,5 +153,6 @@ extern void rec_mkdir(char *);
 extern void safe_rename(const char *, const char *);
 extern char *path_normalize(char *);
 extern char *filenametotype(char *);
+extern char *filenametosymbol(char *);
 
 #endif /* UTILS_H */

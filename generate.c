@@ -718,20 +718,23 @@ static void record_dump_regular(struct record *rec, FILE *f)
 
 static void record_dump_assembly(struct record *rec, FILE *f)
 {
+	char *name = filenametosymbol(rec->key);
 	int rc;
 
-	rc = fprintf(f, FILEFMT_VERSION_STRING "Symbol:\nassembly %s\n",
-		     rec->key);
+	rc = fprintf(f, FILEFMT_VERSION_STRING "Symbol:\nassembly %s\n", name);
+	free(name);
 	if (rc < 0)
 		fail("Could not put assembly\n");
 }
 
 static void record_dump_weak(struct record *rec, FILE *f)
 {
+	char *name = filenametosymbol(rec->key);
 	int rc;
 
 	rc = fprintf(f, FILEFMT_VERSION_STRING "Symbol:\nweak %s -> %s\n",
-		     rec->key, rec->link);
+		     name, rec->link);
+	free(name);
 	if (rc < 0)
 		fail("Could not put weak link\n");
 }
@@ -1533,36 +1536,42 @@ static bool is_all_done(generate_config_t *conf)
 static void generate_assembly_record(generate_config_t *conf, const char *key)
 {
 	struct record *rec;
-	char *new_key;
+	char *new_key, *name;
 
 	if (conf->verbose)
 		printf("Generating assembly record for %s\n", key);
 
-	rec = record_new_assembly(key);
+	safe_asprintf(&name, "asm--%s.txt", key);
+
+	rec = record_new_assembly(name);
 	new_key = record_db_add(conf->db, rec);
 
 	record_put(rec);
+	free(name);
 	free(new_key);
 }
 
 static bool try_generate_alias(generate_config_t *conf, struct ksym *ksym)
 {
 	char *link = ksymtab_ksym_get_link(ksym);
-	const char *name = ksymtab_ksym_get_name(ksym);
+	const char *key = ksymtab_ksym_get_name(ksym);
 	struct record *rec;
-	char *new_key;
+	char *new_key, *name;
 
 	if (!link)
 		return false;
 
 	if (conf->verbose)
 		printf("Generating weak record %s -> %s\n",
-		       name, link);
+		       key, link);
+
+	safe_asprintf(&name, "weak--%s.txt", key);
 
 	rec = record_new_weak(name, link);
 	new_key = record_db_add(conf->db, rec);
 
 	record_put(rec);
+	free(name);
 	free(new_key);
 
 	return true;
