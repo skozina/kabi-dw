@@ -76,7 +76,8 @@
 kabi_dw_file:
 	fmt_version header SYMBOL_KW_NL symbol
 	{
-		$$ =  *root = $symbol;
+		$$ = *root = $symbol;
+		obj_fill_parent(*root);
 	}
 	;
 
