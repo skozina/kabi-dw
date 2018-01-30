@@ -34,10 +34,15 @@ OBJS+=parser.yy.o parser.tab.o
 
 all: $(PROG)
 
-debug: CFLAGS+=-g -DDEBUG -fsanitize=address
-debug: LDFLAGS:=-lasan $(LDFLAGS)
+debug: CFLAGS+=-g -DDEBUG
+debug: LDFLAGS:=$(LDFLAGS)
 debug: FLEXFLAGS+=-d
 debug: $(PROG)
+
+asan-debug: CFLAGS+=-g -DDEBUG -fsanitize=address
+asan-debug: LDFLAGS:=-lasan $(LDFLAGS)
+asan-debug: FLEXFLAGS+=-d
+asan-debug: $(PROG)
 
 asan: CFLAGS+=-fsanitize=address
 asan: LDFLAGS:=-lasan $(LDFLAGS)
