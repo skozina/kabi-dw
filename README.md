@@ -58,12 +58,12 @@ Linux has an option (CONFIG\_MODVERSIONS) to generate a checksum identifing all 
 
 This program needs elfutils installed. Check out your distribution to figure out how to install elfutils.
 
-For *Fedora* systems:
+For *Fedora* and *CentOS 7* systems:
 ~~~
-dnf install elfutils-devel
+dnf install kabi-dw
 ~~~
 
-For *Ubuntu* systems:
+For *Ubuntu* systems, you need to compile it. Install the dependencies:
 ~~~
 sudo apt-get install elfutils
 ~~~
