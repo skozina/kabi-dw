@@ -141,7 +141,7 @@ int check_is_directory(char *dir)
 static void safe_mkdir(char *path)
 {
 	if (mkdir(path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH) != 0)
-		fail(strerror(errno));
+		fail("%s", strerror(errno));
 }
 
 void rec_mkdir(char *path)
@@ -175,7 +175,7 @@ void rec_mkdir(char *path)
 			if (rv == ENOENT)
 				safe_mkdir(buf);
 			else
-				fail(strerror(rv));
+				fail("%s", strerror(rv));
 		}
 
 		if (pos != NULL)
