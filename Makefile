@@ -18,8 +18,8 @@ SRCS=generate.c ksymtab.c utils.c main.c stack.c objects.c hash.c
 SRCS += compare.c show.c
 
 CC?=gcc
-CFLAGS?=-Wall -O2 --std=gnu99 -D_GNU_SOURCE -c
-LDFLAGS?=-ldw -lelf
+CFLAGS+=-Wall -O2 --std=gnu99 -D_GNU_SOURCE -c
+LDFLAGS+=-ldw -lelf
 
 YACC=bison
 YACCFLAGS=-d -t
