@@ -4,3 +4,6 @@ cscope.out
 output/*
 .depend
 kabi-dw
+*.tab.c
+*.tab.h
+*.yy.c
