@@ -670,10 +670,13 @@ done:
 	return rec;
 }
 
-static void record_inc_version(struct record *rec)
+static void record_set_version(struct record *rec, int version)
 {
 	char *base_file = rec->base_file;
 	char *key = NULL;
+
+	if (version == 0)
+		return;
 
 	if (rec->version == 0) {
 		base_file = safe_strdup(rec->key);
@@ -681,7 +684,7 @@ static void record_inc_version(struct record *rec)
 		base_file[strlen(base_file) - 4] = '\0';
 		rec->base_file = base_file;
 	}
-	rec->version++;
+	rec->version = version;
 	safe_asprintf(&key, "%s-%i.txt", base_file, rec->version);
 	free(rec->key);
 	rec->key = key;
@@ -887,7 +890,7 @@ static char *record_db_add(struct record_db *db, struct record *rec)
 
 		record_put(tmp_rec);
 		/* Two different types detected, bump the name version */
-		record_inc_version(rec);
+		record_set_version(rec, rec->version + 1);
 	}
 
 	return key;
