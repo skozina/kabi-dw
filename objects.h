@@ -83,13 +83,13 @@ typedef struct obj_list_head {
  *		(function) return type
  *		(var) type
  * constant:	(constant) constant value of an enumeration
- * index:	index of array
- * link:	weak alias link
+ * index:	(array) index of array
+ * link:	(weak) weak alias link
  * offset:	(var) offset of a struct member
  * is_bitfield: (var) It's a bitfield
  * first_bit, last_bit: (var) bit range within the offset.
- * depend_rec_node:	node from dependents field of record where this obj
- *			references.
+ * depend_rec_node:	(reffile) node from dependents field of record where
+ *			this obj references.
  *
  * Note the dual parent/child relationship with the n-ary member_list and the
  * the unary ptr. Only functions uses both.
