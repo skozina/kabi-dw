@@ -171,6 +171,18 @@ struct record {
 	struct list dependents;
 };
 
+void record_update_dependents(struct record *record)
+{
+	struct list_node *iter;
+
+	LIST_FOR_EACH(&record->dependents, iter) {
+		obj_t *obj = list_node_data(iter);
+
+		free(obj->base_type);
+		obj->base_type = safe_strdup(record->key);
+	}
+}
+
 /* List of types built-in the compiler */
 static const char *builtin_types[] = {
 	"__va_list_tag",
@@ -779,45 +791,12 @@ static void record_dump(struct record *rec, const char *dir)
 	fclose(f);
 }
 
-static struct record *record_db_lookup(struct record_db *_db, char *key)
-{
-	struct record *rec;
-	struct list *list;
-	struct hash *db = (struct hash *)_db;
-
-	list = hash_find(db, key);
-	if (list == NULL)
-		return NULL;
-
-	rec = list_node_data(list->first);
-	if (rec != NULL)
-		record_get(rec);
-
-	return rec;
-}
-
 static void list_record_free(void *value)
 {
 	struct record *rec = value;
 
 	record_put(rec);
 }
-
-static void record_db_push(struct record_db *_db, struct record *rec)
-{
-	struct list *list;
-	struct hash *db = (struct hash *)_db;
-
-	list = hash_find(db, rec->key);
-	if (list == NULL) {
-		list = list_new(list_record_free);
-		hash_add(db, rec->key, list);
-	}
-	list_add(list, rec);
-
-	record_get(rec);
-}
-
 
 /*
  * merge rec_src to the record rec_dst
@@ -852,48 +831,52 @@ static bool record_merge(struct record *rec_dst, struct record *rec_src)
 
 static char *record_db_add(struct record_db *db, struct record *rec)
 {
+	/*
+	 * Now we need to put the new type record we've just generated
+	 * to the db.
+	 *
+	 * Often the only difference between these records are some
+	 * fields which are fully defined in one file (because the
+	 * respective header file has been included for the CU
+	 * compilation) while these are mere declarations in the other
+	 * (because the header file was not used). While comparing the
+	 * new record with already loaded records, we detect this case
+	 * and if this is the only difference we just merge these two
+	 * records into one using the full definitions where available.
+	 *
+	 * But of course two types (eg. structures) of the same name
+	 * might be completely different types. In such case we store
+	 * them as another node of the list. We also change the name
+	 * of the new record, so that two reffile obj_t referencing
+	 * records that we couldn't merge wouldn't get merged.
+	 */
+
+	struct hash *hash = (struct hash *)db;
 	struct record *tmp_rec;
-	char *key;
+	struct list *list;
+	struct list_node *iter;
 
-	for (;;) {
+	list = hash_find(hash, rec->key);
+	if (list == NULL) {
+		list = list_new(list_record_free);
 
-		/*
-		 * Now we need to put the new type record we've just generated
-		 * to the db.
-		 *
-		 * Often the only difference between these records are some
-		 * fields which are fully defined in one file (because the
-		 * respective header file has been included for the CU
-		 * compilation) while these are mere declarations in the other
-		 * (because the header file was not used). We detect this case
-		 * and if this is the only difference we just merge these two
-		 * records into one using the full definitions where available.
-		 *
-		 * But of course two types (eg. structures) of the same name
-		 * might be completely different types. In such case we try to
-		 * store them under different names using increasing number as
-		 * a suffix.
-		 */
-
-		tmp_rec = record_db_lookup(db, rec->key);
-		if (tmp_rec == NULL) {
-			record_db_push(db, rec);
-			key = safe_strdup(rec->key);
-			break;
-		}
-
-		if (record_merge(tmp_rec, rec)) {
-			key = safe_strdup(tmp_rec->key);
-			record_put(tmp_rec);
-			break;
-		}
-
-		record_put(tmp_rec);
-		/* Two different types detected, bump the name version */
-		record_set_version(rec, rec->version + 1);
+		hash_add(hash, rec->key, list);
 	}
 
-	return key;
+	LIST_FOR_EACH(list, iter) {
+		tmp_rec = list_node_data(iter);
+
+		if (record_merge(tmp_rec, rec)) {
+			list_concat(&tmp_rec->dependents, &rec->dependents);
+			return safe_strdup(tmp_rec->key);
+		}
+	}
+
+	record_get(rec);
+	record_set_version(rec, list->len);
+	list_add(list, rec);
+
+	return safe_strdup(rec->key);
 }
 
 static void hash_list_free(void *value)
