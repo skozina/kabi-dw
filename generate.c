@@ -837,20 +837,22 @@ static char *record_db_add(struct record_db *db, struct record *rec)
 	 * Now we need to put the new type record we've just generated
 	 * to the db.
 	 *
-	 * Often the only difference between these records are some
-	 * fields which are fully defined in one file (because the
-	 * respective header file has been included for the CU
-	 * compilation) while these are mere declarations in the other
-	 * (because the header file was not used). While comparing the
-	 * new record with already loaded records, we detect this case
-	 * and if this is the only difference we just merge these two
-	 * records into one using the full definitions where available.
+	 * The problem stopping us from merging every record possible is that
+	 * multiple records can't be merged if it is not possible to create
+	 * groups in which they should be merged. This is not a problem if all
+	 * the records are able to be merged together, but when there is one or
+	 * more incompatible merging then merging them aggressively could group
+	 * them in the wrong way. And because the right way to group them can't
+	 * be decided, it is better not to group and subsequently merge them at
+	 * all.
 	 *
-	 * But of course two types (eg. structures) of the same name
-	 * might be completely different types. In such case we store
-	 * them as another node of the list. We also change the name
-	 * of the new record, so that two reffile obj_t referencing
-	 * records that we couldn't merge wouldn't get merged.
+	 * Meaning that at this stage, when we don't know all the records, we
+	 * can't decide if all records can be merged into one, and so the only
+	 * records we can merge are those that are completely same.
+	 *
+	 * In case they aren't same we store them as another node of the list.
+	 * We also change the name of the new record, so that two reffile obj_t
+	 * referencing records that we couldn't merge wouldn't get merged.
 	 */
 
 	struct hash *hash = (struct hash *)db;
@@ -868,7 +870,7 @@ static char *record_db_add(struct record_db *db, struct record *rec)
 	LIST_FOR_EACH(list, iter) {
 		tmp_rec = list_node_data(iter);
 
-		if (record_merge(tmp_rec, rec, MERGE_DECL)) {
+		if (record_merge(tmp_rec, rec, NO_MERGE_DECL)) {
 			list_concat(&tmp_rec->dependents, &rec->dependents);
 			return safe_strdup(tmp_rec->key);
 		}
@@ -1728,6 +1730,94 @@ static void print_not_found(struct ksym *ksym, void *ctx)
 	printf("%s not found!\n", s);
 }
 
+struct record *record_copy(struct record *src)
+{
+	struct record *res = record_new_regular("");
+	obj_t *o1 = record_obj(src);
+
+	res->obj = obj_merge(o1, o1, MERGE_DECL);
+	obj_fill_parent(res->obj);
+	res->origin = safe_strdup(src->origin);
+	res->base_file = NULL;
+
+	return res;
+}
+
+bool record_list_can_merge(struct list *rec_list)
+{
+	bool result = true;
+	struct record *merger;
+	struct list_node *iter;
+
+	if (list_len(rec_list) <= 1) {
+		/* only one record -> nothing to merge */
+		return false;
+	}
+
+	merger = record_copy(list_node_data(rec_list->first));
+	LIST_FOR_EACH(rec_list, iter) {
+		struct record *record = list_node_data(iter);
+
+		if (!record_merge(merger, record, MERGE_DECL)) {
+			result = false;
+			break;
+		}
+	}
+	record_put(merger);
+
+	return result;
+}
+
+void record_list_merge(struct list *rec_list)
+{
+	struct record *first = rec_list->first->data;
+	struct list_node *next = rec_list->first->next;
+	struct list_node *curr;
+
+	struct record *record;
+
+	while (next != NULL) {
+		curr = next;
+		next = next->next;
+
+		record = curr->data;
+
+		list_concat(&first->dependents, &record->dependents);
+		record_merge(first, record, MERGE_DECL);
+		record_put(record);
+
+		free(curr);
+	}
+
+	record_update_dependents(first);
+	rec_list->first->next = NULL;
+	rec_list->last = rec_list->first;
+	rec_list->len = 1;
+}
+
+void record_db_merge(struct record_db *db)
+{
+	struct hash *hash = (struct hash *)db;
+	bool merged;
+	struct hash_iter iter;
+	const char *key;
+	const void *val;
+
+	do {
+		merged = false;
+
+		hash_iter_init(hash, &iter);
+		while (hash_iter_next(&iter, &key, &val)) {
+			struct list *list = (struct list *)val;
+
+			if (list != NULL && record_list_can_merge(list)) {
+				record_list_merge(list);
+				merged = true;
+			}
+		}
+	} while (merged);
+}
+
 /*
  * Print symbol definition by walking all DIEs in a .debug_info section.
  * Returns true if the definition was printed, otherwise false.
@@ -1756,6 +1846,8 @@ static void generate_symbol_defs(generate_config_t *conf)
 	}
 
 	ksymtab_for_each(conf->symbols, print_not_found, NULL);
+
+	record_db_merge(conf->db);
 
 	record_db_dump(conf->db, conf->kabi_dir);
 	record_db_free(conf->db);
