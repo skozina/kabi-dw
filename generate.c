@@ -779,22 +779,39 @@ static void record_dump(struct record *rec, const char *dir)
 static struct record *record_db_lookup(struct record_db *_db, char *key)
 {
 	struct record *rec;
+	struct list *list;
 	struct hash *db = (struct hash *)_db;
 
-	rec = hash_find(db, key);
+	list = hash_find(db, key);
+	if (list == NULL)
+		return NULL;
+
+	rec = list_node_data(list->first);
 	if (rec != NULL)
 		record_get(rec);
 
 	return rec;
 }
 
+static void list_record_free(void *value)
+{
+	struct record *rec = value;
+
+	record_put(rec);
+}
+
 static void record_db_push(struct record_db *_db, struct record *rec)
 {
-	int rc;
+	struct list *list;
 	struct hash *db = (struct hash *)_db;
 
-	rc = hash_add_unique(db, rec->key, rec);
-	assert(rc == 0);
+	list = hash_find(db, rec->key);
+	if (list == NULL) {
+		list = list_new(list_record_free);
+		hash_add(db, rec->key, list);
+	}
+	list_add(list, rec);
+
 	record_get(rec);
 }
 
@@ -876,18 +893,18 @@ static char *record_db_add(struct record_db *db, struct record *rec)
 	return key;
 }
 
-static void hash_record_free(void *value)
+static void hash_list_free(void *value)
 {
-	struct record *rec = value;
+	struct list *list = value;
 
-	record_put(rec);
+	list_free(list);
 }
 
 static struct record_db *record_db_init(void)
 {
 	struct hash *db;
 
-	db = hash_new(DB_SIZE, hash_record_free);
+	db = hash_new(DB_SIZE, hash_list_free);
 	if (db == NULL)
 		fail("Could not create db (hash)\n");
 
@@ -901,8 +918,16 @@ static void record_db_dump(struct record_db *_db, char *dir)
 	struct hash *db = (struct hash *)_db;
 
 	hash_iter_init(db, &iter);
-	while (hash_iter_next(&iter, NULL, &v))
-		record_dump((struct record *)v, dir);
+	while (hash_iter_next(&iter, NULL, &v)) {
+		struct list *list = (struct list *)v;
+		struct list_node *iter;
+
+		LIST_FOR_EACH(list, iter) {
+			struct record *rec = list_node_data(iter);
+
+			record_dump(rec, dir);
+		}
+	}
 }
 
 static void record_db_free(struct record_db *_db)
