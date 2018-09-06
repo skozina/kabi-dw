@@ -14,7 +14,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 PROG=kabi-dw
-SRCS=generate.c ksymtab.c utils.c main.c stack.c objects.c hash.c
+SRCS=generate.c ksymtab.c utils.c main.c stack.c objects.c hash.c list.c
 SRCS += compare.c show.c
 
 CC?=gcc
