@@ -801,7 +801,9 @@ static void list_record_free(void *value)
 /*
  * merge rec_src to the record rec_dst
  */
-static bool record_merge(struct record *rec_dst, struct record *rec_src)
+static bool record_merge(struct record *rec_dst,
+			 struct record *rec_src,
+			 bool merge_decl)
 {
 	const char *s1;
 	const char *s2;
@@ -818,7 +820,7 @@ static bool record_merge(struct record *rec_dst, struct record *rec_src)
 	o1 = record_obj(rec_dst);
 	o2 = record_obj(rec_src);
 
-	o = obj_merge(o1, o2);
+	o = obj_merge(o1, o2, merge_decl);
 	if (o == NULL)
 		return false;
 
@@ -866,7 +868,7 @@ static char *record_db_add(struct record_db *db, struct record *rec)
 	LIST_FOR_EACH(list, iter) {
 		tmp_rec = list_node_data(iter);
 
-		if (record_merge(tmp_rec, rec)) {
+		if (record_merge(tmp_rec, rec, MERGE_DECL)) {
 			list_concat(&tmp_rec->dependents, &rec->dependents);
 			return safe_strdup(tmp_rec->key);
 		}

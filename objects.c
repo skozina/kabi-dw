@@ -1062,10 +1062,10 @@ static obj_t *obj_copy(obj_t *o1)
 	return o;
 }
 
-obj_t *obj_merge(obj_t *o1, obj_t *o2);
+obj_t *obj_merge(obj_t *o1, obj_t *o2, bool merge_decl);
 
 static obj_list_head_t *obj_members_merge(obj_list_head_t *list1,
-		obj_list_head_t *list2)
+		obj_list_head_t *list2, bool merge_decl)
 {
 	obj_list_head_t *res = NULL;
 	obj_list_t *l1;
@@ -1079,7 +1079,7 @@ static obj_list_head_t *obj_members_merge(obj_list_head_t *list1,
 	l2 = list2->first;
 
 	while (l1 && l2) {
-		o = obj_merge(l1->member, l2->member);
+		o = obj_merge(l1->member, l2->member, merge_decl);
 		if (o == NULL)
 			goto cleanup;
 
@@ -1102,7 +1102,7 @@ cleanup:
 	return NULL;
 }
 
-obj_t *obj_merge(obj_t *o1, obj_t *o2)
+obj_t *obj_merge(obj_t *o1, obj_t *o2, bool merge_decl)
 {
 	obj_t *merged_ptr;
 	obj_list_head_t *merged_members;
@@ -1119,15 +1119,17 @@ obj_t *obj_merge(obj_t *o1, obj_t *o2)
 	 */
 	if ((!obj_eq(o1, o2)) &&
 	    (!obj_is_kabi_hide(o1) || !obj_is_kabi_hide(o2)) &&
-	    !obj_is_declaration(o1) && !obj_is_declaration(o2))
+	    !(obj_is_declaration(o1) && merge_decl) &&
+	    !(obj_is_declaration(o2) && merge_decl))
 		goto no_merge;
 
-	merged_ptr = obj_merge(o1->ptr, o2->ptr);
+	merged_ptr = obj_merge(o1->ptr, o2->ptr, merge_decl);
 	if (o1->ptr && !merged_ptr)
 		goto no_merge_ptr;
 
 	merged_members = obj_members_merge(o1->member_list,
-					   o2->member_list);
+					   o2->member_list,
+					   merge_decl);
 	if (o1->member_list && !merged_members)
 		goto no_merge_members;
 
