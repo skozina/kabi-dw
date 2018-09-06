@@ -47,6 +47,7 @@
 #include "stack.h"
 #include "hash.h"
 #include "objects.h"
+#include "list.h"
 
 #define	EMPTY_NAME	"(NULL)"
 #define PROCESSED_SIZE 1024
@@ -151,6 +152,8 @@ struct dwarf_type {
  *       (there are normal, weak and assembly records).
  *
  * dump: type specific function for record output.
+ *
+ * dependents: objects that reference this record.
  */
 struct record {
 	char *key;
@@ -164,6 +167,8 @@ struct record {
 	char *link;
 	void (*free)(struct record *);
 	void (*dump)(struct record *, FILE *);
+
+	struct list dependents;
 };
 
 /* List of types built-in the compiler */
@@ -458,6 +463,7 @@ static struct record *record_alloc(void)
 static void record_free_regular(struct record *rec)
 {
 	void *data;
+	struct list_node *iter;
 
 	free(rec->base_file);
 	free(rec->origin);
@@ -467,6 +473,13 @@ static void record_free_regular(struct record *rec)
 	while ((data = stack_pop(rec->stack)) != NULL)
 		free(data);
 	stack_destroy(rec->stack);
+
+	LIST_FOR_EACH(&rec->dependents, iter) {
+		obj_t *o = list_node_data(iter);
+
+		o->depend_rec_node = NULL;
+	}
+	list_clear(&rec->dependents);
 
 	obj_free(rec->obj);
 }
@@ -509,6 +522,7 @@ static struct record *record_new_regular(const char *key)
 	rec->stack = stack_init();
 	rec->free = record_free_regular;
 	rec->dump = record_dump_regular;
+	list_init(&rec->dependents, NULL);
 	record_get(rec);
 	return rec;
 }
@@ -1311,6 +1325,8 @@ static obj_t *print_die(struct cu_ctx *ctx,
 		return obj;
 	}
 
+	ref_obj = obj_reffile_new();
+
 	/* else handle new record */
 	rec = record_start(ctx, die, file);
 	if (rec == NULL)
@@ -1326,6 +1342,7 @@ static obj_t *print_die(struct cu_ctx *ctx,
 	record_close(rec, obj);
 
 	old_file = file;
+	ref_obj->depend_rec_node = list_add(&rec->dependents, ref_obj);
 	/* if it creates new version, key/file name can change */
 	file = record_db_add(conf->db, rec);
 	record_put(rec);
@@ -1333,7 +1350,6 @@ static obj_t *print_die(struct cu_ctx *ctx,
 	free(old_file);
 
 out:
-	ref_obj = obj_reffile_new();
 	ref_obj->base_type = file;
 	return ref_obj;
 }

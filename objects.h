@@ -25,6 +25,8 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include "list.h"
+
 #ifdef DEBUG
 #define debug(args...) do { printf(args); } while (0)
 #else
@@ -83,6 +85,8 @@ typedef struct obj_list_head {
  * offset:	(var) offset of a struct member
  * is_bitfield: (var) It's a bitfield
  * first_bit, last_bit: (var) bit range within the offset.
+ * depend_rec_node:	node from dependents field of record where this obj
+ *			references.
  *
  * Note the dual parent/child relationship with the n-ary member_list and the
  * the unary ptr. Only functions uses both.
@@ -102,6 +106,7 @@ typedef struct obj {
 			unsigned long offset;
 			unsigned char is_bitfield, first_bit, last_bit;
 		};
+		struct list_node *depend_rec_node;
 	};
 } obj_t;
 

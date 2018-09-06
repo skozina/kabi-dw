@@ -131,6 +131,12 @@ static void _obj_free(obj_t *o, obj_t *skip)
 {
 	if (!o || (o == skip))
 		return;
+
+	if (o->type == __type_reffile && o->depend_rec_node) {
+		list_del(o->depend_rec_node);
+		o->depend_rec_node = NULL;
+	}
+
 	if (o->name)
 		free(o->name);
 	if (o->base_type)
@@ -1049,6 +1055,9 @@ static obj_t *obj_copy(obj_t *o1)
 
 	o->ptr = NULL;
 	o->member_list = NULL;
+
+	if (o1->type == __type_reffile && o1->depend_rec_node)
+		o->depend_rec_node = list_node_add(o1->depend_rec_node, o);
 
 	return o;
 }
