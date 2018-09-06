@@ -51,7 +51,7 @@ obj_list_t *obj_list_new(obj_t *obj)
 	return list;
 }
 
-static void list_init(obj_list_head_t *head, obj_t *obj)
+static void obj_list_init(obj_list_head_t *head, obj_t *obj)
 {
 	obj_list_t *list = obj_list_new(obj);
 	head->first = head->last = list;
@@ -61,12 +61,12 @@ obj_list_head_t *obj_list_head_new(obj_t *obj)
 {
 	obj_list_head_t *h = safe_zmalloc(sizeof(obj_list_head_t));
 
-	list_init(h, obj);
+	obj_list_init(h, obj);
 
 	return h;
 }
 
-static bool list_empty(obj_list_head_t *head)
+static bool obj_list_empty(obj_list_head_t *head)
 {
 	return head->first == NULL;
 }
@@ -75,8 +75,8 @@ void obj_list_add(obj_list_head_t *head, obj_t *obj)
 {
 	obj_list_t *list;
 
-	if (list_empty(head)) {
-		list_init(head, obj);
+	if (obj_list_empty(head)) {
+		obj_list_init(head, obj);
 		return;
 	}
 	list = obj_list_new(obj);
@@ -917,7 +917,7 @@ static int hide_kabi_cb(obj_t *o, void *args)
 
 	/* Hide RH_KABI_REPLACE */
 	if ((o->type != __type_union) || o->name ||
-	    !(lh = o->member_list) || list_empty(lh) ||
+	    !(lh = o->member_list) || obj_list_empty(lh) ||
 	    !(l = lh->first) || !(new = l->member) ||
 	    !(l = l->next) || !(kabi_struct = l->member) ||
 	    (kabi_struct->type != __type_var) ||
@@ -926,7 +926,7 @@ static int hide_kabi_cb(obj_t *o, void *args)
 		return CB_CONT;
 
 	if (!kabi_struct->ptr || kabi_struct->ptr->type != __type_struct ||
-	    !(lh = kabi_struct->ptr->member_list) || list_empty(lh) ||
+	    !(lh = kabi_struct->ptr->member_list) || obj_list_empty(lh) ||
 	    !(l = lh->first) || !(old = l->member))
 		fail("Unexpeted rh_kabi_hide struct format\n");
 
