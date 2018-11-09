@@ -183,23 +183,18 @@ void record_update_dependents(struct record *record)
 	}
 }
 
-/* List of types built-in the compiler */
-static const char *builtin_types[] = {
-	"__va_list_tag",
-	"__builtin_va_list",
-	"__builtin_strlen",
-	"__builtin_strcpy",
-	NULL
-};
-
-static const bool is_builtin(const char *name)
+static const bool is_builtin(Dwarf_Die *die)
 {
-	const char **p;
+	char *fname;
+	const char *path = dwarf_decl_file(die);
 
-	for (p = builtin_types; *p != NULL; p++) {
-		if (strcmp(*p, name) == 0)
-			return true;
-	}
+	if (path == NULL)
+		return true;
+
+	fname = basename(path);
+	assert (fname != NULL);
+	if (strcmp(fname, "<built-in>") == 0)
+		return true;
 
 	return false;
 }
@@ -276,7 +271,7 @@ static char *get_file(Dwarf_Die *cu_die, Dwarf_Die *die)
 	 * Handle types built-in in C compiler. These are for example the
 	 * variable argument list which is defined as * struct __va_list_tag.
 	 */
-	if (is_builtin(get_die_name(die)))
+	if (is_builtin(die))
 		return safe_strdup(BUILTIN_PATH);
 
 	if (dwarf_hasattr(die, DW_AT_decl_file))
@@ -297,7 +292,7 @@ static long get_line(Dwarf_Die *cu_die, Dwarf_Die *die)
 	Dwarf_Word line;
 	Dwarf_Die spec_die;
 
-	if (is_builtin(get_die_name(die)))
+	if (is_builtin(die))
 		return 0;
 
 	if (dwarf_attr(die, DW_AT_decl_line, &attr) != NULL) {
