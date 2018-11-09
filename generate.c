@@ -227,23 +227,10 @@ static char *get_file_replace_path;
 
 static char *_get_file(Dwarf_Die *cu_die, Dwarf_Die *die)
 {
-	Dwarf_Files *files;
-	size_t nfiles;
-	Dwarf_Attribute attr;
-	Dwarf_Word file;
 	const char *filename;
 	char *ret;
 
-	if (dwarf_attr(die, DW_AT_decl_file, &attr) == NULL) {
-		fail("DIE missing file information: %s\n",
-		     dwarf_diename(die));
-	}
-	dwarf_formudata(&attr, &file);
-
-	if (dwarf_getsrcfiles(cu_die, &files, &nfiles) != 0)
-		fail("cannot get files for CU %s\n", dwarf_diename(cu_die));
-
-	filename = dwarf_filesrc(files, file, NULL, NULL);
+	filename = dwarf_decl_file(die);
 
 	if (get_file_replace_path) {
 		int len = strlen(get_file_replace_path);
