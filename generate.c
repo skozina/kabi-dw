@@ -1665,8 +1665,16 @@ static walk_rv_t process_symbol_file(char *path, void *arg)
 
 	/* We want to process only .ko kernel modules and vmlinux itself */
 	if (!safe_strendswith(path, ".ko") &&
-	    !safe_strendswith(path, "/vmlinux"))
-		return ret;
+	    !safe_strendswith(path, "/vmlinux")) {
+		if (conf->kernel_dir) {
+			if (conf->verbose)
+				printf("Skip non-object file %s\n", path);
+			return ret;
+		} else {
+			if (conf->verbose)
+				printf("Force processing file %s\n", path);
+		}
+	}
 
 	/*
 	 * Don't look into RHEL build cache directories.
@@ -1813,7 +1821,7 @@ static void generate_symbol_defs(generate_config_t *conf)
 		    strerror(errno));
 
 	/* Lets walk the normal modules */
-	printf("Generating symbol defs from %s...\n", conf->kernel_dir);
+	printf("Generating symbol defs from %s\n", conf->kernel_dir);
 
 	conf->db = record_db_init();
 
@@ -1821,7 +1829,7 @@ static void generate_symbol_defs(generate_config_t *conf)
 		walk_dir(conf->kernel_dir, false, process_symbol_file, conf);
 	} else if (S_ISREG(st.st_mode)) {
 		char *path = conf->kernel_dir;
-		conf->kernel_dir = "";
+		conf->kernel_dir = NULL;
 		process_symbol_file(path, conf);
 	} else {
 		fail("Not a file or directory: %s\n", conf->kernel_dir);
