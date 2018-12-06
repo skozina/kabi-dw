@@ -382,6 +382,8 @@ static int is_external(Dwarf_Die *die)
 
 	if (dwarf_hasattr(die, DW_AT_external)) {
 		dwarf_attr(die, DW_AT_external, &attr);
+		if (dwarf_hasform(&attr, DW_FORM_flag))
+			return attr.valp != NULL;
 		if (!dwarf_hasform(&attr, DW_FORM_flag_present))
 			return false;
 		return true;
