@@ -930,6 +930,18 @@ static obj_t *print_die_type(struct cu_ctx *ctx,
 	return print_die(ctx, rec, &type_die);
 }
 
+/**
+ * Evaluate a DWARF expression. Return 0 on success or -1 if it's unsupported.
+ */
+static int eval_expr(const Dwarf_Op *e, size_t elen, Dwarf_Word *result)
+{
+	if (elen == 1 && e[0].atom == DW_OP_plus_uconst) {
+		*result = e[0].number;
+		return 0;
+	}
+	return -1;
+}
+
 static obj_t *print_die_struct_member(struct cu_ctx *ctx,
 				      struct record *rec,
 				      Dwarf_Die *die,
@@ -937,13 +949,21 @@ static obj_t *print_die_struct_member(struct cu_ctx *ctx,
 {
 	Dwarf_Attribute attr;
 	Dwarf_Word value;
+	size_t expr_len;
+	Dwarf_Op *expr;
 	obj_t *type;
 	obj_t *obj;
 
 	if (dwarf_attr(die, DW_AT_data_member_location, &attr) == NULL)
 		fail("Offset of member %s missing!\n", name);
 
-	(void) dwarf_formudata(&attr, &value);
+	if (dwarf_formudata(&attr, &value)) {
+		if (dwarf_getlocation(&attr, &expr, &expr_len))
+			fail("Offset of member %s is neither an integer nor a location!\n",
+			     name);
+		if (eval_expr(expr, expr_len, &value))
+			fail("Offset of member %s has unsupported expr!\n", name);
+	}
 
 	type = print_die_type(ctx, rec, die);
 	obj = obj_struct_member_new_add(safe_strdup(name), type);
