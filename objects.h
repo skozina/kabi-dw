@@ -99,6 +99,7 @@ typedef struct obj {
 	char *name;
 	char *base_type;
 	unsigned alignment;
+	unsigned int byte_size;
 	obj_list_head_t *member_list;
 	struct obj *ptr, *parent;
 	union {

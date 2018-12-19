@@ -67,7 +67,7 @@
 %type <obj> kabi_dw_file symbol
 %type <obj> asm_symbol weak_symbol
 %type <list> elt_list arg_list enum_list struct_list
-%type <ul> alignment
+%type <ul> alignment byte_size
 
 %parse-param {obj_t **root}
 
@@ -142,11 +142,30 @@ symbol:
 		$$ = $declaration;
 		$$->alignment = $alignment;
 	}
+	| byte_size declaration NEWLINE
+	{
+		$$ = $declaration;
+		$$->byte_size = $byte_size;
+	}
+	| byte_size alignment declaration NEWLINE
+	{
+		$$ = $declaration;
+		$$->byte_size = $byte_size;
+		$$->alignment = $alignment;
+	}
 
 alignment:
         IDENTIFIER CONSTANT NEWLINE
 	{
 		check_and_free_keyword($IDENTIFIER, "Alignment");
+		$$ = $CONSTANT;
+	}
+
+byte_size:
+        IDENTIFIER IDENTIFIER CONSTANT NEWLINE
+	{
+		check_and_free_keyword($1, "Byte");
+		check_and_free_keyword($2, "size");
 		$$ = $CONSTANT;
 	}
 
