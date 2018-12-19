@@ -1073,39 +1073,62 @@ static obj_t *print_die_struct_member(struct cu_ctx *ctx,
 				      Dwarf_Die *die,
 				      const char *name)
 {
-	Dwarf_Attribute attr;
-	Dwarf_Word value;
 	obj_t *type;
 	obj_t *obj;
-
-	if (dwarf_attr(die, DW_AT_data_member_location, &attr) == NULL)
-		fail("Offset of member %s missing!\n", name);
-
-	(void) dwarf_formudata(&attr, &value);
+	Dwarf_Half dw_attr_bit_offset;
+	unsigned int bit_offset = 0;
 
 	type = print_die_type(ctx, rec, die);
 	obj = obj_struct_member_new_add(safe_strdup(name), type);
-	obj->offset = value;
-
-	if (dwarf_hasattr(die, DW_AT_bit_offset)) {
-		Dwarf_Word offset, size;
-
-		if (!dwarf_hasattr(die, DW_AT_bit_size))
-			fail("Missing expected bit size attribute in %s!\n",
-			    name);
-
-		if (dwarf_attr(die, DW_AT_bit_offset, &attr) == NULL)
-			fail("Bit offset of member %s missing!\n", name);
-		(void) dwarf_formudata(&attr, &offset);
-		if (dwarf_attr(die, DW_AT_bit_size, &attr) == NULL)
-			fail("Bit size of member %s missing!\n", name);
-		(void) dwarf_formudata(&attr, &size);
-
-		obj->is_bitfield = 1;
-		obj->first_bit = offset;
-		obj->last_bit = offset + size - 1;
-	}
 	die_read_alignment(die, obj);
+
+	/*
+	 * DWARF attribute specifying offset varies depending on DWARF version.
+	 * DW_AT_data_member_location is not guaranteed to be emitted; a fall-
+	 * back attribute DW_AT_data_bit_offset (present in DWARF v4 and later)
+	 * is used when not encountered.
+	 */
+	if (dwarf_hasattr(die, DW_AT_data_member_location))
+		obj->offset = die_get_attr(die, DW_AT_data_member_location);
+	else if (dwarf_hasattr(die, DW_AT_data_bit_offset))
+		obj->offset = die_get_attr(die, DW_AT_data_bit_offset)/CHAR_BIT;
+
+	/*
+	 * DWARF attribute specifying bit-offset. Note that DW_AT_bit_offset
+	 * is endian-sensitive, whereas DW_AT_data_bit_offset is not.
+	 * Presence of this attribute indicates that we're dealing with
+	 * bit-field.
+	 */
+	if (dwarf_hasattr(die, DW_AT_bit_offset))
+		dw_attr_bit_offset = DW_AT_bit_offset;
+	else if (dwarf_hasattr(die, DW_AT_data_bit_offset))
+		dw_attr_bit_offset = DW_AT_data_bit_offset;
+	else
+		goto out;
+
+	/*
+	 * Bit-field section; offset, first and last bits are converted to
+	 * DWARF5-compliant (endian-oblivious) format.
+	 */
+	obj->is_bitfield = 1;
+
+	if (dwarf_hasattr(die, DW_AT_data_bit_offset)) {
+		bit_offset = die_get_attr(die, dw_attr_bit_offset);
+	} else if (ctx->elf_endian == ELFDATA2MSB) {
+		bit_offset = die_get_attr(die, dw_attr_bit_offset) \
+			   + obj->offset*CHAR_BIT;
+	} else {
+		bit_offset = die_get_attr(die, DW_AT_byte_size) * CHAR_BIT \
+			   + obj->offset * CHAR_BIT \
+			   - die_get_attr(die, DW_AT_bit_offset) \
+			   - die_get_attr(die, DW_AT_bit_size);
+	}
+
+	obj->offset = bit_offset / CHAR_BIT;
+	obj->first_bit = bit_offset % CHAR_BIT;
+	obj->last_bit  = die_get_attr(die, DW_AT_bit_size) + obj->first_bit;
+
+out:
 	return obj;
 }
 
