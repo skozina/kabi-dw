@@ -18,8 +18,11 @@ SRCS=generate.c ksymtab.c utils.c main.c stack.c objects.c hash.c list.c
 SRCS += compare.c show.c
 
 CC?=gcc
-CFLAGS+=-Wall -O2 --std=gnu99 -D_GNU_SOURCE -c
+CFLAGS+=-Wall --std=gnu99 -D_GNU_SOURCE -c
 LDFLAGS+=-ldw -lelf
+
+CFLAGS_RELEASE+=-O2
+CFLAGS_DEBUG+=-O0 -g3 -DDEBUG -Wextra -pedantic
 
 YACC=bison
 YACCFLAGS=-d -t
@@ -48,14 +51,15 @@ ifeq (,$(findstring -lelf,$(LDFLAGS)))
 override LDFLAGS+=-lelf
 endif
 
+all: CFLAGS+=$(CFLAGS_RELEASE)
 all: $(PROG)
 
-debug: CFLAGS+=-g -DDEBUG
+debug: CFLAGS+=$(CFLAGS_DEBUG)
 debug: LDFLAGS:=$(LDFLAGS)
 debug: FLEXFLAGS+=-d
 debug: $(PROG)
 
-asan-debug: CFLAGS+=-g -DDEBUG -fsanitize=address
+asan-debug: CFLAGS+=$(CFLAGS_DEBUG) -fsanitize=address
 asan-debug: LDFLAGS:=-lasan $(LDFLAGS)
 asan-debug: FLEXFLAGS+=-d
 asan-debug: $(PROG)
