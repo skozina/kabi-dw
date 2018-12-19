@@ -540,6 +540,66 @@ static Dwarf_Word die_get_attr(Dwarf_Die *die, Dwarf_Half ar_attr)
 	return value;
 }
 
+static unsigned int die_get_byte_size(Dwarf_Die *die, obj_t *obj)
+{
+	unsigned int byte_sz_1;
+	unsigned int byte_sz_2;
+
+	/**
+	 * Make sure that this function will not be used on bitfields.
+	 * This is not supported as space requirements in such a case are
+	 * likely not to be divisible by CHAR_BIT and thus not applicable.
+	 */
+	assert(obj->is_bitfield == 0);
+
+	if (obj->byte_size > 0)
+		return obj->byte_size;
+
+	/*
+	 * Since any subset of {DW_AT_byte_size, DW_AT_bit_size} may be
+	 * specified in DWARF for any given DIE, we need to check both to
+	 * get byte size.
+	 */
+	byte_sz_1 = die_get_attr(die, DW_AT_byte_size);
+	byte_sz_2 = die_get_attr(die, DW_AT_bit_size);
+
+	assert(byte_sz_2 % CHAR_BIT == 0);
+
+	byte_sz_2 /= CHAR_BIT;
+
+	if (byte_sz_1 > 0 && byte_sz_2 > 0 && byte_sz_1 != byte_sz_2)
+		fail("DIE %s: DW_AT_byte_size and DW_AT_bit_size differ\n",
+		     dwarf_diename(die));
+
+	if (byte_sz_1 > 0)
+		return byte_sz_1;
+
+	return byte_sz_2;
+}
+
+static obj_t *die_read_byte_size(Dwarf_Die *die, obj_t *obj)
+{
+	obj_t *ptr = obj;
+	unsigned int coeff = 1;
+	unsigned int byte_size = 0;
+
+	while (ptr != NULL) {
+		byte_size = die_get_byte_size(die, ptr);
+
+		if (ptr->index && dwarf_tag(die) == DW_TAG_array_type)
+			coeff *= ptr->index;
+
+		if (byte_size > 0) {
+			obj->byte_size = byte_size * coeff;
+			break;
+		}
+
+		ptr = ptr->ptr;
+	}
+
+	return obj;
+}
+
 static obj_t *die_read_alignment(Dwarf_Die *die, obj_t *obj)
 {
 	obj->alignment = die_get_attr(die, DW_AT_alignment);
@@ -857,6 +917,8 @@ static void record_dump_regular(struct record *rec, FILE *f)
 	record_stack_dump_and_clear(rec, f);
 
 	fprintf(f, "Symbol:\n");
+	if (rec->obj->byte_size != 0)
+		fprintf(f, "Byte size %u\n", rec->obj->byte_size);
 	if (rec->obj->alignment != 0)
 		fprintf(f, "Alignment %u\n", rec->obj->alignment);
 
@@ -1453,6 +1515,10 @@ static obj_t *print_die_tag(struct cu_ctx *ctx,
 		break;
 	}
 	}
+
+	if (tag != DW_TAG_subprogram && tag != DW_TAG_subroutine_type)
+		obj = die_read_byte_size(die, obj);
+
 	obj = die_read_alignment(die, obj);
 	return obj;
 }
