@@ -405,6 +405,141 @@ static int is_external(Dwarf_Die *die)
 	return is_external(&spec_die);
 }
 
+static uint8_t die_attr_eval_op(Dwarf_Attribute *attr, Dwarf_Word *value)
+{
+	size_t op_idx, op_cnt;
+	uint8_t loc_expr_type = 0;
+	Dwarf_Op *loc_expr_oper;
+
+	dwarf_getlocation(attr, &loc_expr_oper, &op_cnt);
+
+	if (op_cnt == 0)
+		loc_expr_type = -1;
+
+	for (op_idx = 0; op_idx < op_cnt; ++op_idx) {
+		loc_expr_type = loc_expr_oper[op_idx].atom;
+		switch (loc_expr_oper[op_idx].atom) {
+
+		/* supported 0-ary operations */
+		case DW_OP_const1u: /* unsigned 1-byte constant */
+		case DW_OP_const1s: /* signed   1-byte constant */
+		case DW_OP_const2u: /* unsigned 2-byte constant */
+		case DW_OP_const2s: /* signed   2-byte constant */
+		case DW_OP_skip:    /* signed   2-byte constant */
+		case DW_OP_const4u: /* unsigned 4-byte constant */
+		case DW_OP_const4s: /* signed   4-byte constant */
+		case DW_OP_const8u: /* unsigned 8-byte constant */
+		case DW_OP_const8s: /* signed   8-byte constant */
+		case DW_OP_constu:  /* unsigned LEB128 constant */
+		case DW_OP_consts:  /* signed   LEB128 constant */
+		case DW_OP_plus_uconst: /* unsigned LEB128 addend */
+			*value = loc_expr_oper[op_idx].number;
+			break;
+
+		/* supported 1-ary operations */
+		case DW_OP_abs:
+			*value = abs(loc_expr_oper[op_idx].number);
+			break;
+		case DW_OP_neg:
+		case DW_OP_not:
+			*value = !loc_expr_oper[op_idx].number;
+			break;
+
+		/* supported 2-ary operations */
+		case DW_OP_and:
+			*value = loc_expr_oper[op_idx].number;
+			*value &= loc_expr_oper[op_idx].number2;
+			break;
+		case DW_OP_or:
+			*value = loc_expr_oper[op_idx].number;
+			*value |= loc_expr_oper[op_idx].number2;
+			break;
+		case DW_OP_xor:
+			*value = loc_expr_oper[op_idx].number;
+			*value ^= loc_expr_oper[op_idx].number2;
+			break;
+		case DW_OP_plus:
+			*value = loc_expr_oper[op_idx].number;
+			*value += loc_expr_oper[op_idx].number2;
+			break;
+		case DW_OP_minus:
+			*value = loc_expr_oper[op_idx].number;
+			*value -= loc_expr_oper[op_idx].number2;
+			break;
+		case DW_OP_mul:
+			*value = loc_expr_oper[op_idx].number;
+			*value *= loc_expr_oper[op_idx].number2;
+			break;
+		case DW_OP_div:
+			*value = loc_expr_oper[op_idx].number;
+			*value /= loc_expr_oper[op_idx].number2;
+			break;
+		case DW_OP_mod:
+			*value = loc_expr_oper[op_idx].number;
+			*value %= loc_expr_oper[op_idx].number2;
+			break;
+
+		/* sink */
+		default:
+			printf("Unsupported Dwarf operation %x.\n",
+			       loc_expr_oper[op_idx].atom);
+			break;
+		}
+	}
+
+	return loc_expr_type;
+}
+
+static Dwarf_Word die_get_attr(Dwarf_Die *die, Dwarf_Half ar_attr)
+{
+	int attr_form;
+	Dwarf_Word value = 0;
+	Dwarf_Attribute attr;
+
+	if (!dwarf_hasattr(die, ar_attr))
+		return value;
+
+	if (dwarf_attr(die, ar_attr, &attr) == NULL)
+		return value;
+
+	attr_form = dwarf_whatform(&attr);
+
+	switch (attr_form) {
+	case DW_FORM_data1:
+	case DW_FORM_data2:
+	case DW_FORM_data4:
+	case DW_FORM_data8:
+	case DW_FORM_sec_offset:
+	case DW_FORM_sdata:
+	case DW_FORM_udata:
+	case DW_FORM_rnglistx:
+	case DW_FORM_loclistx:
+	case DW_FORM_implicit_const:
+	case DW_FORM_GNU_addr_index:
+	case DW_FORM_addrx:
+	case DW_FORM_addrx1:
+	case DW_FORM_addrx2:
+	case DW_FORM_addrx3:
+	case DW_FORM_addrx4:
+		if (dwarf_formudata(&attr, &value) == -1)
+			fail("Unable to get DWARF data for %s:0x%x:0x%x\n",
+			     dwarf_diename(die), attr_form, ar_attr);
+		break;
+	case DW_FORM_block:
+	case DW_FORM_block1:
+	case DW_FORM_block2:
+	case DW_FORM_block4:
+		die_attr_eval_op(&attr, &value);
+		break;
+	default:
+		fail("Unsupported DWARF form 0x%x for DIE %s, type 0x%x\n",
+		     attr_form, dwarf_diename(die), ar_attr);
+		break;
+	}
+
+	return value;
+}
+
 static obj_t *die_read_alignment(Dwarf_Die *die, obj_t *obj)
 {
 	Dwarf_Attribute attr;
