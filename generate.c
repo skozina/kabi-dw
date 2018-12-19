@@ -542,15 +542,7 @@ static Dwarf_Word die_get_attr(Dwarf_Die *die, Dwarf_Half ar_attr)
 
 static obj_t *die_read_alignment(Dwarf_Die *die, obj_t *obj)
 {
-	Dwarf_Attribute attr;
-	Dwarf_Word value;
-
-	if (dwarf_attr(die, DW_AT_alignment, &attr) == NULL)
-		goto out;
-
-	dwarf_formudata(&attr, &value);
-	obj->alignment = value;
-out:
+	obj->alignment = die_get_attr(die, DW_AT_alignment);
 	return obj;
 }
 
