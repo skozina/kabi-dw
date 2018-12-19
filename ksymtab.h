@@ -20,6 +20,15 @@
 
 #include <stdint.h>
 
+struct elf_data {
+	Elf *elf;
+	GElf_Ehdr *ehdr;
+	size_t shstrndx;
+	const char *strtab;
+	size_t strtab_size;
+	int fd;
+};
+
 struct ksymtab;
 struct ksym {
 	uint64_t value;
@@ -57,7 +66,11 @@ static inline void ksymtab_ksym_set_link(struct ksym *ksym, const char *link)
 }
 
 extern void ksymtab_free(struct ksymtab *);
-extern struct ksymtab *ksymtab_read(char *, struct ksymtab **);
+extern struct elf_data *elf_open(const char *);
+extern int elf_get_exported(struct elf_data *, struct ksymtab **,
+			    struct ksymtab **);
+extern void elf_close(struct elf_data *);
+extern int elf_get_endianness(struct elf_data *, unsigned int *);
 extern struct ksym *ksymtab_find(struct ksymtab *, const char *);
 extern size_t ksymtab_len(struct ksymtab *);
 extern struct ksymtab *ksymtab_new(size_t);

@@ -24,6 +24,7 @@
 #include <inttypes.h>
 #include <ctype.h>
 #include <libelf.h>
+#include <gelf.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
@@ -85,11 +86,15 @@ struct cu_ctx {
 	Dwarf_Die *cu_die;
 	stack_t *stack; /* Current stack of symbol we're parsing */
 	struct set *processed; /* Set of processed types for this CU */
+	unsigned char dw_version : 6;
+	unsigned char elf_endian : 2;
 };
 
 struct file_ctx {
 	generate_config_t *conf;
 	struct ksymtab *ksymtab; /* ksymtab of the current kernel module */
+	unsigned char dw_version : 6;
+	unsigned char elf_endian : 2;
 };
 
 struct dwarf_type {
@@ -1462,6 +1467,8 @@ static void process_cu_die(Dwarf_Die *cu_die, struct file_ctx *fctx)
 			cu_printed = true;
 		}
 
+		ctx.dw_version = fctx->dw_version;
+		ctx.elf_endian = fctx->elf_endian;
 		ctx.conf = conf;
 		ctx.cu_die = cu_die;
 
@@ -1505,6 +1512,8 @@ static int dwflmod_generate_cb(Dwfl_Module *dwflmod, void **userdata,
 
 	while (dwarf_next_unit(dbg, off, &off, &hsize, &version, &abbrev,
 	    &addresssize, &offsetsize, NULL, &type_offset) == 0) {
+		fctx->dw_version = version;
+
 		if (version < 2 || version > 4)
 			fail("Unsupported dwarf version: %d\n", version);
 
@@ -1659,6 +1668,8 @@ static void merge_aliases(struct ksymtab *ksymtab,
 
 static walk_rv_t process_symbol_file(char *path, void *arg)
 {
+	unsigned int endianness;
+	struct elf_data *elf;
 	struct file_ctx fctx;
 	generate_config_t *conf = (generate_config_t *)arg;
 	struct ksymtab *ksymtab;
@@ -1686,18 +1697,31 @@ static walk_rv_t process_symbol_file(char *path, void *arg)
 			return WALK_SKIP;
 	}
 
-	ksymtab = ksymtab_read(path, &aliases);
+	elf = elf_open(path);
+	if (elf == NULL) {
+		if (conf->verbose)
+			printf("Skip %s (unable to process ELF file)\n",
+			       path);
+		goto out;
+	}
+
+	if (elf_get_endianness(elf, &endianness) > 0)
+		goto clean_elf;
+
+	if (elf_get_exported(elf, &ksymtab, &aliases) > 0)
+		goto clean_elf;
 
 	if (ksymtab_len(ksymtab) == 0) {
 		if (conf->verbose)
 			printf("Skip %s (no exported symbols)\n", path);
-		goto out;
+		goto clean_ksymtab;
 	}
 
 	merge_aliases(ksymtab, conf->symbols, aliases);
 
 	fctx.conf = conf;
 	fctx.ksymtab = ksymtab;
+	fctx.elf_endian = endianness;
 
 	if (conf->verbose)
 		printf("Processing %s\n", path);
@@ -1707,9 +1731,14 @@ static walk_rv_t process_symbol_file(char *path, void *arg)
 
 	if (is_all_done(conf))
 		ret = WALK_STOP;
-out:
+clean_ksymtab:
 	ksymtab_free(aliases);
 	ksymtab_free(ksymtab);
+clean_elf:
+	elf_close(elf);
+	free(elf->ehdr);
+	free(elf);
+out:
 	return ret;
 }
 

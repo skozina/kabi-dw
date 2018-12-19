@@ -45,14 +45,6 @@
 
 #define KSYMTAB_SIZE 8192
 
-struct elf_data {
-	Elf *elf;
-	size_t shstrndx;
-	const char *strtab;
-	size_t strtab_size;
-	int fd;
-};
-
 struct ksymtab {
 	struct hash *hash;
 	size_t mark_count;
@@ -60,13 +52,12 @@ struct ksymtab {
 
 struct ksym;
 
-static int elf_get_section(struct elf_data *ed,
+static int elf_get_section(Elf *elf,
+			   size_t shstrndx,
 			   const char *section,
 			   const char **d_data,
 			   size_t *size)
 {
-	Elf *elf = ed->elf;
-	size_t shstrndx = ed->shstrndx;
 	Elf_Scn *scn;
 	GElf_Shdr shdr;
 	char *name;
@@ -119,16 +110,14 @@ static int elf_get_section(struct elf_data *ed,
 	return 0;
 }
 
-static struct elf_data *elf_open(const char *filename)
+struct elf_data *elf_open(const char *filename)
 {
 	Elf *elf;
 	int fd;
 	int class;
-	GElf_Ehdr ehdr;
+	GElf_Ehdr *ehdr;
 	size_t shstrndx;
-	const char *strtab;
-	size_t strtab_size;
-	struct elf_data *ed = NULL;
+	struct elf_data *data = NULL;
 
 	if (elf_version(EV_CURRENT) == EV_NONE)
 		fail("elf_version() failed: %s\n", elf_errmsg(-1));
@@ -136,7 +125,7 @@ static struct elf_data *elf_open(const char *filename)
 	fd = open(filename, O_RDONLY, 0);
 	if (fd < 0)
 		fail("Failed to open file %s: %s\n", filename,
-		    strerror(errno));
+		     strerror(errno));
 
 	elf = elf_begin(fd, ELF_C_READ, NULL);
 	if (elf == NULL)
@@ -144,47 +133,50 @@ static struct elf_data *elf_open(const char *filename)
 
 	if (elf_kind(elf) != ELF_K_ELF) {
 		printf("Doesn't look like an ELF file, ignoring: %s\n",
-		    filename);
+		       filename);
+		(void) elf_end(elf);
+		(void) close(fd);
 		goto out;
 	}
 
-	if (gelf_getehdr(elf, &ehdr) == NULL)
+	ehdr = safe_zmalloc(sizeof(*ehdr));
+
+	if (gelf_getehdr(elf, ehdr) == NULL)
 		fail("getehdr() failed: %s\n", elf_errmsg(-1));
 
 	class = gelf_getclass(elf);
 	if (class != ELFCLASS64) {
 		printf("Unsupported elf class of %s: %d\n", filename, class);
+		free(ehdr);
+		(void) elf_end(elf);
+		(void) close(fd);
 		goto out;
 	}
 
+	/*
+	 * Get section index of the string table associated with the section
+	 * headers in the ELF file.
+	 * Required by elf_get_section calls.
+	 */
 	if (elf_getshdrstrndx(elf, &shstrndx) != 0)
-		fail("elf_getshdrstrndx() failed: %s\n", elf_errmsg(-1));
+		fail("elf_getshdrstrndx() failed: %s\n", elf_errmsg(-1))
 
-	ed = safe_zmalloc(sizeof(*ed));
-	ed->elf = elf;
-	ed->fd = fd;
-	ed->shstrndx = shstrndx;
+	data = safe_zmalloc(sizeof(*data));
 
-	if (elf_get_section(ed, STRTAB, &strtab, &strtab_size) < 0) {
-		free(ed);
-		goto out;
-	}
-
-	ed->strtab = strtab;
-	ed->strtab_size = strtab_size;
-	return ed;
-
+	data->fd = fd;
+	data->elf = elf;
+	data->ehdr = ehdr;
+	data->shstrndx = shstrndx;
 out:
-	(void) elf_end(elf);
-	(void) close(fd);
-	return NULL;
+	return data;
 }
 
-static void elf_close(struct elf_data *ed)
+void elf_close(struct elf_data *ed)
 {
+	if (ed == NULL)
+		return;
 	(void) elf_end(ed->elf);
 	(void) close(ed->fd);
-	free(ed);
 }
 
 static void elf_for_each_global_sym(struct elf_data *ed,
@@ -201,7 +193,7 @@ static void elf_for_each_global_sym(struct elf_data *ed,
 	const char *data;
 	size_t size;
 
-	if (elf_get_section(ed, SYMTAB, &data, &size) < 0)
+	if (elf_get_section(ed->elf, ed->shstrndx, SYMTAB, &data, &size) < 0)
 		return;
 
 	sym = (Elf64_Sym *)data;
@@ -531,32 +523,59 @@ static struct ksymtab *ksymtab_find_aliases(struct ksymtab *ksymtab,
 	return aliases;
 }
 
+int elf_get_endianness(struct elf_data *data, unsigned int *endianness)
+{
+	if (data->ehdr->e_ident[EI_DATA] != ELFDATA2LSB &&
+	     data->ehdr->e_ident[EI_DATA] != ELFDATA2MSB) {
+		printf("Unsupported ELF endianness (EI_DATA) found: %d.\n",
+		     data->ehdr->e_ident[EI_DATA]);
+		return 1;
+	}
+
+	*endianness = data->ehdr->e_ident[EI_DATA];
+	return 0;
+}
+
+static inline int elf_get_strtab(struct elf_data *data)
+{
+	const char *strtab;
+	size_t strtab_size;
+
+	if (elf_get_section(data->elf, data->shstrndx, STRTAB, &strtab,
+			   &strtab_size) < 0) {
+		return 1;
+	}
+
+	data->strtab = strtab;
+	data->strtab_size = strtab_size;
+
+	return 0;
+}
+
 /*
  * Build list of exported symbols, ie. read seciton __ksymtab_strings,
  * analyze symbol table and create table of aliases -- list of global symbols,
  * which have the same addresses, as weak symbols,
  * mentioned by __ksymtab_strings
  */
-struct ksymtab *ksymtab_read(char *filename, struct ksymtab **aliases)
+int elf_get_exported(struct elf_data *data, struct ksymtab **ksymtab,
+		     struct ksymtab **aliases)
 {
-	struct elf_data *elf;
-	const char *data;
-	size_t size;
-	struct ksymtab *res = NULL;
+	const char *ksymtab_raw;
+	size_t ksymtab_sz;
 
-	assert(aliases != NULL);
+	if (elf_get_strtab(data) > 0)
+		return 1;
 
-	elf = elf_open(filename);
-	if (elf == NULL)
-		return NULL;
+	if (elf_get_section(data->elf, data->shstrndx, KSYMTAB_STRINGS,
+			   &ksymtab_raw, &ksymtab_sz) < 0)
+		return 1;
 
-	if (elf_get_section(elf, KSYMTAB_STRINGS, &data, &size) < 0)
-		goto done;
+	*ksymtab = parse_ksymtab_strings(ksymtab_raw, ksymtab_sz);
+	*aliases = ksymtab_find_aliases(*ksymtab, data);
 
-	res = parse_ksymtab_strings(data, size);
-	*aliases = ksymtab_find_aliases(res, elf);
-
-done:
-	elf_close(elf);
-	return res;
+	return 0;
 }
+
+
+
