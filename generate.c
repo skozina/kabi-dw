@@ -1670,7 +1670,7 @@ static int dwflmod_generate_cb(Dwfl_Module *dwflmod, void **userdata,
 	    &addresssize, &offsetsize, NULL, &type_offset) == 0) {
 		fctx->dw_version = version;
 
-		if (version < 2 || version > 4)
+		if (version < 2 || version > 5)
 			fail("Unsupported dwarf version: %d\n", version);
 
 		/* CU is followed by a single DIE */
