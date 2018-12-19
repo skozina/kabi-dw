@@ -223,6 +223,8 @@ static bool is_declaration(Dwarf_Die *die)
 	if (!dwarf_hasattr(die, DW_AT_declaration))
 		return false;
 	(void) dwarf_attr(die, DW_AT_declaration, &attr);
+	if (dwarf_hasform(&attr, DW_FORM_flag))
+		return attr.valp != NULL;
 	if (!dwarf_hasform(&attr, DW_FORM_flag_present))
 		return false;
 	return true;
