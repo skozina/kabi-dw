@@ -45,7 +45,7 @@
 
 #define KSYMTAB_SIZE 8192
 
-struct ksymtab_elf {
+struct elf_data {
 	Elf *elf;
 	size_t shstrndx;
 	const char *strtab;
@@ -60,13 +60,13 @@ struct ksymtab {
 
 struct ksym;
 
-static int ksymtab_elf_get_section(struct ksymtab_elf *ke,
-				   const char *section,
-				   const char **d_data,
-				   size_t *size)
+static int elf_get_section(struct elf_data *ed,
+			   const char *section,
+			   const char **d_data,
+			   size_t *size)
 {
-	Elf *elf = ke->elf;
-	size_t shstrndx = ke->shstrndx;
+	Elf *elf = ed->elf;
+	size_t shstrndx = ed->shstrndx;
 	Elf_Scn *scn;
 	GElf_Shdr shdr;
 	char *name;
@@ -119,7 +119,7 @@ static int ksymtab_elf_get_section(struct ksymtab_elf *ke,
 	return 0;
 }
 
-static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
+static struct elf_data *elf_open(const char *filename)
 {
 	Elf *elf;
 	int fd;
@@ -128,7 +128,7 @@ static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
 	size_t shstrndx;
 	const char *strtab;
 	size_t strtab_size;
-	struct ksymtab_elf *ke = NULL;
+	struct elf_data *ed = NULL;
 
 	if (elf_version(EV_CURRENT) == EV_NONE)
 		fail("elf_version() failed: %s\n", elf_errmsg(-1));
@@ -160,19 +160,19 @@ static struct ksymtab_elf *ksymtab_elf_open(const char *filename)
 	if (elf_getshdrstrndx(elf, &shstrndx) != 0)
 		fail("elf_getshdrstrndx() failed: %s\n", elf_errmsg(-1));
 
-	ke = safe_zmalloc(sizeof(*ke));
-	ke->elf = elf;
-	ke->fd = fd;
-	ke->shstrndx = shstrndx;
+	ed = safe_zmalloc(sizeof(*ed));
+	ed->elf = elf;
+	ed->fd = fd;
+	ed->shstrndx = shstrndx;
 
-	if (ksymtab_elf_get_section(ke, STRTAB, &strtab, &strtab_size) < 0) {
-		free(ke);
+	if (elf_get_section(ed, STRTAB, &strtab, &strtab_size) < 0) {
+		free(ed);
 		goto out;
 	}
 
-	ke->strtab = strtab;
-	ke->strtab_size = strtab_size;
-	return ke;
+	ed->strtab = strtab;
+	ed->strtab_size = strtab_size;
+	return ed;
 
 out:
 	(void) elf_end(elf);
@@ -180,19 +180,19 @@ out:
 	return NULL;
 }
 
-static void ksymtab_elf_close(struct ksymtab_elf *ke)
+static void elf_close(struct elf_data *ed)
 {
-	(void) elf_end(ke->elf);
-	(void) close(ke->fd);
-	free(ke);
+	(void) elf_end(ed->elf);
+	(void) close(ed->fd);
+	free(ed);
 }
 
-static void ksymtab_elf_for_each_global_sym(struct ksymtab_elf *ke,
-					    void (*fn)(const char *name,
-						       uint64_t value,
-						       int binding,
-						       void *ctx),
-					    void *ctx)
+static void elf_for_each_global_sym(struct elf_data *ed,
+				    void (*fn)(const char *name,
+					       uint64_t value,
+					       int binding,
+					       void *ctx),
+				    void *ctx)
 {
 	const Elf64_Sym *end;
 	Elf64_Sym *sym;
@@ -201,7 +201,7 @@ static void ksymtab_elf_for_each_global_sym(struct ksymtab_elf *ke,
 	const char *data;
 	size_t size;
 
-	if (ksymtab_elf_get_section(ke, SYMTAB, &data, &size) < 0)
+	if (elf_get_section(ed, SYMTAB, &data, &size) < 0)
 		return;
 
 	sym = (Elf64_Sym *)data;
@@ -218,11 +218,11 @@ static void ksymtab_elf_for_each_global_sym(struct ksymtab_elf *ke,
 		if (sym->st_name == 0)
 			continue;
 
-		if (sym->st_name > ke->strtab_size)
+		if (sym->st_name > ed->strtab_size)
 			fail("Symbol name index %d out of range %ld\n",
-			    sym->st_name, ke->strtab_size);
+			    sym->st_name, ed->strtab_size);
 
-		name = ke->strtab + sym->st_name;
+		name = ed->strtab + sym->st_name;
 		if (name == NULL)
 			fail("Could not find symbol name\n");
 
@@ -494,7 +494,7 @@ static struct ksymtab *ksymtab_weaks_to_aliases(struct ksymtab *weaks,
  * It will work correctly for one alias only.
  */
 static struct ksymtab *ksymtab_find_aliases(struct ksymtab *ksymtab,
-					    struct ksymtab_elf *elf)
+					    struct elf_data *elf)
 {
 	struct ksymtab *aliases;
 	struct ksymtab *weaks;
@@ -522,7 +522,7 @@ static struct ksymtab *ksymtab_find_aliases(struct ksymtab *ksymtab,
 	 *    suitable weak symbol list;
 	 * 2) for all weak symbols find its alias with the mapping.
 	 */
-	ksymtab_elf_for_each_global_sym(elf, weak_filter, &ctx);
+	elf_for_each_global_sym(elf, weak_filter, &ctx);
 	aliases = ksymtab_weaks_to_aliases(weaks, map);
 
 	hash_free(map);
@@ -539,24 +539,24 @@ static struct ksymtab *ksymtab_find_aliases(struct ksymtab *ksymtab,
  */
 struct ksymtab *ksymtab_read(char *filename, struct ksymtab **aliases)
 {
-	struct ksymtab_elf *elf;
+	struct elf_data *elf;
 	const char *data;
 	size_t size;
 	struct ksymtab *res = NULL;
 
 	assert(aliases != NULL);
 
-	elf = ksymtab_elf_open(filename);
+	elf = elf_open(filename);
 	if (elf == NULL)
 		return NULL;
 
-	if (ksymtab_elf_get_section(elf, KSYMTAB_STRINGS, &data, &size) < 0)
+	if (elf_get_section(elf, KSYMTAB_STRINGS, &data, &size) < 0)
 		goto done;
 
 	res = parse_ksymtab_strings(data, size);
 	*aliases = ksymtab_find_aliases(res, elf);
 
 done:
-	ksymtab_elf_close(elf);
+	elf_close(elf);
 	return res;
 }
