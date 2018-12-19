@@ -931,6 +931,10 @@ static obj_t *print_die_type(struct cu_ctx *ctx,
 		fail("dwarf_formref_die() failed for %s\n",
 		    dwarf_diename(die));
 
+	if (dwarf_hasattr(&type_die, DW_AT_endianity))
+		fail("DIE %s has non-standard endianity\n",
+		     dwarf_diename(&type_die))
+
 	/* Print the type of the die */
 	return print_die(ctx, rec, &type_die);
 }
