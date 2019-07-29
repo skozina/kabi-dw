@@ -59,6 +59,8 @@
  *
  * list_node: node containing the record, record only belong to one list
  *            at a time(usually record_list.records)
+ *
+ * failed: number of times the record could not be used for merging
  */
 struct record {
 	const char *key;
@@ -74,6 +76,7 @@ struct record {
 
 	struct list dependents;
 	struct list_node *list_node;
+	unsigned int failed;
 };
 
 static inline const char *record_get_key(struct record *record)

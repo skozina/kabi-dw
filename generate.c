@@ -965,6 +965,7 @@ struct record_list {
 	 * due to their data being moved.
 	 */
 	struct list *records;
+	struct list *postponed;
 };
 
 static struct record_list *record_list_new(const char *key)
@@ -978,14 +979,18 @@ static struct record_list *record_list_new(const char *key)
 	free(declaration_key);
 
 	rec_list->records = list_new(list_record_free);
+	rec_list->postponed = list_new(NULL);
 
 	return rec_list;
 }
 
 static void record_list_free(struct record_list *rec_list)
 {
+	assert(list_len(rec_list->postponed) == 0);
+
 	record_free(rec_list->decl_dummy);
 	list_free(rec_list->records);
+	list_free(rec_list->postponed);
 	free(rec_list);
 }
 
@@ -1007,6 +1012,11 @@ static inline struct list *record_list_records(struct record_list *rec_list)
 static inline struct record *record_list_decl_dummy(struct record_list *rec_list)
 {
 	return rec_list->decl_dummy;
+}
+
+static void record_list_restore_postponed(struct record_list *rec_list)
+{
+	list_concat(rec_list->records, rec_list->postponed);
 }
 
 static struct record_list *record_db_lookup_or_init(struct record_db *db,
@@ -1163,6 +1173,29 @@ static bool record_merge_many(struct list *list, unsigned int flags)
 	return result;
 }
 
+static void record_list_clean_up(struct record_list *rec_list)
+{
+	const unsigned int FAILED_LIMIT = 10;
+	struct list_node *next = rec_list->records->first;
+
+	while (next != NULL) {
+		struct list_node *temp;
+		struct record *rec;
+
+		temp = next;
+		rec = list_node_data(temp);
+		next = next->next;
+
+		if (!rec) {
+			/* record was merged */
+			list_del(temp);
+		} else if (rec->failed > FAILED_LIMIT) {
+			list_del(temp);
+			rec->list_node = list_add(rec_list->postponed, rec);
+		}
+	}
+}
+
 static bool record_merge_pair(struct record *record_dst,
 			      struct record *record_src)
 {
@@ -1176,8 +1209,10 @@ static bool record_merge_pair(struct record *record_dst,
 	processed = set_init(PROCESSED_SIZE);
 	merged = record_same_declarations(record_dst, record_src, processed);
 	set_free(processed);
-	if (!merged)
+	if (!merged) {
+		record_dst->failed++;
 		return false;
+	}
 
 	list_init(&to_merge, NULL);
 	list_add(&to_merge, record_dst);
@@ -1190,9 +1225,11 @@ static bool record_merge_pair(struct record *record_dst,
 
 	if (merged) {
 		/* continue with next unmerged */
+		record_dst->failed = 0;
 		return true;
 	}
 
+	record_dst->failed++;
 	list_clear(&to_merge);
 
 	return false;
@@ -1300,6 +1337,8 @@ static void record_db_add_cu(struct record_db *db, struct hash *cu_db)
 					break;
 				}
 			}
+
+			record_list_clean_up(rec_list);
 		}
 	} while (merged);
 
@@ -2398,12 +2437,68 @@ static bool record_list_split_and_merge(struct record_list *rec_list)
 	return merged;
 }
 
+bool record_db_merge_pairs(struct hash *hash)
+{
+	struct hash_iter iter;
+	const void *val;
+	bool merged = false;
+
+	/*
+	 * Try to merge as pairs.
+	 *
+	 * Since not every combination was tried while loading CUs, we
+	 * can try to merge them now, after merging some of them as
+	 * groups and decreasing their count.
+	 *
+	 * Should only be trying to merge them once, since trying more times
+	 * would be useless.
+	 */
+	hash_iter_init(hash, &iter);
+	while (hash_iter_next(&iter, NULL, &val)) {
+		struct record_list *rec_list
+			= (struct record_list *)val;
+		struct list_node *unsuc_iter;
+		struct list *con_list = record_list_records(rec_list);
+
+		LIST_FOR_EACH(con_list, unsuc_iter) {
+			struct record *unsuc = unsuc_iter->data;
+			struct list_node *con_iter;
+
+			if (unsuc == NULL)
+				continue;
+
+			for (con_iter = unsuc_iter->next;
+			     con_iter != NULL;
+			     con_iter = con_iter->next) {
+				struct record *con_rec = con_iter->data;
+
+				if (!record_list_node_is_available(con_iter))
+					continue;
+
+				if (record_merge_pair(unsuc, con_rec))
+					merged = true;
+			}
+		}
+	}
+
+	return merged;
+}
+
 void record_db_merge(struct record_db *db)
 {
+	bool first = true;
+
 	struct hash *hash = (struct hash *)db;
 	bool merged;
 	struct hash_iter iter;
 	const void *val;
+
+	hash_iter_init(hash, &iter);
+	while (hash_iter_next(&iter, NULL, &val)) {
+		struct record_list *rec_list = (struct record_list *)val;
+
+		record_list_restore_postponed(rec_list);
+	}
 
 	do {
 		/* merge as groups */
@@ -2420,7 +2515,25 @@ void record_db_merge(struct record_db *db)
 			if (record_list_split_and_merge(rec_list))
 				merged = true;
 		}
+
+
+		/* merge as pairs, once */
+		if (!first)
+			continue;
+		first = false;
+
+		if (record_db_merge_pairs(hash))
+			merged = true;
+
 	} while (merged);
+
+	hash_iter_init(hash, &iter);
+	while (hash_iter_next(&iter, NULL, &val)) {
+		struct record_list *rec_list = (struct record_list *)val;
+
+		record_list_clean_up(rec_list);
+		record_list_restore_postponed(rec_list);
+	}
 }
 
 /*
