@@ -1010,7 +1010,7 @@ static bool obj_is_kabi_hide(obj_t *obj)
 	return strncmp(obj->name, RH_KABI_HIDE, RH_KABI_HIDE_LEN) == 0;
 }
 
-static bool obj_eq(obj_t *o1, obj_t *o2, bool ignore_versions)
+bool obj_eq(obj_t *o1, obj_t *o2, bool ignore_versions)
 {
 	if (o1->type != o2->type)
 		return false;
@@ -1348,4 +1348,61 @@ void obj_dump(obj_t *o, FILE *f)
 		fail("Wrong object type %d", o->type);
 
 	dumpers[o->type].dumper(o, f);
+}
+
+bool obj_same_declarations(obj_t *o1, obj_t *o2,
+			   struct set *processed)
+{
+	const int ignore_versions = true;
+	obj_list_t *list1;
+	obj_list_t *list2;
+
+	if (o1 == o2)
+		return true;
+
+	if (!obj_eq(o1, o2, ignore_versions))
+		return false;
+
+	if (o1->type != o2->type ||
+	    (o1->ptr == NULL) != (o2->ptr == NULL) ||
+	    (o1->member_list == NULL) != (o2->member_list == NULL)) {
+		return false;
+	}
+
+
+	if (o1->type == __type_reffile &&
+	    !record_same_declarations(o1->ref_record, o2->ref_record,
+				      processed)) {
+		return false;
+	}
+
+	if (o1->ptr &&
+	    !obj_same_declarations(o1->ptr, o2->ptr, processed)) {
+		return false;
+	}
+
+	if (o1->member_list) {
+		list1 = o1->member_list->first;
+		list2 = o2->member_list->first;
+
+		while (list1) {
+			if (list2 == NULL)
+				return false;
+
+			if (!obj_same_declarations(list1->member,
+						   list2->member,
+						   processed))
+				return false;
+
+			list1 = list1->next;
+			list2 = list2->next;
+		}
+
+		if (list1 != list2) {
+			/* different member_list lengths */
+			return false;
+		}
+	}
+
+	return true;
 }

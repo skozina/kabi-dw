@@ -568,6 +568,25 @@ static void set_free(struct set *set)
 	hash_free(h);
 }
 
+bool record_same_declarations(struct record *r1, struct record *r2,
+			      struct set *processed)
+{
+	if (r1 == r2)
+		return true;
+
+	if (record_is_declaration(r1) || record_is_declaration(r2))
+		/* since they are not same, only one is a declaration */
+		return false;
+
+	if (set_contains(processed, r1->key))
+		/* skipping already processed record */
+		return true;
+
+	set_add(processed, r1->key);
+
+	return obj_same_declarations(r1->obj, r2->obj, processed);
+}
+
 static struct record *record_alloc(void)
 {
 	struct record *rec;
@@ -1144,6 +1163,41 @@ static bool record_merge_many(struct list *list, unsigned int flags)
 	return result;
 }
 
+static bool record_merge_pair(struct record *record_dst,
+			      struct record *record_src)
+{
+	bool merged;
+	struct set *processed;
+	struct list to_merge;
+
+	if (record_dst == NULL)
+		return false;
+
+	processed = set_init(PROCESSED_SIZE);
+	merged = record_same_declarations(record_dst, record_src, processed);
+	set_free(processed);
+	if (!merged)
+		return false;
+
+	list_init(&to_merge, NULL);
+	list_add(&to_merge, record_dst);
+	list_add(&to_merge, record_src);
+
+	merged = record_merge_many(&to_merge,
+				    MERGE_FLAG_VER_IGNORE |
+				    MERGE_FLAG_DECL_EQ);
+	list_clear(&to_merge);
+
+	if (merged) {
+		/* continue with next unmerged */
+		return true;
+	}
+
+	list_clear(&to_merge);
+
+	return false;
+}
+
 static char *record_db_add(struct record_db *db, struct record *rec)
 {
 	/*
@@ -1197,20 +1251,76 @@ static char *record_db_add(struct record_db *db, struct record *rec)
 
 static void record_db_add_cu(struct record_db *db, struct hash *cu_db)
 {
-
+	struct list unmerged_list;
 	struct hash_iter iter;
 	const void *val;
+	bool merged;
+	struct list_node *unmerged_iter;
+	struct list_node *merger_iter;
 
+	/*
+	 * Use list instead of hash map,
+	 * since nodes are going to be gradually removed.
+	 */
+	list_init(&unmerged_list, NULL);
 	hash_iter_init((struct hash *)cu_db, &iter);
 	while (hash_iter_next(&iter, NULL, &val)) {
 		struct record *rec = (struct record *)val;
-		char *new_key;
 
-		new_key = record_db_add(db, rec);
-		record_put(rec);
-
-		free(new_key);
+		rec->list_node = list_add(&unmerged_list, rec);
 	}
+
+	/* try to merge, as long as at least one record was merged */
+	do {
+		merged = false;
+
+		LIST_FOR_EACH(&unmerged_list, unmerged_iter) {
+			struct record *unmerged_record
+				= list_node_data(unmerged_iter);
+			struct record_list *rec_list;
+			struct list *records;
+			const char *key;
+
+			if (!record_list_node_is_available(unmerged_iter)) {
+				/* already merged */
+				continue;
+			}
+
+			key = unmerged_record->key;
+			rec_list = record_db_lookup_or_init(db, key);
+			records = record_list_records(rec_list);
+
+			LIST_FOR_EACH(records, merger_iter) {
+				struct record *merger
+					= list_node_data(merger_iter);
+
+				if (record_merge_pair(merger,
+						      unmerged_record)) {
+					merged = true;
+					break;
+				}
+			}
+		}
+	} while (merged);
+
+	/* add the rest that was not merged */
+	LIST_FOR_EACH(&unmerged_list, unmerged_iter) {
+		struct record *unmerged_record = list_node_data(unmerged_iter);
+		struct record_list *rec_list;
+		struct list *records;
+
+		if (!record_list_node_is_available(unmerged_iter)) {
+			/* already merged */
+			continue;
+		}
+
+		rec_list = record_db_lookup_or_init(db, unmerged_record->key);
+		records = record_list_records(rec_list);
+
+		unmerged_record->list_node
+			= list_add(records, unmerged_record);
+	}
+	list_clear(&unmerged_list);
 }
 
 static void hash_list_free(void *value)

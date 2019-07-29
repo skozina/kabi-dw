@@ -34,6 +34,8 @@
 #define debug(args...)
 #endif
 
+struct set;
+
 enum merge_flag {
 	MERGE_DEFAULT = 0,
 	MERGE_FLAG_DECL_MERGE = 1 << 0,
@@ -242,5 +244,9 @@ int obj_hide_kabi(obj_t *root, bool show_new_field);
 obj_t *obj_parse(FILE *file, char *fn);
 obj_t *obj_merge(obj_t *o1, obj_t *o2, unsigned int flags);
 void obj_dump(obj_t *o, FILE *f);
+
+bool obj_eq(obj_t *o1, obj_t *o2, bool ignore_versions);
+
+bool obj_same_declarations(obj_t *o1, obj_t *o2, struct set *processed);
 
 #endif

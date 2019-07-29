@@ -91,4 +91,7 @@ static inline bool record_is_declaration(struct record *record)
 	return record->version == RECORD_VERSION_DECLARATION;
 }
 
+bool record_same_declarations(struct record *r1, struct record *r2,
+			      struct set *processed);
+
 #endif /* RECORD_H_ */
