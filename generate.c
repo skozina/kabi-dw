@@ -113,15 +113,15 @@ struct dwarf_type {
 	{ 0, NULL }
 };
 
-
-void record_update_dependents(struct record *record)
+static void record_redirect_dependents(struct record *rec_dst,
+				       struct record *rec_src)
 {
 	struct list_node *iter;
 
-	LIST_FOR_EACH(&record->dependents, iter) {
+	LIST_FOR_EACH(&rec_src->dependents, iter) {
 		obj_t *obj = list_node_data(iter);
 
-		obj->ref_record = record;
+		obj->ref_record = rec_dst;
 	}
 }
 
@@ -1054,8 +1054,8 @@ static char *record_db_add(struct record_db *db, struct record *rec)
 		tmp_rec = list_node_data(iter);
 
 		if (record_merge(tmp_rec, rec, NO_MERGE_DECL)) {
+			record_redirect_dependents(tmp_rec, rec);
 			list_concat(&tmp_rec->dependents, &rec->dependents);
-			record_update_dependents(tmp_rec);
 			return safe_strdup(tmp_rec->key);
 		}
 	}
@@ -1064,7 +1064,7 @@ static char *record_db_add(struct record_db *db, struct record *rec)
 
 	record_get(rec);
 	record_set_version(rec, records_amount);
-	record_update_dependents(rec);
+	record_redirect_dependents(rec, rec);
 	list_add(record_list_records(rec_list), rec);
 
 	return safe_strdup(rec->key);
@@ -2075,7 +2075,7 @@ void record_list_merge(struct list *rec_list)
 		free(curr);
 	}
 
-	record_update_dependents(first);
+	record_redirect_dependents(first, first);
 	rec_list->first->next = NULL;
 	rec_list->last = rec_list->first;
 	rec_list->len = 1;
