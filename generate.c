@@ -88,6 +88,8 @@ struct cu_ctx {
 	struct set *processed; /* Set of processed types for this CU */
 	unsigned char dw_version : 6;
 	unsigned char elf_endian : 2;
+
+	struct hash *cu_db;
 };
 
 struct file_ctx {
@@ -1052,15 +1054,35 @@ static char *record_db_add(struct record_db *db, struct record *rec)
 
 		if (record_merge(tmp_rec, rec, NO_MERGE_DECL)) {
 			list_concat(&tmp_rec->dependents, &rec->dependents);
+			record_update_dependents(tmp_rec);
 			return safe_strdup(tmp_rec->key);
 		}
 	}
 
 	record_get(rec);
 	record_set_version(rec, list->len);
+	record_update_dependents(rec);
 	list_add(list, rec);
 
 	return safe_strdup(rec->key);
+}
+
+static void record_db_add_cu(struct record_db *db, struct hash *cu_db)
+{
+
+	struct hash_iter iter;
+	const void *val;
+
+	hash_iter_init((struct hash *)cu_db, &iter);
+	while (hash_iter_next(&iter, NULL, &val)) {
+		struct record *rec = (struct record *)val;
+		char *new_key;
+
+		new_key = record_db_add(db, rec);
+		record_put(rec);
+
+		free(new_key);
+	}
 }
 
 static void hash_list_free(void *value)
@@ -1529,7 +1551,6 @@ static obj_t *print_die(struct cu_ctx *ctx,
 {
 	char *file;
 	struct record *rec;
-	char *old_file;
 	obj_t *obj;
 	obj_t *ref_obj;
 	generate_config_t *conf = ctx->conf;
@@ -1567,13 +1588,8 @@ static obj_t *print_die(struct cu_ctx *ctx,
 
 	record_close(rec, obj);
 
-	old_file = file;
 	ref_obj->depend_rec_node = list_add(&rec->dependents, ref_obj);
-	/* if it creates new version, key/file name can change */
-	file = record_db_add(conf->db, rec);
-	record_put(rec);
-	/* record_db_add() returns allocated string */
-	free(old_file);
+	hash_add((struct hash *)ctx->cu_db, rec->key, rec);
 
 out:
 	ref_obj->base_type = file;
@@ -1699,8 +1715,12 @@ static void process_cu_die(Dwarf_Die *cu_die, struct file_ctx *fctx)
 		/* And a set of all processed symbols */
 		ctx.processed = set_init(PROCESSED_SIZE);
 
+		ctx.cu_db = hash_new(PROCESSED_SIZE, NULL);
+
 		/* Print both the CU DIE and symbol DIE */
 		ref = print_die(&ctx, NULL, &child_die);
+		record_db_add_cu(conf->db, ctx.cu_db);
+
 		obj_free(ref);
 
 		/* And clear the stack again */
@@ -1709,6 +1729,8 @@ static void process_cu_die(Dwarf_Die *cu_die, struct file_ctx *fctx)
 
 		stack_destroy(ctx.stack);
 		set_free(ctx.processed);
+
+		hash_free((struct hash *)ctx.cu_db);
 	} while (dwarf_siblingof(&child_die, &child_die) == 0);
 }
 
