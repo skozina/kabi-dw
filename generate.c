@@ -1347,6 +1347,20 @@ static void record_db_dump(struct record_db *_db, char *dir)
 	const void *v;
 	struct hash *db = (struct hash *)_db;
 
+	/* set correct versions */
+	hash_iter_init(db, &iter);
+	while (hash_iter_next(&iter, NULL, &v)) {
+		struct list_node *iter;
+		struct record_list *rec_list = (struct record_list *)v;
+		int ver = 0;
+
+		LIST_FOR_EACH(record_list_records(rec_list), iter) {
+			struct record *record = list_node_data(iter);
+
+			record_set_version(record, ver++);
+		}
+	}
+
 	hash_iter_init(db, &iter);
 	while (hash_iter_next(&iter, NULL, &v)) {
 		struct record_list *rec_list = (struct record_list *)v;
@@ -2251,57 +2265,137 @@ static void print_not_found(struct ksym *ksym, void *ctx)
 	printf("%s not found!\n", s);
 }
 
-bool record_list_can_merge(struct list *rec_list)
+ /*
+  * Creates a string describing given record.
+  * The burden of freeing the string falls on the caller.
+  */
+static char *record_get_digest(struct record *rec)
 {
-	bool result = true;
-	struct record *merger;
-	struct list_node *iter;
 
-	if (list_len(rec_list) <= 1) {
-		/* only one record -> nothing to merge */
-		return false;
-	}
+	/*
+	 * TODO: this approach is far from perfect, there could be more
+	 * information about members as part of the key, but for now this works
+	 * good enough.
+	 */
+	char *key;
+	obj_t *obj = rec->obj;
+	const char *origin = rec->origin ? rec->origin : "";
+	int member_count = 0;
 
-	merger = record_copy(list_node_data(rec_list->first));
-	LIST_FOR_EACH(rec_list, iter) {
-		struct record *record = list_node_data(iter);
+	if (!obj)
+		return safe_strdup(origin);
 
-		if (!record_merge(merger, record,
-				  MERGE_FLAG_DECL_MERGE)) {
-			result = false;
-			break;
+	if (obj->member_list) {
+		for (obj_list_t *member = obj->member_list->first;
+		     member != NULL;
+		     member = member->next) {
+			member_count++;
 		}
 	}
-	record_put(merger);
+
+	safe_asprintf(&key,
+		      "%s.%zu.%zu.%zu.%zu.%zu.%i",
+		      origin,
+		      obj->alignment, obj->is_bitfield,
+		      obj->first_bit, obj->last_bit,
+		      obj->offset,
+		      member_count
+		);
+
+	return key;
+}
+
+struct digest_equivalence_list {
+	char *key;
+	struct list *records;
+};
+
+static void digest_equivalence_list_free(struct digest_equivalence_list *arg)
+{
+	free(arg->key);
+	list_free(arg->records);
+	free(arg);
+}
+
+static struct hash *split_record_list(struct list *input)
+{
+	struct hash *result
+		= hash_new(16, (void (*)(void *))digest_equivalence_list_free);
+	void *temp;
+	struct list_node *iter;
+
+	LIST_FOR_EACH(input, iter) {
+		struct record *rec = list_node_data(iter);
+		char *key;
+		struct digest_equivalence_list *eq_list;
+
+		if (!record_list_node_is_available(iter))
+			continue;
+
+		key = record_get_digest(rec);
+		eq_list = hash_find(result, key);
+		if (eq_list == NULL) {
+			eq_list = malloc(sizeof(*eq_list));
+			eq_list->key = key;
+			eq_list->records = list_new(NULL);
+
+			hash_add(result, eq_list->key, eq_list);
+		} else {
+			free(key);
+		}
+
+		rec->list_node = list_add(eq_list->records, rec);
+	}
+
+	/* clear the input list but do not free the data */
+	temp = input->free;
+	input->free = NULL;
+	list_clear(input);
+	input->free = temp;
 
 	return result;
 }
 
-void record_list_merge(struct list *rec_list)
+static bool record_list_split_and_merge(struct record_list *rec_list)
 {
-	struct record *first = rec_list->first->data;
-	struct list_node *next = rec_list->first->next;
-	struct list_node *curr;
+	struct list *list = rec_list->records;
+	struct hash *split = split_record_list(list);
+	const void *val;
+	bool merged = false;
+	struct hash_iter split_iter;
 
-	struct record *record;
 
-	while (next != NULL) {
-		curr = next;
-		next = next->next;
+	/* try to merge digest_equivalence_lists */
+	hash_iter_init(split, &split_iter);
+	while (hash_iter_next(&split_iter, NULL, &val)) {
+		struct digest_equivalence_list *eq_list
+			= (struct digest_equivalence_list *)val;
 
-		record = curr->data;
+		if (list_len(eq_list->records) < 2) {
+			/* skipping lists with nothing to merge */
+			continue;
+		}
 
-		list_concat(&first->dependents, &record->dependents);
-		record_merge(first, record, MERGE_FLAG_DECL_MERGE);
-		record_put(record);
-
-		free(curr);
+		if (record_merge_many(eq_list->records,
+				      MERGE_FLAG_VER_IGNORE |
+				      MERGE_FLAG_DECL_MERGE)) {
+			merged = true;
+		}
 	}
 
-	record_redirect_dependents(first, first);
-	rec_list->first->next = NULL;
-	rec_list->last = rec_list->first;
-	rec_list->len = 1;
+
+	/* concat back together */
+	hash_iter_init(split, &split_iter);
+	while (hash_iter_next(&split_iter, NULL, &val)) {
+		struct digest_equivalence_list *eq_list
+			= (struct digest_equivalence_list *)val;
+
+		list_concat(list, eq_list->records);
+	}
+
+	hash_free(split);
+
+	return merged;
 }
 
 void record_db_merge(struct record_db *db)
@@ -2309,27 +2403,22 @@ void record_db_merge(struct record_db *db)
 	struct hash *hash = (struct hash *)db;
 	bool merged;
 	struct hash_iter iter;
-	const char *key;
 	const void *val;
 
 	do {
+		/* merge as groups */
 		merged = false;
 
 		hash_iter_init(hash, &iter);
-		while (hash_iter_next(&iter, &key, &val)) {
+		while (hash_iter_next(&iter, NULL, &val)) {
 			struct record_list *rec_list
 				= (struct record_list *)val;
-			struct list *records;
 
 			if (rec_list == NULL)
 				continue;
 
-			records = record_list_records(rec_list);
-
-			if (record_list_can_merge(records)) {
-				record_list_merge(records);
+			if (record_list_split_and_merge(rec_list))
 				merged = true;
-			}
 		}
 	} while (merged);
 }
