@@ -1012,13 +1012,19 @@ static bool obj_is_kabi_hide(obj_t *obj)
 	return strncmp(obj->name, RH_KABI_HIDE, RH_KABI_HIDE_LEN) == 0;
 }
 
-static bool obj_eq(obj_t *o1, obj_t *o2)
+static bool obj_eq(obj_t *o1, obj_t *o2, bool ignore_versions)
 {
 	if (o1->type != o2->type)
 		return false;
 
-	if (o1->type == __type_reffile)
+	if (o1->type == __type_reffile) {
+		if (ignore_versions) {
+			return safe_streq(record_get_key(o1->ref_record),
+					  record_get_key(o2->ref_record));
+		}
+
 		return o1->ref_record == o2->ref_record;
+	}
 
 	/* borrow parts from cmp_nodes */
 	if (!safe_streq(o1->name, o2->name) ||
@@ -1066,10 +1072,11 @@ static obj_t *obj_copy(obj_t *o1)
 	return o;
 }
 
-obj_t *obj_merge(obj_t *o1, obj_t *o2, bool merge_decl);
+obj_t *obj_merge(obj_t *o1, obj_t *o2, unsigned int flags);
 
 static obj_list_head_t *obj_members_merge(obj_list_head_t *list1,
-		obj_list_head_t *list2, bool merge_decl)
+					  obj_list_head_t *list2,
+					  unsigned int flags)
 {
 	obj_list_head_t *res = NULL;
 	obj_list_t *l1;
@@ -1083,7 +1090,7 @@ static obj_list_head_t *obj_members_merge(obj_list_head_t *list1,
 	l2 = list2->first;
 
 	while (l1 && l2) {
-		o = obj_merge(l1->member, l2->member, merge_decl);
+		o = obj_merge(l1->member, l2->member, flags);
 		if (o == NULL)
 			goto cleanup;
 
@@ -1106,7 +1113,39 @@ cleanup:
 	return NULL;
 }
 
-obj_t *obj_merge(obj_t *o1, obj_t *o2, bool merge_decl)
+static inline bool obj_can_merge_two_lines(obj_t *o1, obj_t *o2,
+					   unsigned int flags)
+{
+	/*
+	 * We cannot merge two lines if:
+	 *  - their states of being declarations are not equivalent,
+	 *    and we require them to be
+	 */
+	if (flags & MERGE_FLAG_DECL_EQ &&
+	    (obj_is_declaration(o1) != obj_is_declaration(o2)))
+		return false;
+
+	/*
+	 * We can merge the two lines if:
+	 *  - they are the same, or
+	 *  - they are both RH_KABI_HIDE, or
+	 *  - at least one of them is a declaration,
+	 *    and we can merge declarations
+	 */
+	if (obj_eq(o1, o2, flags & MERGE_FLAG_VER_IGNORE))
+		return true;
+
+	if (obj_is_kabi_hide(o1) && obj_is_kabi_hide(o2))
+		return true;
+
+	if (flags & MERGE_FLAG_DECL_MERGE &&
+	    (obj_is_declaration(o1) || obj_is_declaration(o2)))
+		return true;
+
+	return false;
+}
+
+obj_t *obj_merge(obj_t *o1, obj_t *o2, unsigned int flags)
 {
 	obj_t *merged_ptr;
 	obj_list_head_t *merged_members;
@@ -1115,25 +1154,16 @@ obj_t *obj_merge(obj_t *o1, obj_t *o2, bool merge_decl)
 	if (o1 == NULL || o2 == NULL)
 		return NULL;
 
-	/*
-	 * We can merge the two lines if:
-	 *  - they are the same, or
-	 *  - they are both RH_KABI_HIDE, or
-	 *  - at least one of them is a declaration
-	 */
-	if ((!obj_eq(o1, o2)) &&
-	    (!obj_is_kabi_hide(o1) || !obj_is_kabi_hide(o2)) &&
-	    !(obj_is_declaration(o1) && merge_decl) &&
-	    !(obj_is_declaration(o2) && merge_decl))
+	if (!obj_can_merge_two_lines(o1, o2, flags))
 		goto no_merge;
 
-	merged_ptr = obj_merge(o1->ptr, o2->ptr, merge_decl);
+	merged_ptr = obj_merge(o1->ptr, o2->ptr, flags);
 	if (o1->ptr && !merged_ptr)
 		goto no_merge_ptr;
 
 	merged_members = obj_members_merge(o1->member_list,
 					   o2->member_list,
-					   merge_decl);
+					   flags);
 	if (o1->member_list && !merged_members)
 		goto no_merge_members;
 

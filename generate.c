@@ -920,7 +920,7 @@ static void list_record_free(void *value)
  */
 static bool record_merge(struct record *rec_dst,
 			 struct record *rec_src,
-			 bool merge_decl)
+			 unsigned int flags)
 {
 	const char *s1;
 	const char *s2;
@@ -937,7 +937,7 @@ static bool record_merge(struct record *rec_dst,
 	o1 = record_obj(rec_dst);
 	o2 = record_obj(rec_src);
 
-	o = obj_merge(o1, o2, merge_decl);
+	o = obj_merge(o1, o2, flags);
 	if (o == NULL)
 		return false;
 
@@ -1053,7 +1053,7 @@ static char *record_db_add(struct record_db *db, struct record *rec)
 	LIST_FOR_EACH(record_list_records(rec_list), iter) {
 		tmp_rec = list_node_data(iter);
 
-		if (record_merge(tmp_rec, rec, NO_MERGE_DECL)) {
+		if (record_merge(tmp_rec, rec, MERGE_DEFAULT)) {
 			record_redirect_dependents(tmp_rec, rec);
 			list_concat(&tmp_rec->dependents, &rec->dependents);
 			return safe_strdup(tmp_rec->key);
@@ -2021,7 +2021,7 @@ struct record *record_copy(struct record *src)
 	struct record *res = record_new_regular("");
 	obj_t *o1 = record_obj(src);
 
-	res->obj = obj_merge(o1, o1, MERGE_DECL);
+	res->obj = obj_merge(o1, o1, MERGE_FLAG_DECL_MERGE);
 	obj_fill_parent(res->obj);
 	res->origin = safe_strdup(src->origin);
 	res->base_file = NULL;
@@ -2044,7 +2044,8 @@ bool record_list_can_merge(struct list *rec_list)
 	LIST_FOR_EACH(rec_list, iter) {
 		struct record *record = list_node_data(iter);
 
-		if (!record_merge(merger, record, MERGE_DECL)) {
+		if (!record_merge(merger, record,
+				  MERGE_FLAG_DECL_MERGE)) {
 			result = false;
 			break;
 		}
@@ -2069,7 +2070,7 @@ void record_list_merge(struct list *rec_list)
 		record = curr->data;
 
 		list_concat(&first->dependents, &record->dependents);
-		record_merge(first, record, MERGE_DECL);
+		record_merge(first, record, MERGE_FLAG_DECL_MERGE);
 		record_put(record);
 
 		free(curr);
