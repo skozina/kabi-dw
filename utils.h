@@ -152,7 +152,12 @@ extern int check_is_directory(char *);
 extern void rec_mkdir(char *);
 extern void safe_rename(const char *, const char *);
 extern char *path_normalize(char *);
-extern char *filenametotype(char *);
-extern char *filenametosymbol(char *);
+extern char *filenametotype(const char *);
+extern char *filenametosymbol(const char *);
+
+extern void global_string_keeper_init(void);
+extern void global_string_keeper_free(void);
+extern const char *global_string_get_copy(const char *string);
+extern const char *global_string_get_move(char *string);
 
 #endif /* UTILS_H */

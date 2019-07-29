@@ -33,6 +33,7 @@
 #include "generate.h"
 #include "compare.h"
 #include "show.h"
+#include "utils.h"
 
 static char *progname;
 
@@ -57,6 +58,8 @@ int main(int argc, char **argv)
 
 	argv++; argc--;
 
+	global_string_keeper_init();
+
 	if (strcmp(argv[0], "generate") == 0)
 		generate(argc, argv);
 	else if (strcmp(argv[0], "compare") == 0)
@@ -65,6 +68,8 @@ int main(int argc, char **argv)
 		ret = show(argc, argv);
 	else
 		usage();
+
+	global_string_keeper_free();
 
 	return ret;
 }

@@ -94,7 +94,7 @@ obj_t *obj_new(obj_types type, char *name)
 	obj_t *new = safe_zmalloc(sizeof(obj_t));
 
 	new->type = type;
-	new->name = name;
+	new->name = global_string_get_move(name);
 
 	return new;
 }
@@ -137,11 +137,6 @@ static void _obj_free(obj_t *o, obj_t *skip)
 		list_del(o->depend_rec_node);
 		o->depend_rec_node = NULL;
 	}
-
-	if (o->name)
-		free(o->name);
-	if (o->base_type)
-		free(o->base_type);
 
 	_obj_list_free(o->member_list, skip);
 
@@ -210,7 +205,7 @@ obj_t *obj_basetype_new(char *base_type)
 {
 	obj_t *new = obj_new(__type_base, NULL);
 
-	new->base_type = base_type;
+	new->base_type = global_string_get_move(base_type);
 
 	return new;
 }
@@ -367,11 +362,12 @@ static char *prefix_str_free(char **s, char *p)
 	return _prefix_str(s, p, false, true);
 }
 
-static char *prefix_str_space(char **s, char *p)
+static char *prefix_str_space(char **s, const char *p)
 {
 	if (!p)
 		return *s;
-	return _prefix_str(s, p, true, false);
+	/* freep is false so we can pass const char * */
+	return _prefix_str(s, (char *)p, true, false);
 }
 
 /*
@@ -404,11 +400,13 @@ static char *_postfix_str(char **s, char *p, bool space, bool freep)
 	return *s;
 }
 
-static char *postfix_str(char **s, char *p)
+static char *postfix_str(char **s, const char *p)
 {
 	if (!p)
 		return *s;
-	return _postfix_str(s, p, false, false);
+
+	/* freep is false so we can pass const char * */
+	return _postfix_str(s, (char *)p, false, false);
 }
 
 static char *postfix_str_free(char **s, char *p)
@@ -483,7 +481,8 @@ static pp_t print_func(obj_t *o, int depth, const char *prefix)
 	pp_t ret = {NULL, NULL}, return_type;
 	obj_list_t *list = NULL;
 	obj_t *next = o->ptr;
-	char *s, *name, *margin;
+	char *s, *margin;
+	const char *name;
 
 	return_type = _print_tree(next, depth, false, prefix);
 	ret.prefix = return_type.prefix;
@@ -553,7 +552,7 @@ static pp_t print_varlike(obj_t *o, int depth, const char *prefix)
 		safe_asprintf(&s, "%s:%i",
 			      o->name, o->last_bit - o->first_bit + 1);
 	else
-		s = o->name;
+		s = (char *)o->name;
 
 	ret = _print_tree(o->ptr, depth, false, prefix);
 
@@ -917,8 +916,7 @@ static int hide_kabi_cb(obj_t *o, void *args)
 		if (!strncmp(o->name, "rh_reserved_", 12) &&
 		    strncmp(o->name, "rh_reserved_ptrs", 16)) {
 			char *tmp = strdup(o->name+12);
-			free(o->name);
-			o->name = tmp;
+			o->name = global_string_get_move(tmp);
 		}
 	}
 
@@ -1019,15 +1017,15 @@ static bool obj_eq(obj_t *o1, obj_t *o2, bool ignore_versions)
 
 	if (o1->type == __type_reffile) {
 		if (ignore_versions) {
-			return safe_streq(record_get_key(o1->ref_record),
-					  record_get_key(o2->ref_record));
+			return record_get_key(o1->ref_record) ==
+				record_get_key(o2->ref_record);
 		}
 
 		return o1->ref_record == o2->ref_record;
 	}
 
 	/* borrow parts from cmp_nodes */
-	if (!safe_streq(o1->name, o2->name) ||
+	if ((o1->name != o2->name) ||
 	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
 	    (has_constant(o1) && (o1->constant != o2->constant)) ||
 	    (has_index(o1) && (o1->index != o2->index)) ||
@@ -1046,7 +1044,7 @@ static bool obj_eq(obj_t *o1, obj_t *o2, bool ignore_versions)
 	    (o2->member_list == NULL))
 		return false;
 
-	if (!safe_streq(o1->base_type, o2->base_type))
+	if (o1->base_type != o2->base_type)
 		return false;
 
 	return true;
@@ -1058,10 +1056,6 @@ static obj_t *obj_copy(obj_t *o1)
 
 	o = safe_zmalloc(sizeof(*o));
 	*o = *o1;
-
-	o->type = o1->type;
-	o->name = safe_strdup_or_null(o1->name);
-	o->base_type = safe_strdup_or_null(o1->base_type);
 
 	o->ptr = NULL;
 	o->member_list = NULL;
@@ -1304,7 +1298,7 @@ static void dump_qualifier(obj_t *o, FILE *f)
 
 static void dump_base(obj_t *o, FILE *f)
 {
-	char *type = o->base_type;
+	const char *type = o->base_type;
 
 	/* variable args (...) is a special base case */
 	if (type[0] == '.')

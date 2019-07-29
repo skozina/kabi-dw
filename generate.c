@@ -581,7 +581,6 @@ static void record_free_regular(struct record *rec)
 	void *data;
 	struct list_node *iter;
 
-	free(rec->origin);
 	if (rec->cu)
 		free(rec->cu);
 
@@ -606,8 +605,6 @@ static void record_free_weak(struct record *rec)
 
 static void record_free(struct record *rec)
 {
-	free(rec->key);
-
 	if (rec->free)
 		rec->free(rec);
 	free(rec);
@@ -633,7 +630,7 @@ static struct record *record_new_regular(const char *key)
 	struct record *rec;
 
 	rec = record_alloc();
-	rec->key = safe_strdup(key);
+	rec->key = global_string_get_copy(key);
 	rec->stack = stack_init();
 	rec->free = record_free_regular;
 	rec->dump = record_dump_regular;
@@ -649,7 +646,7 @@ static struct record *record_new_assembly(const char *key)
 	struct record *rec;
 
 	rec = record_alloc();
-	rec->key = safe_strdup(key);
+	rec->key = global_string_get_copy(key);
 
 	/*
 	 * The symbol not necessary belongs to an assembly function,
@@ -672,7 +669,7 @@ static struct record *record_new_weak(const char *key, const char *link)
 	struct record *rec;
 
 	rec = record_alloc();
-	rec->key = safe_strdup(key);
+	rec->key = global_string_get_copy(key);
 	rec->link = safe_strdup(link);
 
 	rec->free = record_free_weak;
@@ -734,11 +731,14 @@ static void record_add_origin(struct record *rec,
 {
 	char *dec_file;
 	long dec_line;
+	char *origin;
 
 	dec_file = get_file(cu_die, die);
 	dec_line = get_line(cu_die, die);
 
-	safe_asprintf(&rec->origin, "File: %s:%lu\n", dec_file, dec_line);
+	safe_asprintf(&origin, "File: %s:%lu\n", dec_file, dec_line);
+	rec->origin = global_string_get_move(origin);
+
 	free(dec_file);
 }
 
@@ -910,7 +910,7 @@ static bool record_merge(struct record *rec_dst,
 	s1 = record_origin(rec_dst);
 	s2 = record_origin(rec_src);
 
-	if (!safe_streq(s1, s2))
+	if (s1 != s2)
 		return false;
 
 	o1 = record_obj(rec_dst);
@@ -928,7 +928,6 @@ static bool record_merge(struct record *rec_dst,
 }
 
 struct record_list {
-	char *key;
 	struct record *decl_dummy;
 	/*
 	 * Nodes with data members set to NULL are unavailable,
@@ -941,8 +940,6 @@ static struct record_list *record_list_new(const char *key)
 {
 	struct record_list *rec_list = safe_zmalloc(sizeof(*rec_list));
 	char *declaration_key;
-
-	rec_list->key = safe_strdup(key);
 
 	safe_asprintf(&declaration_key, "%s/%s", DECLARATION_PATH, key);
 	rec_list->decl_dummy = record_new_regular(declaration_key);
@@ -958,7 +955,6 @@ static void record_list_free(struct record_list *rec_list)
 {
 	record_free(rec_list->decl_dummy);
 	list_free(rec_list->records);
-	free(rec_list->key);
 	free(rec_list);
 }
 
@@ -992,7 +988,7 @@ static struct record_list *record_db_lookup_or_init(struct record_db *db,
 	if (rec_list == NULL) {
 		rec_list = record_list_new(key);
 
-		hash_add(hash, rec_list->key, rec_list);
+		hash_add(hash, global_string_get_copy(key), rec_list);
 	}
 
 	return rec_list;
@@ -1500,12 +1496,12 @@ static obj_t *print_die_tag(struct cu_ctx *ctx,
 	case DW_TAG_volatile_type:
 		obj = print_die_type(ctx, rec, die);
 		obj = obj_qualifier_new_add(obj);
-		obj->base_type = safe_strdup("volatile");
+		obj->base_type = global_string_get_copy("volatile");
 		break;
 	case DW_TAG_const_type:
 		obj = print_die_type(ctx, rec, die);
 		obj = obj_qualifier_new_add(obj);
-		obj->base_type = safe_strdup("const");
+		obj->base_type = global_string_get_copy("const");
 		break;
 	case DW_TAG_array_type:
 		obj = print_die_array_type(ctx, rec, die);
@@ -2002,7 +1998,7 @@ struct record *record_copy(struct record *src)
 
 	res->obj = obj_merge(o1, o1, MERGE_FLAG_DECL_MERGE);
 	obj_fill_parent(res->obj);
-	res->origin = safe_strdup(src->origin);
+	res->origin = src->origin;
 
 	return res;
 }

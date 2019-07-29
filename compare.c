@@ -115,7 +115,8 @@ typedef enum {
 	CMP_BYTE_SIZE,  /* Byte size has changed */
 } cmp_ret_t;
 
-static int compare_two_files(char *filename, char *newfile, bool follow);
+static int compare_two_files(const char *filename, const char *newfile,
+			     bool follow);
 
 static int cmp_node_reffile(obj_t *o1, obj_t *o2)
 {
@@ -490,7 +491,7 @@ static int compare_tree(obj_t *o1, obj_t *o2, FILE *stream)
 	return _compare_tree(o1, o2, stream);
 }
 
-static bool push_file(char *filename)
+static bool push_file(const char *filename)
 {
 	int i, sz = compare_config.flistsz;
 	int cnt = compare_config.flistcnt;
@@ -572,12 +573,14 @@ static void compare_usage()
  *           don't print anything and exit immediately if follow
  *           option isn't set.
  */
-static int compare_two_files(char *filename, char *newfile, bool follow)
+static int compare_two_files(const char *filename, const char *newfile,
+			     bool follow)
 {
 	obj_t *root1, *root2;
 	char *old_dir = compare_config.old_dir;
 	char *new_dir = compare_config.new_dir;
-	char *path1, *path2, *s = NULL, *filename2;
+	char *path1, *path2, *s = NULL;
+	const char *filename2;
 	FILE *file1, *file2, *stream;
 	struct stat fstat;
 	size_t sz;

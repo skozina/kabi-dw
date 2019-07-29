@@ -26,6 +26,7 @@
 #include <stdio.h>
 
 #include "list.h"
+#include "utils.h"
 
 #ifdef DEBUG
 #define debug(args...) do { printf(args); } while (0)
@@ -102,8 +103,8 @@ typedef struct obj_list_head {
  */
 typedef struct obj {
 	obj_types type;
-	char *name;
-	char *base_type;
+	const char *name;
+	const char *base_type;
 	unsigned alignment;
 	unsigned int byte_size;
 	obj_list_head_t *member_list;

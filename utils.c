@@ -33,6 +33,7 @@
 
 #include "main.h"
 #include "utils.h"
+#include "hash.h"
 
 /*
  * Sort function for scandir.
@@ -353,10 +354,11 @@ char *path_normalize(char *path)
 /* Removes the two dashes at the end of the prefix */
 #define IS_PREFIX(s, prefix) !strncmp(s, prefix, strlen(prefix) - 2)
 
-static void split_filename(char *filename, char **prefix,
+static void split_filename(const char *filename, char **prefix,
 			   char **name, int *version)
 {
-	char *base = basename(filename);
+	/* GNU version of basename never modifies its argument */
+	char *base = basename((char *)filename);
 
 	version = 0;
 
@@ -371,7 +373,7 @@ static void split_filename(char *filename, char **prefix,
  *
  * It allocates the string which must be freed by the caller.
  */
-char *filenametotype(char *filename)
+char *filenametotype(const char *filename)
 {
 	char *prefix = NULL, *name = NULL, *type = NULL;
 	int version = 0;
@@ -399,7 +401,7 @@ char *filenametotype(char *filename)
  *
  * It allocates the string which must be freed by the caller.
  */
-char *filenametosymbol(char *filename)
+char *filenametosymbol(const char *filename)
 {
 	char *prefix = NULL, *name = NULL;
 	int version = 0;
@@ -408,4 +410,50 @@ char *filenametosymbol(char *filename)
 	free(prefix);
 
 	return name;
+}
+
+struct hash *global_string_keeper;
+
+void global_string_keeper_init(void)
+{
+	global_string_keeper = hash_new(1 << 20, free);
+}
+
+void global_string_keeper_free(void)
+{
+	hash_free(global_string_keeper);
+}
+
+const char *global_string_get_copy(const char *string)
+{
+	const char *result;
+
+	if (string == NULL)
+		return NULL;
+
+	result = hash_find(global_string_keeper, string);
+	if (result == NULL) {
+		result = safe_strdup(string);
+		hash_add(global_string_keeper, result, result);
+	}
+
+	return result;
+}
+
+const char *global_string_get_move(char *string)
+{
+	const char *result;
+
+	if (string == NULL)
+		return NULL;
+
+	result = hash_find(global_string_keeper, string);
+	if (result == NULL) {
+		result = string;
+		hash_add(global_string_keeper, result, result);
+	} else {
+		free(string);
+	}
+
+	return result;
 }

@@ -61,11 +61,11 @@
  *            at a time(usually record_list.records)
  */
 struct record {
-	char *key;
+	const char *key;
 	int version;
 	int ref_count;
 	char *cu;
-	char *origin;
+	const char *origin;
 	stack_t *stack;
 	obj_t *obj;
 	char *link;
@@ -76,7 +76,7 @@ struct record {
 	struct list_node *list_node;
 };
 
-static inline char *record_get_key(struct record *record)
+static inline const char *record_get_key(struct record *record)
 {
 	return record->key;
 }
