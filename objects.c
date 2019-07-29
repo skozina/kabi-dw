@@ -1190,7 +1190,12 @@ no_merge:
 
 static void dump_reffile(obj_t *o, FILE *f)
 {
-	fprintf(f, "@\"%s\"\n", record_get_key(o->ref_record));
+	int version = record_get_version(o->ref_record);
+
+	fprintf(f, "@\"%s", record_get_key(o->ref_record));
+	if (version > 0)
+		fprintf(f, "-%i", version);
+	fprintf(f, ".txt\"\n");
 }
 
 static void _dump_members(obj_t *o, FILE *f, void (*dumper)(obj_t *, FILE *))

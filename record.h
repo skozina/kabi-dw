@@ -15,6 +15,7 @@
  *
  * key: record key, usually includes path the file, where the type is
  *      defined (may include pseudo path, like <declaration>);
+ *      Does not contain version and the .txt suffix.
  *
  * version: type's version, used when we need to add another type of the same
  *	    name. It may happend, for example, when because of defines the same
@@ -26,9 +27,6 @@
  *
  * ref_count: reference counter, needed since the ownership is shared with the
  *            internal database;
- *
- * base_file: base part of the key (without version), used to generate the
- *            unique key for the new version;
  *
  * cu: compilation unit, where the type for the record defined;
  *
@@ -66,7 +64,6 @@ struct record {
 	char *key;
 	int version;
 	int ref_count;
-	char *base_file;
 	char *cu;
 	char *origin;
 	stack_t *stack;

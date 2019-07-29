@@ -279,17 +279,6 @@ static char *get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die)
 	}
 
 	/*
-	 * DW_AT_declaration don't have DW_AT_decl_file.
-	 * Pretend like it's in other, non existent file.
-	 */
-	if (is_declaration(die)) {
-		safe_asprintf(&file_name, DECLARATION_PATH "/%s%s.txt",
-		    file_prefix, name);
-
-		return file_name;
-	}
-
-	/*
 	 * Following types can be anonymous, eg. used directly as variable type
 	 * in the declaration. We don't create new file for them if that's
 	 * the case, embed them directly in the current file.
@@ -308,7 +297,7 @@ static char *get_symbol_file(Dwarf_Die *die, Dwarf_Die *cu_die)
 	/* We don't expect our name to be empty now */
 	assert(name != NULL);
 
-	safe_asprintf(&file_name, "%s%s.txt", file_prefix, name);
+	safe_asprintf(&file_name, "%s%s", file_prefix, name);
 
 	return file_name;
 }
@@ -592,7 +581,6 @@ static void record_free_regular(struct record *rec)
 	void *data;
 	struct list_node *iter;
 
-	free(rec->base_file);
 	free(rec->origin);
 	if (rec->cu)
 		free(rec->cu);
@@ -799,22 +787,7 @@ done:
 
 static void record_set_version(struct record *rec, int version)
 {
-	char *base_file = rec->base_file;
-	char *key = NULL;
-
-	if (version == 0)
-		return;
-
-	if (rec->version == 0) {
-		base_file = safe_strdup(rec->key);
-		/* Remove .txt ending */
-		base_file[strlen(base_file) - 4] = '\0';
-		rec->base_file = base_file;
-	}
 	rec->version = version;
-	safe_asprintf(&key, "%s-%i.txt", base_file, rec->version);
-	free(rec->key);
-	rec->key = key;
 }
 
 static void record_close(struct record *rec, obj_t *obj)
@@ -891,7 +864,13 @@ static void record_dump(struct record *rec, const char *dir)
 	FILE *f;
 	char *slash;
 
-	snprintf(path, sizeof(path), "%s/%s", dir, rec->key);
+	if (rec->version == 0) {
+		snprintf(path, sizeof(path),
+			 "%s/%s.txt", dir, rec->key);
+	} else {
+		snprintf(path, sizeof(path),
+			 "%s/%s-%i.txt", dir, rec->key, rec->version);
+	}
 
 	slash = strrchr(path, '/');
 	assert(slash != NULL);
@@ -1830,7 +1809,7 @@ static void generate_assembly_record(generate_config_t *conf, const char *key)
 	if (conf->verbose)
 		printf("Generating assembly record for %s\n", key);
 
-	safe_asprintf(&name, "asm--%s.txt", key);
+	safe_asprintf(&name, "asm--%s", key);
 
 	rec = record_new_assembly(name);
 	new_key = record_db_add(conf->db, rec);
@@ -1854,7 +1833,7 @@ static bool try_generate_alias(generate_config_t *conf, struct ksym *ksym)
 		printf("Generating weak record %s -> %s\n",
 		       key, link);
 
-	safe_asprintf(&name, "weak--%s.txt", key);
+	safe_asprintf(&name, "weak--%s", key);
 
 	rec = record_new_weak(name, link);
 	new_key = record_db_add(conf->db, rec);
@@ -2024,7 +2003,6 @@ struct record *record_copy(struct record *src)
 	res->obj = obj_merge(o1, o1, MERGE_FLAG_DECL_MERGE);
 	obj_fill_parent(res->obj);
 	res->origin = safe_strdup(src->origin);
-	res->base_file = NULL;
 
 	return res;
 }
