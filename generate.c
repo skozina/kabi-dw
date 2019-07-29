@@ -49,6 +49,7 @@
 #include "hash.h"
 #include "objects.h"
 #include "list.h"
+#include "record.h"
 
 #define	EMPTY_NAME	"(NULL)"
 #define PROCESSED_SIZE 1024
@@ -66,8 +67,6 @@
 #ifndef DW_AT_alignment
 #define DW_AT_alignment 0x88
 #endif
-
-#define RECORD_VERSION_DECLARATION -1
 
 struct set;
 struct record_db;
@@ -114,71 +113,6 @@ struct dwarf_type {
 	{ 0, NULL }
 };
 
-
-/*
- * Structure of the database record:
- *
- * key: record key, usually includes path the file, where the type is
- *      defined (may include pseudo path, like <declaration>);
- *
- * version: type's version, used when we need to add another type of the same
- *	    name. It may happend, for example, when because of defines the same
- *          structure has changed for different compilation units.
- *
- *          It is not for the case, when the same structure defined in
- *	    different files -- it will have different keys, since it includes
- *	    the path;
- *
- * ref_count: reference counter, needed since the ownership is shared with the
- *            internal database;
- *
- * base_file: base part of the key (without version), used to generate the
- *            unique key for the new version;
- *
- * cu: compilation unit, where the type for the record defined;
- *
- * origin: "File <file>:<line>" string, describing the source, where the type
- *         for the record defined;
- *
- * stack: stack of types to reach this one.
- *         Ex.: on the toplevel
- *              struct A {
- *                        struct B fieldA;
- *              }
- *         in another file:
- *              struct B {
- *                        basetype fieldB;
- *              }
- *         the "struct B" description will contain key of the "struct A"
- *         description record in the stack;
- *
- * obj: pointer to the abstract type object, representing the toplevel type of
- *      the record.
- *
- * link: name of weak link alisas for the weak aliases.
- *
- * free: type specific function to free the record
- *       (there are normal, weak and assembly records).
- *
- * dump: type specific function for record output.
- *
- * dependents: objects that reference this record.
- */
-struct record {
-	char *key;
-	int version;
-	int ref_count;
-	char *base_file;
-	char *cu;
-	char *origin;
-	stack_t *stack;
-	obj_t *obj;
-	char *link;
-	void (*free)(struct record *);
-	void (*dump)(struct record *, FILE *);
-
-	struct list dependents;
-};
 
 void record_update_dependents(struct record *record)
 {
