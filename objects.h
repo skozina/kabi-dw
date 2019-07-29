@@ -78,7 +78,11 @@ typedef struct obj_list_head {
  *
  * type:	type of the symbol (such as struct, function, pointer, base
  *		type...)
+ * is_bitfield:	(var) It's a bitfield
+ * first_bit, last_bit:	(var) bit range within the offset.
  * name:	name of the symbol
+ * ref_record:	(reffile) pointer to the referenced record (only while
+ *              generating records, otherwise base_type with string is used)
  * base_type:	(base type) the type of the symbol,
  *		(qualifier) the type qualifier (const or volatile)
  *		(reffile) path to the file
@@ -93,19 +97,19 @@ typedef struct obj_list_head {
  * index:	(array) index of array
  * link:	(weak) weak alias link
  * offset:	(var) offset of a struct member
- * is_bitfield: (var) It's a bitfield
- * first_bit, last_bit: (var) bit range within the offset.
  * depend_rec_node:	(reffile) node from dependents field of record where
  *			this obj references.
- * ref_record:	(reffile) pointer to the referenced record (only while
- *              generating records, otherwise base_type with string is used)
  *
  * Note the dual parent/child relationship with the n-ary member_list and the
  * the unary ptr. Only functions uses both.
  */
 typedef struct obj {
 	obj_types type;
-	const char *name;
+	unsigned char is_bitfield, first_bit, last_bit;
+	union {
+		const char *name;
+		struct record *ref_record;
+	};
 	const char *base_type;
 	unsigned alignment;
 	unsigned int byte_size;
@@ -115,14 +119,9 @@ typedef struct obj {
 		unsigned long constant;
 		unsigned long index;
 		char *link;
-		struct {
-			unsigned long offset;
-			unsigned char is_bitfield, first_bit, last_bit;
-		};
+		unsigned long offset;
 		struct list_node *depend_rec_node;
 	};
-
-	struct record *ref_record;
 } obj_t;
 
 static inline bool has_offset(obj_t *o)
