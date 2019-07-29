@@ -1065,7 +1065,7 @@ static char *record_db_add(struct record_db *db, struct record *rec)
 	record_get(rec);
 	record_set_version(rec, records_amount);
 	record_redirect_dependents(rec, rec);
-	list_add(record_list_records(rec_list), rec);
+	rec->list_node = list_add(record_list_records(rec_list), rec);
 
 	return safe_strdup(rec->key);
 }

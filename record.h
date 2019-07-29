@@ -58,6 +58,9 @@
  * dump: type specific function for record output.
  *
  * dependents: objects that reference this record.
+ *
+ * list_node: node containing the record, record only belong to one list
+ *            at a time(usually record_list.records)
  */
 struct record {
 	char *key;
@@ -73,6 +76,7 @@ struct record {
 	void (*dump)(struct record *, FILE *);
 
 	struct list dependents;
+	struct list_node *list_node;
 };
 
 static inline char *record_get_key(struct record *record)
