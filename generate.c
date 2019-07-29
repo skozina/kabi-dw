@@ -67,6 +67,8 @@
 #define DW_AT_alignment 0x88
 #endif
 
+#define RECORD_VERSION_DECLARATION -1
+
 struct set;
 struct record_db;
 
@@ -1013,6 +1015,77 @@ static bool record_merge(struct record *rec_dst,
 	return true;
 }
 
+struct record_list {
+	char *key;
+	struct record *decl_dummy;
+	/*
+	 * Nodes with data members set to NULL are unavailable,
+	 * due to their data being moved.
+	 */
+	struct list *records;
+};
+
+static struct record_list *record_list_new(const char *key)
+{
+	struct record_list *rec_list = safe_zmalloc(sizeof(*rec_list));
+	char *declaration_key;
+
+	rec_list->key = safe_strdup(key);
+
+	safe_asprintf(&declaration_key, "%s/%s", DECLARATION_PATH, key);
+	rec_list->decl_dummy = record_new_regular(declaration_key);
+	rec_list->decl_dummy->version = RECORD_VERSION_DECLARATION;
+	free(declaration_key);
+
+	rec_list->records = list_new(list_record_free);
+
+	return rec_list;
+}
+
+static void record_list_free(struct record_list *rec_list)
+{
+	record_free(rec_list->decl_dummy);
+	list_free(rec_list->records);
+	free(rec_list->key);
+	free(rec_list);
+}
+
+static inline void record_list_node_make_unavailable(struct list_node *node)
+{
+	node->data = NULL;
+}
+
+static inline bool record_list_node_is_available(struct list_node *node)
+{
+	return node->data != NULL;
+}
+
+static inline struct list *record_list_records(struct record_list *rec_list)
+{
+	return rec_list->records;
+}
+
+static inline struct record *record_list_decl_dummy(struct record_list *rec_list)
+{
+	return rec_list->decl_dummy;
+}
+
+static struct record_list *record_db_lookup_or_init(struct record_db *db,
+					       const char *key)
+{
+	struct record_list *rec_list;
+	struct hash *hash = (struct hash *)db;
+
+	rec_list = hash_find(hash, key);
+	if (rec_list == NULL) {
+		rec_list = record_list_new(key);
+
+		hash_add(hash, rec_list->key, rec_list);
+	}
+
+	return rec_list;
+}
+
 static char *record_db_add(struct record_db *db, struct record *rec)
 {
 	/*
@@ -1037,19 +1110,14 @@ static char *record_db_add(struct record_db *db, struct record *rec)
 	 * referencing records that we couldn't merge wouldn't get merged.
 	 */
 
-	struct hash *hash = (struct hash *)db;
 	struct record *tmp_rec;
-	struct list *list;
+	struct record_list *rec_list;
 	struct list_node *iter;
+	int records_amount;
 
-	list = hash_find(hash, rec->key);
-	if (list == NULL) {
-		list = list_new(list_record_free);
+	rec_list = record_db_lookup_or_init(db, rec->key);
 
-		hash_add(hash, rec->key, list);
-	}
-
-	LIST_FOR_EACH(list, iter) {
+	LIST_FOR_EACH(record_list_records(rec_list), iter) {
 		tmp_rec = list_node_data(iter);
 
 		if (record_merge(tmp_rec, rec, NO_MERGE_DECL)) {
@@ -1059,10 +1127,12 @@ static char *record_db_add(struct record_db *db, struct record *rec)
 		}
 	}
 
+	records_amount = list_len(record_list_records(rec_list));
+
 	record_get(rec);
-	record_set_version(rec, list->len);
+	record_set_version(rec, records_amount);
 	record_update_dependents(rec);
-	list_add(list, rec);
+	list_add(record_list_records(rec_list), rec);
 
 	return safe_strdup(rec->key);
 }
@@ -1087,9 +1157,9 @@ static void record_db_add_cu(struct record_db *db, struct hash *cu_db)
 
 static void hash_list_free(void *value)
 {
-	struct list *list = value;
+	struct record_list *rec_list = value;
 
-	list_free(list);
+	record_list_free(rec_list);
 }
 
 static struct record_db *record_db_init(void)
@@ -1111,10 +1181,10 @@ static void record_db_dump(struct record_db *_db, char *dir)
 
 	hash_iter_init(db, &iter);
 	while (hash_iter_next(&iter, NULL, &v)) {
-		struct list *list = (struct list *)v;
+		struct record_list *rec_list = (struct record_list *)v;
 		struct list_node *iter;
 
-		LIST_FOR_EACH(list, iter) {
+		LIST_FOR_EACH(record_list_records(rec_list), iter) {
 			struct record *rec = list_node_data(iter);
 
 			record_dump(rec, dir);
@@ -2073,10 +2143,17 @@ void record_db_merge(struct record_db *db)
 
 		hash_iter_init(hash, &iter);
 		while (hash_iter_next(&iter, &key, &val)) {
-			struct list *list = (struct list *)val;
+			struct record_list *rec_list
+				= (struct record_list *)val;
+			struct list *records;
 
-			if (list != NULL && record_list_can_merge(list)) {
-				record_list_merge(list);
+			if (rec_list == NULL)
+				continue;
+
+			records = record_list_records(rec_list);
+
+			if (record_list_can_merge(records)) {
+				record_list_merge(records);
 				merged = true;
 			}
 		}
