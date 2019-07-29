@@ -685,6 +685,18 @@ static obj_t *record_obj(struct record *rec)
 	return rec->obj;
 }
 
+static struct record *record_copy(struct record *src)
+{
+	struct record *res = record_new_regular("");
+	obj_t *o1 = record_obj(src);
+
+	res->obj = obj_merge(o1, o1, MERGE_FLAG_DECL_MERGE);
+	obj_fill_parent(res->obj);
+	res->origin = src->origin;
+
+	return res;
+}
+
 static obj_t *record_obj_exchange(struct record *rec, obj_t *o)
 {
 	obj_t *old;
@@ -992,6 +1004,144 @@ static struct record_list *record_db_lookup_or_init(struct record_db *db,
 	}
 
 	return rec_list;
+}
+
+struct merging_ctx {
+	/*
+	 * records found since recursion entry;
+	 * used for infinite loop detection
+	 */
+	struct set *current_records;
+	/*
+	 * records found since manual reset;
+	 * newly found records are merged with records in the hash
+	 */
+	struct hash *accumulated_records;
+
+
+	unsigned int flags;
+
+	bool use_copies; /* use copies of records instead of actual record */
+	bool merged;
+};
+
+static int record_merge_walk_record(struct record *followed,
+				    struct merging_ctx *ctx);
+static int record_merge_walk_object(obj_t *obj, void *arg)
+{
+	if (obj->type != __type_reffile)
+		return CB_CONT;
+
+	return record_merge_walk_record(obj->ref_record, arg);
+}
+
+static int record_merge_walk_record(struct record *followed,
+				    struct merging_ctx *ctx)
+{
+	struct record *record_dst;
+	bool clean_up = false;
+
+	if (record_is_declaration(followed))
+		return CB_CONT;
+
+	if (set_contains(ctx->current_records, followed->key))
+		return CB_CONT;
+	set_add(ctx->current_records, followed->key);
+
+	record_dst = hash_find(ctx->accumulated_records, followed->key);
+
+	if (record_dst == NULL) {
+		/* first of this key found */
+		if (ctx->use_copies)
+			record_dst = record_copy(followed);
+		else
+			record_dst = followed;
+		hash_add(ctx->accumulated_records, followed->key, record_dst);
+	} else {
+		if (record_dst == followed)
+			return CB_CONT;
+
+		if (!record_merge(record_dst, followed, ctx->flags))
+			return CB_FAIL;
+
+		ctx->merged = true;
+		if (!ctx->use_copies) {
+			record_redirect_dependents(record_dst, followed);
+			list_concat(&record_dst->dependents,
+				    &followed->dependents);
+
+			record_list_node_make_unavailable(followed->list_node);
+			clean_up = true;
+		}
+	}
+
+	int status = obj_walk_tree(followed->obj,
+				   record_merge_walk_object, ctx);
+
+	if (clean_up)
+		record_put(followed);
+
+	return status;
+}
+
+static int record_merge_walk(struct record *starting_rec,
+			     struct merging_ctx *ctx)
+{
+	int result;
+
+	ctx->current_records = set_init(PROCESSED_SIZE);
+	result = record_merge_walk_record(starting_rec, ctx);
+	set_free(ctx->current_records);
+
+	return result != CB_FAIL;
+}
+
+static bool record_merge_many_sub(struct list *list,
+				  unsigned int flags, bool use_copies)
+{
+	void (*free_fun)(void *);
+	struct merging_ctx ctx;
+	struct list_node *iter;
+	bool result = false;
+
+	if (use_copies)
+		free_fun = (void (*)(void *))record_free;
+	else
+		free_fun = NULL;
+
+	ctx.flags = flags;
+	ctx.current_records = NULL;
+	ctx.merged = false;
+
+	/* first, check if the list can be merged into one record */
+	ctx.use_copies = use_copies;
+	ctx.accumulated_records = hash_new(PROCESSED_SIZE, free_fun);
+
+	LIST_FOR_EACH(list, iter) {
+		result = record_merge_walk(list_node_data(iter), &ctx);
+
+		if (result == false && use_copies)
+			break;
+	}
+	hash_free(ctx.accumulated_records);
+
+	return result && ctx.merged;
+}
+
+static bool record_merge_many(struct list *list, unsigned int flags)
+{
+	bool result;
+
+	/* first, check if the list can be merged into one record */
+	result = record_merge_many_sub(list, flags, true);
+
+	if (result == false)
+		return false;
+
+	/* if it can be, then merge it */
+	result = record_merge_many_sub(list, flags, false);
+
+	return result;
 }
 
 static char *record_db_add(struct record_db *db, struct record *rec)
@@ -1989,18 +2139,6 @@ static void print_not_found(struct ksym *ksym, void *ctx)
 	if (ksymtab_ksym_is_marked(ksym))
 		return;
 	printf("%s not found!\n", s);
-}
-
-struct record *record_copy(struct record *src)
-{
-	struct record *res = record_new_regular("");
-	obj_t *o1 = record_obj(src);
-
-	res->obj = obj_merge(o1, o1, MERGE_FLAG_DECL_MERGE);
-	obj_fill_parent(res->obj);
-	res->origin = src->origin;
-
-	return res;
 }
 
 bool record_list_can_merge(struct list *rec_list)
