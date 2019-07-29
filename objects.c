@@ -38,6 +38,7 @@
 #include "objects.h"
 #include "utils.h"
 #include "main.h"
+#include "record.h"
 
 /* Indentation offset for c-style and tree debug outputs */
 #define C_INDENT_OFFSET   8
@@ -997,13 +998,10 @@ int obj_hide_kabi(obj_t *root, bool show_new_field)
 
 static bool obj_is_declaration(obj_t *obj)
 {
-	size_t len;
-
-	if (obj->base_type == NULL)
+	if (obj->type != __type_reffile || obj->ref_record == NULL)
 		return false;
 
-	len = strlen(DECLARATION_PATH);
-	return strncmp(obj->base_type, DECLARATION_PATH, len) == 0;
+	return record_is_declaration(obj->ref_record);
 }
 
 static bool obj_is_kabi_hide(obj_t *obj)
@@ -1016,9 +1014,14 @@ static bool obj_is_kabi_hide(obj_t *obj)
 
 static bool obj_eq(obj_t *o1, obj_t *o2)
 {
+	if (o1->type != o2->type)
+		return false;
+
+	if (o1->type == __type_reffile)
+		return o1->ref_record == o2->ref_record;
+
 	/* borrow parts from cmp_nodes */
-	if ((o1->type != o2->type) ||
-	    !safe_streq(o1->name, o2->name) ||
+	if (!safe_streq(o1->name, o2->name) ||
 	    ((o1->ptr == NULL) != (o2->ptr == NULL)) ||
 	    (has_constant(o1) && (o1->constant != o2->constant)) ||
 	    (has_index(o1) && (o1->index != o2->index)) ||
@@ -1157,7 +1160,7 @@ no_merge:
 
 static void dump_reffile(obj_t *o, FILE *f)
 {
-	fprintf(f, "@\"%s\"\n", o->base_type);
+	fprintf(f, "@\"%s\"\n", record_get_key(o->ref_record));
 }
 
 static void _dump_members(obj_t *o, FILE *f, void (*dumper)(obj_t *, FILE *))

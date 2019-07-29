@@ -121,8 +121,7 @@ void record_update_dependents(struct record *record)
 	LIST_FOR_EACH(&record->dependents, iter) {
 		obj_t *obj = list_node_data(iter);
 
-		free(obj->base_type);
-		obj->base_type = safe_strdup(record->key);
+		obj->ref_record = record;
 	}
 }
 
@@ -1558,6 +1557,7 @@ static obj_t *print_die(struct cu_ctx *ctx,
 	obj_t *obj;
 	obj_t *ref_obj;
 	generate_config_t *conf = ctx->conf;
+	struct hash *cu_db = (struct hash *)ctx->cu_db;
 
 	/*
 	 * Sigh. The type of some fields (eg. struct member as a pointer to
@@ -1580,9 +1580,25 @@ static obj_t *print_die(struct cu_ctx *ctx,
 
 	/* else handle new record */
 	rec = record_start(ctx, die, file);
-	if (rec == NULL)
+	if (rec == NULL) {
 		/* declaration or already processed */
+		struct record_list *rec_list
+			= record_db_lookup_or_init(conf->db, file);
+
+		if (is_declaration(die)) {
+			ref_obj->ref_record = record_list_decl_dummy(rec_list);
+		} else {
+			struct record *processed = hash_find(cu_db, file);
+
+			ref_obj->depend_rec_node
+				= list_add(&processed->dependents, ref_obj);
+			ref_obj->ref_record = processed;
+		}
+
 		goto out;
+	}
+
+	hash_add(cu_db, rec->key, rec);
 
 	if (conf->gen_extra)
 		stack_push(ctx->stack, safe_strdup(file));
@@ -1593,10 +1609,11 @@ static obj_t *print_die(struct cu_ctx *ctx,
 	record_close(rec, obj);
 
 	ref_obj->depend_rec_node = list_add(&rec->dependents, ref_obj);
-	hash_add((struct hash *)ctx->cu_db, rec->key, rec);
+	ref_obj->ref_record = rec;
 
 out:
-	ref_obj->base_type = file;
+	free(file);
+
 	return ref_obj;
 }
 

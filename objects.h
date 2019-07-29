@@ -90,6 +90,8 @@ typedef struct obj_list_head {
  * first_bit, last_bit: (var) bit range within the offset.
  * depend_rec_node:	(reffile) node from dependents field of record where
  *			this obj references.
+ * ref_record:	(reffile) pointer to the referenced record (only while
+ *              generating records, otherwise base_type with string is used)
  *
  * Note the dual parent/child relationship with the n-ary member_list and the
  * the unary ptr. Only functions uses both.
@@ -112,6 +114,8 @@ typedef struct obj {
 		};
 		struct list_node *depend_rec_node;
 	};
+
+	struct record *ref_record;
 } obj_t;
 
 static inline bool has_offset(obj_t *o)
