@@ -1023,7 +1023,8 @@ static bool obj_eq(obj_t *o1, obj_t *o2)
 	    (has_constant(o1) && (o1->constant != o2->constant)) ||
 	    (has_index(o1) && (o1->index != o2->index)) ||
 	    (is_bitfield(o1) != is_bitfield(o2)) ||
-	    (o1->alignment != o2->alignment))
+	    (o1->alignment != o2->alignment) ||
+	    (o1->byte_size != o2->byte_size))
 		return false;
 
 	/* just compare bitfields */
