@@ -30,4 +30,4 @@ int fileno(FILE *stream);
 
 int yylex();
 int yyerror(obj_t **root, char *s);
-FILE *yyin;
+extern FILE *yyin;
