@@ -49,10 +49,10 @@ Compare the two type dumps:
 
 ## Motivation
 
-Traditionaly Unix System V had a stable ABI to allow external modules to work with the OS kernel without a recompilation called Device Driver Interface.
+Traditionally Unix System V had a stable ABI to allow external modules to work with the OS kernel without a recompilation called Device Driver Interface.
 Linux however never developed such stable kernel ABI. Therefore it's vital to monitor all kernel interfaces used by the external module for change, and if such change happens, the module needs to be recompiled.
 
-Linux has an option (CONFIG\_MODVERSIONS) to generate a checksum identifing all exported symbols thourhg the EXPORT\_SYMBOL() macro. But these checksum are not sufficient to actually identify the scope of the change. For example changing a couple of unused padding bits in a structure to a new field won't break any external modules, but such change changes the chekcsum of any function which receives such structure through its arguments.
+Linux has an option (CONFIG\_MODVERSIONS) to generate a checksum identifying all exported symbols through the EXPORT\_SYMBOL() macro. But these checksum are not sufficient to actually identify the scope of the change. For example changing a couple of unused padding bits in a structure to a new field won't break any external modules, but such change changes the checksum of any function which receives such structure through its arguments.
 
 ## Installation
 
