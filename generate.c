@@ -1918,7 +1918,7 @@ static bool is_symbol_valid(struct file_ctx *fctx, Dwarf_Die *die)
 	struct ksym *ksym1 = NULL;
 	struct ksym *ksym2;
 
-	/* Shortcut, unnamed die cannot be part of whitelist */
+	/* Shortcut, unnamed die cannot be part of stablelist */
 	if (name == NULL)
 		goto out;
 
@@ -1949,7 +1949,7 @@ static bool is_symbol_valid(struct file_ctx *fctx, Dwarf_Die *die)
 	if (!is_external(die))
 		goto out;
 
-	/* We expect only variables or functions on whitelist */
+	/* We expect only variables or functions on stablelist */
 	switch (tag) {
 	case (DW_TAG_subprogram):
 		/*
@@ -2590,7 +2590,7 @@ static void strip(char *buf)
 
 /*
  * Check if the string is valid C identifier.
- * We do this so we can easily provide the standard kabi whitelist file as the
+ * We do this so we can easily provide the standard kabi stablelist file as the
  * symbol list.
  */
 static bool is_valid_c_identifier(char *s)
@@ -2697,7 +2697,7 @@ static void generate_usage()
 	       "    -o, --output kabi_dir:\n\t\t\t"
 	       "where to write kabi files (default: \"output\")\n"
 	       "    -s, --symbols symbol_file:\n\t\t\ta file containing the"
-	       " list of symbols of interest (e.g. whitelisted)\n"
+	       " list of symbols of interest (e.g. stablelisted)\n"
 	       "    -r, --rhel:\n\t\t\trun on the RHEL build tree\n"
 	       "    -a, --abs-path abs_path:\n\t\t\t"
 	       "replace the absolute path by a relative path\n"
