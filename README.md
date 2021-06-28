@@ -34,7 +34,7 @@ printk
 EOF
 ~~~
 
-Generate the type information for both kernels based on the current whitelist
+Generate the type information for both kernels based on the current stablelist
 
 ~~~
 ./kabi-dw generate -s symbols -o kabi-4.5 /usr/lib/modules/4.5.0
