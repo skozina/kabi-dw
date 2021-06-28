@@ -2616,23 +2616,34 @@ static bool is_valid_c_identifier(char *s)
 
 static bool is_kabi_header(char *s)
 {
-	const char *suffix = "_whitelist]";
-	int suffixlen = strlen(suffix);
+	const char *suffixes[2] = {
+		"_whitelist]",
+		"_stablelist]"
+	};
+
+	int suffixlen;
 	int len;
+	size_t i;
 
 	assert(s != NULL);
-
 	len = strlen(s);
-	if (len <= suffixlen + 1)
-		return false;
 
-	if (s[0] != '[')
-		return false;
+	for (i = 0; i < sizeof(suffixes)/sizeof(suffixes[0]); ++i) {
+		suffixlen = strlen(suffixes[i]);
 
-	if (strcmp(s + (len - suffixlen), suffix) != 0)
-		return false;
+		if (len <= suffixlen + 1)
+			continue;
 
-	return true;
+		if (s[0] != '[')
+			continue;
+
+		if (strcmp(s + (len - suffixlen), suffixes[i]) != 0)
+			continue;
+
+		return true;
+	}
+
+	return false;
 }
 
 /* Get list of symbols to generate. */
