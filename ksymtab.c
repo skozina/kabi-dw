@@ -505,7 +505,7 @@ static struct ksymtab *ksymtab_find_aliases(struct ksymtab *ksymtab,
 	ctx.weaks = weaks;
 	ctx.map = map;
 	/*
-	 * If there's a weak symbol on the whitelist,
+	 * If there's a weak symbol on the stablelist,
 	 * we need to find the proper global
 	 * symbol to generate the type for it.
 	 *
