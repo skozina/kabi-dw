@@ -89,7 +89,7 @@ struct cu_ctx {
 	struct set *processed; /* Set of processed types for this CU */
 	unsigned char dw_version : 6;
 	unsigned char elf_endian : 2;
-
+	struct ksymtab *ksymtab; /* ksymtab of the current kernel module */
 	struct hash *cu_db;
 };
 
@@ -112,6 +112,15 @@ struct dwarf_type {
 	{ DW_TAG_union_type, UNION_FILE },
 	{ 0, NULL }
 };
+
+static void obj_fill_ns(obj_t *obj, struct cu_ctx *ctx, const char *name)
+{
+	struct ksym *ksym;
+
+	if ((ksym = ksymtab_find(ctx->ksymtab, name)) != NULL && ksym->ns) {
+		asprintf(&obj->ns, "%s", ksym->ns);
+	}
+}
 
 static void record_redirect_dependents(struct record *rec_dst,
 				       struct record *rec_src)
@@ -862,6 +871,8 @@ static void record_dump_regular(struct record *rec, FILE *f)
 		fprintf(f, "Byte size %u\n", rec->obj->byte_size);
 	if (rec->obj->alignment != 0)
 		fprintf(f, "Alignment %u\n", rec->obj->alignment);
+	if (rec->obj->ns)
+		fprintf(f, "Namespace %s\n", rec->obj->ns);
 
 	obj_dump(rec->obj, f);
 }
@@ -1696,6 +1707,7 @@ static obj_t *print_die_subprogram(struct cu_ctx *ctx,
 	if (arg_list)
 		arg_list->object = obj;
 	obj->member_list = arg_list;
+	obj_fill_ns(obj, ctx, name);
 
 	return obj;
 }
@@ -1782,6 +1794,7 @@ static obj_t *print_die_tag(struct cu_ctx *ctx,
 	case DW_TAG_variable:
 		obj = print_die_type(ctx, rec, die);
 		obj = obj_var_new_add(safe_strdup(name), obj);
+		obj_fill_ns(obj, ctx, name);
 		break;
 	case DW_TAG_base_type:
 		obj = obj_basetype_new(safe_strdup(name));
@@ -2018,6 +2031,7 @@ static void process_cu_die(Dwarf_Die *cu_die, struct file_ctx *fctx)
 		ctx.elf_endian = fctx->elf_endian;
 		ctx.conf = conf;
 		ctx.cu_die = cu_die;
+		ctx.ksymtab = (struct ksymtab *) fctx->ksymtab;
 
 		/* Grab a fresh stack of symbols */
 		ctx.stack = stack_init();

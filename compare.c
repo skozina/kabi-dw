@@ -113,6 +113,7 @@ typedef enum {
 	CMP_REFFILE,	/* A refered symbol has changed */
 	CMP_ALIGNMENT,  /* An alignment has changed */
 	CMP_BYTE_SIZE,  /* Byte size has changed */
+	CMP_NAMESPACE,  /* Symbol namespace has changed */
 } cmp_ret_t;
 
 static int compare_two_files(const char *filename, const char *newfile,
@@ -189,6 +190,9 @@ static int _cmp_nodes(obj_t *o1, obj_t *o2, bool search)
 
 	if (o1->byte_size != o2->byte_size)
 		return CMP_BYTE_SIZE;
+
+	if (!safe_streq(o1->ns, o2->ns))
+		return CMP_NAMESPACE;
 
 	return CMP_SAME;
 }
@@ -350,6 +354,14 @@ static void message_byte_size_value(unsigned int v, FILE *stream)
 		fprintf(stream, "%u", v);
 }
 
+static void message_namespace_value(const char *ns, FILE *stream)
+{
+	if (ns == NULL)
+		fprintf(stream, "<undefined>");
+	else
+		fprintf(stream, "%s", ns);
+}
+
 static void message_alignment(obj_t *o1, obj_t *o2, FILE *stream)
 {
 	char *part_str;
@@ -380,6 +392,17 @@ static void message_byte_size(obj_t *o1, obj_t *o2, FILE *stream)
 	fprintf(stream, "\n");
 }
 
+static void message_namespace(obj_t *o1, obj_t *o2, FILE *stream)
+{
+	fprintf(stream, "The namespace of symbol '%s' has changed from ",
+		o1->name);
+
+	message_namespace_value(o1->ns, stream);
+	fprintf(stream, " to ");
+	message_namespace_value(o2->ns, stream);
+	fprintf(stream, "\n");
+}
+
 static int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream)
 {
 	obj_list_t *list1 = NULL, *list2 = NULL;
@@ -402,6 +425,9 @@ static int _compare_tree(obj_t *o1, obj_t *o2, FILE *stream)
 			ret = COMP_CONT;
 		} else if (tmp == CMP_BYTE_SIZE) {
 			message_byte_size(o1, o2, stream);
+			ret = COMP_CONT;
+		} else if (tmp == CMP_NAMESPACE) {
+			message_namespace(o1, o2, stream);
 			ret = COMP_CONT;
 		}
 

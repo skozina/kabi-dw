@@ -122,6 +122,7 @@ typedef struct obj {
 		unsigned long offset;
 		struct list_node *depend_rec_node;
 	};
+	char *ns;
 } obj_t;
 
 static inline bool has_offset(obj_t *o)
