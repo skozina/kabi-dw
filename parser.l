@@ -69,6 +69,10 @@ HEX		[a-fA-F0-9]
 				  return(SRCFILE);
 				}
 
+^"Namespace"     { debug("Namespace\n");
+		   return(NAMESPACE);
+		 }
+
 {IDENT_FIRST}{IDENT}*	{ yylval.str = strdup(yytext);
 			  debug("Identifier: %s\n", yylval.str);
 			  return(IDENTIFIER);

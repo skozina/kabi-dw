@@ -58,6 +58,7 @@
 %token STRUCT UNION ENUM ELLIPSIS
 %token VERSION_KW CU_KW FILE_KW STACK_KW SYMBOL_KW_NL
 %token ARROW UNKNOWN_FIELD
+%token NAMESPACE
 
 %type <str> type_qualifier
 %type <obj> typed_type base_type reference_file array_type
@@ -68,6 +69,7 @@
 %type <obj> asm_symbol weak_symbol
 %type <list> elt_list arg_list enum_list struct_list
 %type <ul> alignment byte_size
+%type <str> namespace
 
 %parse-param {obj_t **root}
 
@@ -142,6 +144,17 @@ symbol:
 		$$ = $declaration;
 		$$->alignment = $alignment;
 	}
+	| alignment namespace declaration NEWLINE
+	{
+		$$ = $declaration;
+		$$->alignment = $alignment;
+		$$->ns = $namespace;
+	}
+	| namespace declaration NEWLINE
+	{
+		$$ = $declaration;
+		$$->ns = $namespace;
+	}
 	| byte_size declaration NEWLINE
 	{
 		$$ = $declaration;
@@ -152,6 +165,19 @@ symbol:
 		$$ = $declaration;
 		$$->byte_size = $byte_size;
 		$$->alignment = $alignment;
+	}
+	| byte_size namespace declaration NEWLINE
+	{
+		$$ = $declaration;
+		$$->byte_size = $byte_size;
+		$$->ns = $namespace;
+	}
+	| byte_size alignment namespace declaration NEWLINE
+	{
+		$$ = $declaration;
+		$$->byte_size = $byte_size;
+		$$->alignment = $alignment;
+		$$->ns = $namespace;
 	}
 
 alignment:
@@ -167,6 +193,12 @@ byte_size:
 		check_and_free_keyword($1, "Byte");
 		check_and_free_keyword($2, "size");
 		$$ = $CONSTANT;
+	}
+
+namespace:
+        NAMESPACE IDENTIFIER NEWLINE
+	{
+		$$ = $IDENTIFIER;
 	}
 
 /* Possible types are struct union enum func typedef and var */

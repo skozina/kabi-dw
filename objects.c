@@ -95,6 +95,7 @@ obj_t *obj_new(obj_types type, char *name)
 
 	new->type = type;
 	new->name = global_string_get_move(name);
+	new->ns = NULL;
 
 	return new;
 }
@@ -1031,6 +1032,7 @@ bool obj_eq(obj_t *o1, obj_t *o2, bool ignore_versions)
 	    (has_index(o1) && (o1->index != o2->index)) ||
 	    (is_bitfield(o1) != is_bitfield(o2)) ||
 	    (o1->alignment != o2->alignment) ||
+	    !safe_streq(o1->ns, o2->ns) ||
 	    (o1->byte_size != o2->byte_size))
 		return false;
 
