@@ -39,9 +39,10 @@
 #include "hash.h"
 #include "ksymtab.h"
 
-#define	KSYMTAB_STRINGS	"__ksymtab_strings"
-#define SYMTAB		".symtab"
-#define STRTAB		".strtab"
+#define	KSYMTAB_STRINGS	 "__ksymtab_strings"
+#define SYMTAB		 ".symtab"
+#define STRTAB		 ".strtab"
+#define STRTAB_NS_PREFIX "__kstrtabns_"
 
 #define KSYMTAB_SIZE 8192
 
@@ -184,7 +185,8 @@ static void elf_for_each_global_sym(struct elf_data *ed,
 					       uint64_t value,
 					       int binding,
 					       void *ctx),
-				    void *ctx)
+				    void *ctx,
+				    bool filter)
 {
 	const Elf64_Sym *end;
 	Elf64_Sym *sym;
@@ -203,6 +205,10 @@ static void elf_for_each_global_sym(struct elf_data *ed,
 	for (; sym < end; sym++) {
 
 		binding = ELF64_ST_BIND(sym->st_info);
+
+		if (!filter)
+			goto callback;
+
 		if (!(binding == STB_GLOBAL ||
 		       binding == STB_WEAK))
 			continue;
@@ -214,6 +220,7 @@ static void elf_for_each_global_sym(struct elf_data *ed,
 			fail("Symbol name index %d out of range %ld\n",
 			    sym->st_name, ed->strtab_size);
 
+callback:
 		name = ed->strtab + sym->st_name;
 		if (name == NULL)
 			fail("Could not find symbol name\n");
@@ -278,6 +285,7 @@ struct ksym *ksymtab_add_sym(struct ksymtab *ksymtab,
 	ksym->key[len] = '\0';
 	ksym->value = value;
 	ksym->ksymtab = ksymtab;
+	ksym->ns = NULL;
 	/* ksym->link is zeroed by the allocator */
 	hash_add(h, ksym->key, ksym);
 
@@ -383,6 +391,56 @@ static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
 	}
 
 	return res;
+}
+
+struct ns_filter_ctx {
+	const char *ksymtab_raw;
+	struct ksymtab *ksymtab;
+};
+
+/*
+ * ns_filter:
+ *
+ * __ksymtab_strings now contains \0-delimited symbol symbol namespace pairs.
+ * For backward compatibility reasons, __ksymtab_strings is treated  * as
+ * a list of symbol names instead.
+ * To avoid generating assembly records for symbol namespaces, mark entries
+ * whenever there's an indication that entry is in fact a namespace.
+ */
+static void ns_filter(const char *name, uint64_t value, int bind, void *_ctx)
+{
+	char *ns;
+	struct ksym *ksym;
+	struct ns_filter_ctx *ctx = (struct ns_filter_ctx*) _ctx;
+
+	if (strncmp(name, STRTAB_NS_PREFIX, strlen(STRTAB_NS_PREFIX)))
+		return;
+
+	name += strlen(STRTAB_NS_PREFIX);
+	ns = (char *) ctx->ksymtab_raw + value;
+
+	if (!strlen(ns))
+		return;
+
+	if (!(ksym = hash_find(ctx->ksymtab->hash, name)))
+		return;
+
+	asprintf(&ksym->ns, "%s", ns);
+
+	if (!(ksym = hash_find(ctx->ksymtab->hash, ns)))
+		return;
+	ksymtab_ksym_mark(ksym);
+}
+
+static void ksymtab_fill_ns(const char *ksymtab_raw, struct ksymtab *ksymtab,
+			    struct elf_data *elf)
+{
+	struct ns_filter_ctx ctx = {
+		.ksymtab = ksymtab,
+		.ksymtab_raw = ksymtab_raw,
+	};
+
+	elf_for_each_global_sym(elf, ns_filter, (void*) &ctx, false);
 }
 
 /*
@@ -514,7 +572,7 @@ static struct ksymtab *ksymtab_find_aliases(struct ksymtab *ksymtab,
 	 *    suitable weak symbol list;
 	 * 2) for all weak symbols find its alias with the mapping.
 	 */
-	elf_for_each_global_sym(elf, weak_filter, &ctx);
+	elf_for_each_global_sym(elf, weak_filter, &ctx, true);
 	aliases = ksymtab_weaks_to_aliases(weaks, map);
 
 	hash_free(map);
@@ -573,6 +631,7 @@ int elf_get_exported(struct elf_data *data, struct ksymtab **ksymtab,
 
 	*ksymtab = parse_ksymtab_strings(ksymtab_raw, ksymtab_sz);
 	*aliases = ksymtab_find_aliases(*ksymtab, data);
+	ksymtab_fill_ns(ksymtab_raw, *ksymtab, data);
 
 	return 0;
 }

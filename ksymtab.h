@@ -35,6 +35,7 @@ struct ksym {
 	bool mark;
 	char *link;
 	struct ksymtab *ksymtab;
+	char *ns;
 	char key[];
 };
 
