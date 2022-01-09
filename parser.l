@@ -42,6 +42,7 @@ HEX		[a-fA-F0-9]
 "typedef"	{ return(TYPEDEF); }
 "union"		{ return(UNION); }
 "volatile"	{ return(VOLATILE); }
+"restrict"	{ return(RESTRICT); }
 
 "..."		{ return(ELLIPSIS); }
 }

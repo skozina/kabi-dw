@@ -54,7 +54,7 @@
 
 %token NEWLINE
 %token TYPEDEF
-%token CONST VOLATILE
+%token CONST VOLATILE RESTRICT
 %token STRUCT UNION ENUM ELLIPSIS
 %token VERSION_KW CU_KW FILE_KW STACK_KW SYMBOL_KW_NL
 %token ARROW UNKNOWN_FIELD
@@ -435,6 +435,11 @@ type_qualifier:
 	{
 	    debug("Qualifier: volatile\n");
 	    $$ = strdup("volatile");
+	}
+	| RESTRICT
+	{
+	    debug("Qualifier: restrict\n");
+	    $$ = strdup("restrict");
 	}
 	;
 
