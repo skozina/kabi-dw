@@ -49,15 +49,16 @@
 struct ksymtab {
 	struct hash *hash;
 	size_t mark_count;
+	Elf64_Addr addr;
 };
 
 struct ksym;
 
-static int elf_get_section(Elf *elf,
-			   size_t shstrndx,
-			   const char *section,
-			   const char **d_data,
-			   size_t *size)
+static Elf64_Addr elf_get_section(Elf *elf,
+				  size_t shstrndx,
+				  const char *section,
+				  const char **d_data,
+				  size_t *size)
 {
 	Elf_Scn *scn;
 	GElf_Shdr shdr;
@@ -108,7 +109,7 @@ static int elf_get_section(Elf *elf,
 	*d_data = data->d_buf;
 	*size = data->d_size;
 
-	return 0;
+	return shdr.sh_addr;
 }
 
 struct elf_data *elf_open(const char *filename)
@@ -180,13 +181,23 @@ void elf_close(struct elf_data *ed)
 	(void) close(ed->fd);
 }
 
-static void elf_for_each_global_sym(struct elf_data *ed,
+static inline bool elf_iter_global_weak(int st_bind)
+{
+	return st_bind == STB_GLOBAL || st_bind == STB_WEAK;
+}
+
+static inline bool elf_iter_local(int st_bind)
+{
+	return st_bind == STB_LOCAL;
+}
+
+static void elf_for_each_sym(struct elf_data *ed,
 				    void (*fn)(const char *name,
 					       uint64_t value,
 					       int binding,
 					       void *ctx),
 				    void *ctx,
-				    bool filter)
+				    bool (*binding_match)(int))
 {
 	const Elf64_Sym *end;
 	Elf64_Sym *sym;
@@ -195,7 +206,7 @@ static void elf_for_each_global_sym(struct elf_data *ed,
 	const char *data;
 	size_t size;
 
-	if (elf_get_section(ed->elf, ed->shstrndx, SYMTAB, &data, &size) < 0)
+	if (elf_get_section(ed->elf, ed->shstrndx, SYMTAB, &data, &size) == -1)
 		return;
 
 	sym = (Elf64_Sym *)data;
@@ -206,11 +217,7 @@ static void elf_for_each_global_sym(struct elf_data *ed,
 
 		binding = ELF64_ST_BIND(sym->st_info);
 
-		if (!filter)
-			goto callback;
-
-		if (!(binding == STB_GLOBAL ||
-		       binding == STB_WEAK))
+		if (!binding_match(binding))
 			continue;
 
 		if (sym->st_name == 0)
@@ -220,13 +227,22 @@ static void elf_for_each_global_sym(struct elf_data *ed,
 			fail("Symbol name index %d out of range %ld\n",
 			    sym->st_name, ed->strtab_size);
 
-callback:
 		name = ed->strtab + sym->st_name;
 		if (name == NULL)
 			fail("Could not find symbol name\n");
 
 		fn(name, sym->st_value, binding, ctx);
 	}
+}
+
+static inline void elf_for_each_global_sym(struct elf_data *ed,
+				    void (*fn)(const char *name,
+					       uint64_t value,
+					       int binding,
+					       void *ctx),
+				    void *ctx)
+{
+	return elf_for_each_sym(ed, fn, ctx, elf_iter_global_weak);
 }
 
 void ksymtab_ksym_mark(struct ksym *ksym)
@@ -396,17 +412,10 @@ static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
 struct ns_filter_ctx {
 	const char *ksymtab_raw;
 	struct ksymtab *ksymtab;
+	Elf64_Half e_type;
+	Elf64_Addr sh_addr;
 };
 
-/*
- * ns_filter:
- *
- * __ksymtab_strings now contains \0-delimited symbol symbol namespace pairs.
- * For backward compatibility reasons, __ksymtab_strings is treated  * as
- * a list of symbol names instead.
- * To avoid generating assembly records for symbol namespaces, mark entries
- * whenever there's an indication that entry is in fact a namespace.
- */
 static void ns_filter(const char *name, uint64_t value, int bind, void *_ctx)
 {
 	char *ns;
@@ -417,7 +426,8 @@ static void ns_filter(const char *name, uint64_t value, int bind, void *_ctx)
 		return;
 
 	name += strlen(STRTAB_NS_PREFIX);
-	ns = (char *) ctx->ksymtab_raw + value;
+	ns = (char *) ctx->ksymtab_raw;
+	ns += (ctx->e_type == ET_EXEC) ? value - ctx->sh_addr : value;
 
 	if (!strlen(ns))
 		return;
@@ -438,9 +448,11 @@ static void ksymtab_fill_ns(const char *ksymtab_raw, struct ksymtab *ksymtab,
 	struct ns_filter_ctx ctx = {
 		.ksymtab = ksymtab,
 		.ksymtab_raw = ksymtab_raw,
+		.e_type = elf->ehdr->e_type,
+		.sh_addr = ksymtab->addr,
 	};
 
-	elf_for_each_global_sym(elf, ns_filter, (void*) &ctx, false);
+	elf_for_each_sym(elf, ns_filter, (void*) &ctx, elf_iter_local);
 }
 
 /*
@@ -572,7 +584,7 @@ static struct ksymtab *ksymtab_find_aliases(struct ksymtab *ksymtab,
 	 *    suitable weak symbol list;
 	 * 2) for all weak symbols find its alias with the mapping.
 	 */
-	elf_for_each_global_sym(elf, weak_filter, &ctx, true);
+	elf_for_each_global_sym(elf, weak_filter, &ctx);
 	aliases = ksymtab_weaks_to_aliases(weaks, map);
 
 	hash_free(map);
@@ -600,7 +612,7 @@ static inline int elf_get_strtab(struct elf_data *data)
 	size_t strtab_size;
 
 	if (elf_get_section(data->elf, data->shstrndx, STRTAB, &strtab,
-			   &strtab_size) < 0) {
+			   &strtab_size) == -1) {
 		return 1;
 	}
 
@@ -619,17 +631,20 @@ static inline int elf_get_strtab(struct elf_data *data)
 int elf_get_exported(struct elf_data *data, struct ksymtab **ksymtab,
 		     struct ksymtab **aliases)
 {
+	Elf64_Addr addr;
 	const char *ksymtab_raw;
 	size_t ksymtab_sz;
 
 	if (elf_get_strtab(data) > 0)
 		return 1;
 
-	if (elf_get_section(data->elf, data->shstrndx, KSYMTAB_STRINGS,
-			   &ksymtab_raw, &ksymtab_sz) < 0)
+	addr = elf_get_section(data->elf, data->shstrndx, KSYMTAB_STRINGS,
+			       &ksymtab_raw, &ksymtab_sz);
+	if (addr == -1)
 		return 1;
 
 	*ksymtab = parse_ksymtab_strings(ksymtab_raw, ksymtab_sz);
+	(*ksymtab)->addr = addr;
 	*aliases = ksymtab_find_aliases(*ksymtab, data);
 	ksymtab_fill_ns(ksymtab_raw, *ksymtab, data);
 
