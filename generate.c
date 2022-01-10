@@ -1832,6 +1832,11 @@ static obj_t *print_die_tag(struct cu_ctx *ctx,
 	case DW_TAG_array_type:
 		obj = print_die_array_type(ctx, rec, die);
 		break;
+	case DW_TAG_restrict_type:
+		obj = print_die_type(ctx, rec, die);
+		obj = obj_qualifier_new_add(obj);
+		obj->base_type = global_string_get_copy("restrict");
+		break;
 	default: {
 		const char *tagname = dwarf_tag_string(tag);
 		if (tagname == NULL)
