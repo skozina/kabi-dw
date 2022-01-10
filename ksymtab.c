@@ -435,7 +435,7 @@ static void ns_filter(const char *name, uint64_t value, int bind, void *_ctx)
 	if (!(ksym = hash_find(ctx->ksymtab->hash, name)))
 		return;
 
-	asprintf(&ksym->ns, "%s", ns);
+	safe_asprintf(&ksym->ns, "%s", ns);
 
 	if (!(ksym = hash_find(ctx->ksymtab->hash, ns)))
 		return;
