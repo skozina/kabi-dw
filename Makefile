@@ -21,8 +21,10 @@ CC?=gcc
 CFLAGS+=-Wall --std=gnu99 -D_GNU_SOURCE -c
 LDFLAGS+=-ldw -lelf
 
-CFLAGS_RELEASE+=-O2
+CFLAGS_RELEASE+=-O2 -Wl,-pie -D_FORTIFY_SOURCE=2
 CFLAGS_DEBUG+=-O0 -g3 -DDEBUG -Wextra -pedantic
+
+LDFLAGS_RELEASE+=-Wl,-z,now
 
 YACC=bison
 YACCFLAGS=-d -t
@@ -52,6 +54,7 @@ override LDFLAGS+=-lelf
 endif
 
 all: CFLAGS+=$(CFLAGS_RELEASE)
+all: LDFLAGS+=$(LDFLAGS_RELEASE)
 all: $(PROG)
 
 debug: CFLAGS+=$(CFLAGS_DEBUG)

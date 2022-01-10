@@ -118,7 +118,7 @@ static void obj_fill_ns(obj_t *obj, struct cu_ctx *ctx, const char *name)
 	struct ksym *ksym;
 
 	if ((ksym = ksymtab_find(ctx->ksymtab, name)) != NULL && ksym->ns) {
-		asprintf(&obj->ns, "%s", ksym->ns);
+		safe_asprintf(&obj->ns, "%s", ksym->ns);
 	}
 }
 
