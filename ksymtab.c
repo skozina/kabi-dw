@@ -39,10 +39,13 @@
 #include "hash.h"
 #include "ksymtab.h"
 
+#define KSYMTAB "__ksymtab"
+#define KSYMTAB_GPL "__ksymtab_gpl"
 #define	KSYMTAB_STRINGS	 "__ksymtab_strings"
 #define SYMTAB		 ".symtab"
 #define STRTAB		 ".strtab"
 #define STRTAB_NS_PREFIX "__kstrtabns_"
+#define KSYMTAB_PREFIX "__ksymtab_"
 
 #define KSYMTAB_SIZE 8192
 
@@ -373,6 +376,70 @@ void ksymtab_for_each(struct ksymtab *ksymtab,
 	}
 }
 
+struct ksymtab_section
+{
+	size_t size;
+	Elf64_Addr addr;
+};
+
+struct ksymtab_symbol_filter_ctx
+{
+	struct ksymtab *ksymtab;
+	struct ksymtab_section sec;
+	struct ksymtab_section sec_gpl;
+};
+
+static int ksymtab_in_section(Elf64_Addr addr, struct ksymtab_section *sec)
+{
+	return sec->addr != -1 &&
+		addr >= sec->addr &&
+		addr < sec->addr + sec->size;
+}
+
+static void ksymtab_symbol_filter(const char *name, uint64_t value, int bind, void *_ctx)
+{
+	struct ksymtab_symbol_filter_ctx *ctx = (struct ksymtab_symbol_filter_ctx *)_ctx;
+	static size_t i = 0;
+
+	if (strncmp(name, KSYMTAB_PREFIX, strlen(KSYMTAB_PREFIX)))
+		return;
+
+	if (!ksymtab_in_section(value, &ctx->sec) &&
+	    !ksymtab_in_section(value, &ctx->sec_gpl))
+		return;
+
+	name += strlen(KSYMTAB_PREFIX);
+	ksymtab_add_sym(ctx->ksymtab, name, strlen(name), i++);
+}
+
+static struct ksymtab *parse_ksymtab_symbols(struct elf_data *data)
+{
+	struct ksymtab_symbol_filter_ctx ctx;
+	const char *unused;
+
+	ctx.ksymtab = ksymtab_new(KSYMTAB_SIZE);
+
+	ctx.sec.addr = elf_get_section(data->elf,
+				       data->shstrndx,
+				       KSYMTAB,
+				       &unused,
+				       &ctx.sec.size);
+
+	ctx.sec_gpl.addr = elf_get_section(data->elf,
+					   data->shstrndx,
+					   KSYMTAB_GPL,
+					   &unused,
+					   &ctx.sec_gpl.size);
+
+	if (ctx.sec.addr != -1 || ctx.sec_gpl.addr != -1)
+		elf_for_each_sym(data,
+				 ksymtab_symbol_filter,
+				 (void *) &ctx,
+				 elf_iter_local);
+
+	return ctx.ksymtab;
+}
+
 /* Parses raw content of  __ksymtab_strings section to a ksymtab */
 static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
 {
@@ -623,10 +690,10 @@ static inline int elf_get_strtab(struct elf_data *data)
 }
 
 /*
- * Build list of exported symbols, ie. read seciton __ksymtab_strings,
- * analyze symbol table and create table of aliases -- list of global symbols,
- * which have the same addresses, as weak symbols,
- * mentioned by __ksymtab_strings
+ * Build list of exported symbols, i.e. searching the symbol table for
+ * the symbols whose prefix is string "__ksymtab_", and create table
+ * of aliases -- list of global symbols, which have the same
+ * addresses, as weak symbols.
  */
 int elf_get_exported(struct elf_data *data, struct ksymtab **ksymtab,
 		     struct ksymtab **aliases)
@@ -643,7 +710,7 @@ int elf_get_exported(struct elf_data *data, struct ksymtab **ksymtab,
 	if (addr == -1)
 		return 1;
 
-	*ksymtab = parse_ksymtab_strings(ksymtab_raw, ksymtab_sz);
+	*ksymtab = parse_ksymtab_symbols(data);
 	(*ksymtab)->addr = addr;
 	*aliases = ksymtab_find_aliases(*ksymtab, data);
 	ksymtab_fill_ns(ksymtab_strings, *ksymtab, data);
