@@ -410,7 +410,7 @@ static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
 }
 
 struct ns_filter_ctx {
-	const char *ksymtab_raw;
+	const char *ksymtab_strings;
 	struct ksymtab *ksymtab;
 	Elf64_Half e_type;
 	Elf64_Addr sh_addr;
@@ -426,7 +426,7 @@ static void ns_filter(const char *name, uint64_t value, int bind, void *_ctx)
 		return;
 
 	name += strlen(STRTAB_NS_PREFIX);
-	ns = (char *) ctx->ksymtab_raw;
+	ns = (char *) ctx->ksymtab_strings;
 	ns += (ctx->e_type == ET_EXEC) ? value - ctx->sh_addr : value;
 
 	if (!strlen(ns))
@@ -442,12 +442,12 @@ static void ns_filter(const char *name, uint64_t value, int bind, void *_ctx)
 	ksymtab_ksym_mark(ksym);
 }
 
-static void ksymtab_fill_ns(const char *ksymtab_raw, struct ksymtab *ksymtab,
+static void ksymtab_fill_ns(const char *ksymtab_strings, struct ksymtab *ksymtab,
 			    struct elf_data *elf)
 {
 	struct ns_filter_ctx ctx = {
 		.ksymtab = ksymtab,
-		.ksymtab_raw = ksymtab_raw,
+		.ksymtab_strings = ksymtab_strings,
 		.e_type = elf->ehdr->e_type,
 		.sh_addr = ksymtab->addr,
 	};
@@ -632,21 +632,21 @@ int elf_get_exported(struct elf_data *data, struct ksymtab **ksymtab,
 		     struct ksymtab **aliases)
 {
 	Elf64_Addr addr;
-	const char *ksymtab_raw;
-	size_t ksymtab_sz;
+	const char *ksymtab_strings;
+	size_t ksymtab_strings_sz;
 
 	if (elf_get_strtab(data) > 0)
 		return 1;
 
 	addr = elf_get_section(data->elf, data->shstrndx, KSYMTAB_STRINGS,
-			       &ksymtab_raw, &ksymtab_sz);
+			       &ksymtab_strings, &ksymtab_strings_sz);
 	if (addr == -1)
 		return 1;
 
 	*ksymtab = parse_ksymtab_strings(ksymtab_raw, ksymtab_sz);
 	(*ksymtab)->addr = addr;
 	*aliases = ksymtab_find_aliases(*ksymtab, data);
-	ksymtab_fill_ns(ksymtab_raw, *ksymtab, data);
+	ksymtab_fill_ns(ksymtab_strings, *ksymtab, data);
 
 	return 0;
 }
