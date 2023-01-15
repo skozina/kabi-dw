@@ -440,42 +440,6 @@ static struct ksymtab *parse_ksymtab_symbols(struct elf_data *data)
 	return ctx.ksymtab;
 }
 
-/* Parses raw content of  __ksymtab_strings section to a ksymtab */
-static struct ksymtab *parse_ksymtab_strings(const char *d_buf, size_t d_size)
-{
-	char *p, *oldp;
-	size_t size = 0;
-	size_t i = 0;
-	struct ksymtab *res;
-
-	res = ksymtab_new(KSYMTAB_SIZE);
-
-	p = oldp = (char *)d_buf;
-
-	/* Make sure we have the final '\0' */
-	if (p[d_size - 1] != '\0')
-		fail("Mallformed " KSYMTAB_STRINGS " section: %s\n", p);
-
-	for (size = 0; size < d_size; size++, p++) {
-		/* End of symbol? */
-		if (*p == '\0') {
-			size_t len = p - oldp;
-
-			/* Skip empty strings */
-			if (len == 0) {
-				oldp = p + 1;
-				continue;
-			}
-
-			ksymtab_add_sym(res, oldp, len, i);
-			i++;
-			oldp = p + 1;
-		}
-	}
-
-	return res;
-}
-
 struct ns_filter_ctx {
 	const char *ksymtab_strings;
 	struct ksymtab *ksymtab;
