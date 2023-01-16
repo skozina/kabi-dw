@@ -84,6 +84,7 @@ void walk_dir(char *path, bool list_dirs, walk_rv_t (*cb)(char *, void *),
 		if ((strcmp(ent->d_name, "..") == 0) ||
 		    (strcmp(ent->d_name, ".") == 0)) {
 			free(ent);
+			entlist[i] = NULL;
 			continue;
 		}
 
@@ -114,6 +115,7 @@ void walk_dir(char *path, bool list_dirs, walk_rv_t (*cb)(char *, void *),
 out:
 		free(new_path);
 		free(ent);
+		entlist[i] = NULL;
 
 		if (cb_rv == WALK_STOP)
 			break;
@@ -123,6 +125,9 @@ out:
 		}
 	}
 
+	for (i = 0; i < entries; i++)
+		if (entlist[i])
+			free(entlist[i]);
 	free(entlist);
 }
 
