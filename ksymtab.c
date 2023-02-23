@@ -257,6 +257,7 @@ static void ksymtab_ksym_free(void *arg)
 	struct ksym *ksym = arg;
 
 	free(ksym->link);
+	free(ksym->ns);
 	free(ksym);
 }
 

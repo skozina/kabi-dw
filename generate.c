@@ -1707,7 +1707,7 @@ static obj_t *print_die_subprogram(struct cu_ctx *ctx,
 	if (arg_list)
 		arg_list->object = obj;
 	obj->member_list = arg_list;
-	obj_fill_ns(obj, ctx, name);
+	obj_fill_ns(obj, ctx, obj->name);
 
 	return obj;
 }
@@ -1794,7 +1794,7 @@ static obj_t *print_die_tag(struct cu_ctx *ctx,
 	case DW_TAG_variable:
 		obj = print_die_type(ctx, rec, die);
 		obj = obj_var_new_add(safe_strdup(name), obj);
-		obj_fill_ns(obj, ctx, name);
+		obj_fill_ns(obj, ctx, obj->name);
 		break;
 	case DW_TAG_base_type:
 		obj = obj_basetype_new(safe_strdup(name));
